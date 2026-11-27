@@ -31,6 +31,11 @@ if (args.Contains("--uninstall-cleanup"))
     return;
 }
 
+if (!WindowsServiceHelpers.IsWindowsService())
+{
+    Stowaway.Service.Hosting.ParentConsole.Attach();
+}
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
