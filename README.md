@@ -1,4 +1,4 @@
-![Stowaway](assets/brand/social-preview.png)
+![Stowaway: Sensible Docker backup management](assets/brand/readme-banner.png)
 
 # Stowaway
 
