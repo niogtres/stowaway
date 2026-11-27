@@ -137,7 +137,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 - Kestrel binds to **localhost only** over HTTPS. A per-install self-signed certificate is created by the service and added to LocalMachine\Root when it runs as a service. Host filtering blocks DNS rebinding; a request-origin guard blocks cross-site WebSocket and CSRF attempts. *M6b:* opt-in remote access (off by default), with a self-issued or an installed certificate; see the M6b notes.
 - **Auth** *(M6a)*: Windows Negotiate (members of local `Administrators` or a `DockerBackup Operators` group). *M6b:* remote-access accounts (password + TOTP) for other computers. Managing remote access, restarting the service and revealing recovery keys stay local-only.
 - Repository passwords and cloud keys are encrypted with **DPAPI in the service account's (LocalSystem's) user scope** in SQLite. *LocalMachine* scope is deliberately not used: any local user could decrypt it. Each destination's recovery key can be revealed (and the reveal is logged): *lose it and backups are unrecoverable*.
-- The service runs as **LocalSystem** (it needs access to the Docker pipe). *Not built yet:* audit logging of every API call.
+- The service runs as **LocalSystem** (it needs access to the Docker pipe). *M6c:* every API change and every remote sign-in event is in the audit log.
 - Runner containers get read-only source mounts, `no-new-privileges`, and no network for local and SMB destinations. Secrets arrive as files inside the container, never in its configuration.
 
 ## 7. Known constraints and risks
@@ -178,7 +178,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 | M3 | Scheduling | Plans wizard, schedules (Cronos), retention/prune, history, notifications |
 | M4 | Restore | Volume / new volume / file-level / host folder; snapshot browser and timeline |
 | M5 | App-aware and cloud | DB dumps, S3/B2/Azure/SFTP and **Dropbox**, stack recreate, restore drills |
-| M6 | Polish and ship | M6a: Windows sign-in, stale-lock recovery, Event Log, tray app, uninstall cleanup. M6b: remote access + TOTP, code signing, winget manifests, user guide |
+| M6 | Polish and ship | M6a: Windows sign-in, stale-lock recovery, Event Log, tray app, uninstall cleanup. M6b: remote access + TOTP, code signing, winget manifests, user guide. M6c: internet access through a reverse proxy (trusted proxies, per-address lockouts, fresh codes for destructive changes, alerts, audit log) |
 
 ### Implementation notes
 - **M0 (done):** service host, HTTPS on loopback, engine monitor, UI shell, MSI, CI.
@@ -256,6 +256,15 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Code signing:** `build.ps1 -SignThumbprint` (certificate in a store, including hardware tokens) or `DOCKERBACKUP_SIGN_PFX`/`_PASSWORD` (release workflow secrets). `Set-AuthenticodeSignature` (no Windows SDK needed) signs the service executable before it goes into the MSI, then the MSI; RFC 3161 timestamp from DigiCert by default. Cloud HSM signing (Azure Trusted Signing, KeyLocker) would need its own step.
   - **winget:** `tools/New-WingetManifest.ps1` writes the version/installer/locale manifests (schema 1.9.0, MSI ProductCode, SHA-256); releases attach them with a `.sha256` file. Submission to winget-pkgs waits for public releases and the final product name.
   - **User guide:** `docs/USER-GUIDE.md`.
+- **M6c (done):** remote access over the internet, through a reverse proxy (the owner's setup: Cloudflare → nginx on another LAN host → this host).
+  - **Trusted proxies** (`TrustedProxies` in `remote-access.json`): when set, only those addresses may connect from other computers (firewall `remoteip` and the origin guard). The client address for rate limits, lockouts, alerts and the audit log is the last `X-Forwarded-For` entry, but only from a trusted proxy. **Local vs remote is always the TCP peer**, never a header: a forged `X-Forwarded-For: 127.0.0.1` can't turn a remote request into a local (Windows sign-in, `LocalOnly`) one.
+  - **Lockouts** per (account, client address): 5 failures → 15 minutes, so strangers can't lock the owner out; 20 failures from anywhere lock the account (distributed guessing). Kept in memory (per address) and in the database (account).
+  - **Fresh code (step-up):** remote sessions get `428` with `type: fresh-code-required` for every API change not marked `AllowWithoutFreshCode` (allowlist: back up now, cancel, checks, rescan, plan run-now/preview, maintenance, restore preview, drills, notification test, Dropbox sign-in start, sign-in/out). `POST /api/auth/elevate` with a TOTP code (single-use, counts towards lockouts; recovery codes not accepted) re-issues the cookie with a 10-minute elevation claim; the original issue time is kept. The SPA prompts and retries transparently.
+  - **Sessions:** 30 minutes sliding, 8 hours absolute (issue-time claim checked on every request).
+  - **Security events** (`ISecurityEvents`): sign-ins, failures, lockouts, recovery-code use and step-ups are logged (warnings reach the Event Log) and written to the audit log; new-address sign-ins, lockouts and recovery-code use are also sent to notification channels that report failures (`NotificationEvent.Security`).
+  - **Audit log** (SQLite `AuditEntries`, 180 days): every API change (actor, client address, local/remote, method + path, status; never bodies) and the security events. `GET /api/audit`; Settings → Audit log.
+  - **HSTS** on remote responses only (on localhost it would stick to every other local site).
+  - **nginx** guide: Authenticated Origin Pulls, `X-Forwarded-For $http_cf_connecting_ip`, WebSocket upgrade, `proxy_ssl_verify` against DockerBackup's certificate (`/api/remote/certificate?format=pem`). Cloudflare Access recommended as an independent first gate.
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 

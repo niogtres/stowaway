@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using DockerBackup.Core.Access;
 using DockerBackup.Core.Backups;
@@ -10,14 +11,22 @@ public sealed record AuthenticatorSetup(string SetupUri, string Secret, IReadOnl
 public sealed class AccountException(string message) : Exception(message);
 
 /// <summary>Remote-access accounts: password + authenticator app, with lockout after repeated failures.</summary>
-public sealed partial class AccountService(IRemoteAccountStore store, ISecretProtector protector, TimeProvider time, ILogger<AccountService> logger)
+public sealed partial class AccountService(IRemoteAccountStore store, ISecretProtector protector, ISecurityEvents events, TimeProvider time, ILogger<AccountService> logger)
 {
+    /// <summary>Failures from one address before that address is locked out of the account.</summary>
     public const int MaxFailedAttempts = 5;
+
+    /// <summary>Failures from any address before the whole account is locked.</summary>
+    public const int MaxAccountFailures = 20;
+
+    private const int MaxKnownAddresses = 20;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
     private const string Issuer = "DockerBackup";
 
     // Sign-ins update counters and the last used TOTP step; serialise them so parallel guesses can't race.
     private readonly SemaphoreSlim _signInGate = new(1, 1);
+    private readonly ConcurrentDictionary<string, int> _failures = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _addressLocks = new();
 
     public async Task<(RemoteAccount Account, AuthenticatorSetup Setup)> CreateAsync(string? userName, string? password, string createdBy, CancellationToken ct)
     {
@@ -98,12 +107,19 @@ public sealed partial class AccountService(IRemoteAccountStore store, ISecretPro
         account.LockedUntil = null;
         account.SecurityStamp = Guid.NewGuid().ToString("N");
         await store.UpdateAsync(account, ct);
+        foreach (var key in _addressLocks.Keys.Where(k => k.StartsWith($"{account.Id:N}|", StringComparison.Ordinal)))
+        {
+            _addressLocks.TryRemove(key, out _);
+        }
+
         logger.LogInformation("Password of remote-access account {User} set by {By}", account.UserName, by);
     }
 
     /// <summary>
     /// Checks user name, password and code (a 6-digit authenticator code or a one-time recovery code) together.
     /// Every failure looks the same to the caller, so it can't tell which part was wrong or whether the account exists.
+    /// Lockouts are per account and address, so strangers guessing can't lock the owner out; a higher account-wide
+    /// limit still stops guessing spread over many addresses.
     /// </summary>
     public async Task<RemoteAccount?> SignInAsync(string? userName, string? password, string? code, string from, CancellationToken ct)
     {
@@ -115,14 +131,15 @@ public sealed partial class AccountService(IRemoteAccountStore store, ISecretPro
             if (account is null)
             {
                 PasswordHashing.Verify(password ?? "", PasswordHashing.Dummy); // same cost as a real check
-                logger.LogWarning("Remote sign-in failed from {From}: unknown user {User}", from, userName);
+                events.Report(new SecurityEvent("Sign-in failed", userName ?? "", from, "Unknown user name"));
                 return null;
             }
 
-            if (account.LockedUntil is { } until && until > now)
+            var pairKey = PairKey(account, from);
+            if ((account.LockedUntil is { } until && until > now) || (_addressLocks.TryGetValue(pairKey, out var pairUntil) && pairUntil > now))
             {
                 PasswordHashing.Verify(password ?? "", PasswordHashing.Dummy); // don't reveal the lock by answering faster
-                logger.LogWarning("Remote sign-in refused from {From}: {User} is locked until {Until:u}", from, account.UserName, until);
+                events.Report(new SecurityEvent("Sign-in refused", account.UserName, from, "Locked"));
                 return null;
             }
 
@@ -137,21 +154,7 @@ public sealed partial class AccountService(IRemoteAccountStore store, ISecretPro
 
             if (step is null && !recoveryOk)
             {
-                account.FailedAttempts++;
-                if (account.FailedAttempts >= MaxFailedAttempts)
-                {
-                    account.LockedUntil = now + LockoutDuration;
-                    account.FailedAttempts = 0;
-                    logger.LogWarning("Remote-access account {User} locked for {Minutes} minutes after {Attempts} failed sign-ins (last from {From})",
-                        account.UserName, LockoutDuration.TotalMinutes, MaxFailedAttempts, from);
-                }
-                else
-                {
-                    logger.LogWarning("Remote sign-in failed from {From} for {User} ({Reason})", from, account.UserName,
-                        !passwordOk ? "wrong password" : !account.TotpConfirmed ? "setup not finished" : "wrong code");
-                }
-
-                await store.UpdateAsync(account, ct);
+                await FailAsync(account, from, !passwordOk ? "Wrong password" : !account.TotpConfirmed ? "Setup not finished" : "Wrong code", now, ct);
                 return null;
             }
 
@@ -162,14 +165,21 @@ public sealed partial class AccountService(IRemoteAccountStore store, ISecretPro
             else
             {
                 account.RecoveryCodeHashes.Remove(recoveryHash!);
-                logger.LogWarning("{User} signed in with a recovery code; {Left} left", account.UserName, account.RecoveryCodeHashes.Count);
+                events.Report(new SecurityEvent("Recovery code used", account.UserName, from, $"{account.RecoveryCodeHashes.Count} left", Alert: true));
+            }
+
+            _failures.TryRemove(pairKey, out _);
+            var newAddress = !account.KnownAddresses.Contains(from);
+            if (newAddress)
+            {
+                account.KnownAddresses = [.. account.KnownAddresses.Prepend(from).Take(MaxKnownAddresses)];
             }
 
             account.FailedAttempts = 0;
             account.LockedUntil = null;
             account.LastSignInAt = now;
             await store.UpdateAsync(account, ct);
-            logger.LogInformation("{User} signed in remotely from {From}", account.UserName, from);
+            events.Report(new SecurityEvent("Signed in", account.UserName, from, newAddress ? "From a new address" : "", Alert: newAddress));
             return account;
         }
         finally
@@ -177,6 +187,71 @@ public sealed partial class AccountService(IRemoteAccountStore store, ISecretPro
             _signInGate.Release();
         }
     }
+
+    /// <summary>
+    /// A fresh authenticator code for a destructive action from a remote session. Recovery codes don't count here,
+    /// and failures count towards the same lockouts as sign-ins.
+    /// </summary>
+    public async Task<bool> VerifyFreshCodeAsync(Guid accountId, string? code, string from, CancellationToken ct)
+    {
+        await _signInGate.WaitAsync(ct);
+        try
+        {
+            var now = time.GetUtcNow();
+            var account = await store.GetAsync(accountId, ct);
+            if (account is null || !account.TotpConfirmed
+                || (account.LockedUntil is { } until && until > now)
+                || (_addressLocks.TryGetValue(PairKey(account, from), out var pairUntil) && pairUntil > now))
+            {
+                return false;
+            }
+
+            if (Totp.Verify(SecretOf(account), code, now, account.LastTotpStep) is not { } step)
+            {
+                await FailAsync(account, from, "Wrong code for a protected action", now, ct);
+                return false;
+            }
+
+            account.LastTotpStep = step;
+            await store.UpdateAsync(account, ct);
+            events.Report(new SecurityEvent("Confirmed with a fresh code", account.UserName, from, ""));
+            return true;
+        }
+        finally
+        {
+            _signInGate.Release();
+        }
+    }
+
+    private async Task FailAsync(RemoteAccount account, string from, string reason, DateTimeOffset now, CancellationToken ct)
+    {
+        var pairKey = PairKey(account, from);
+        var pairFailures = _failures.AddOrUpdate(pairKey, 1, (_, n) => n + 1);
+        if (pairFailures >= MaxFailedAttempts)
+        {
+            _failures.TryRemove(pairKey, out _);
+            _addressLocks[pairKey] = now + LockoutDuration;
+            events.Report(new SecurityEvent("Locked out", account.UserName, from,
+                $"{MaxFailedAttempts} failed attempts from this address; locked for {LockoutDuration.TotalMinutes:0} minutes", Alert: true));
+        }
+        else
+        {
+            events.Report(new SecurityEvent("Sign-in failed", account.UserName, from, reason));
+        }
+
+        account.FailedAttempts++;
+        if (account.FailedAttempts >= MaxAccountFailures)
+        {
+            account.LockedUntil = now + LockoutDuration;
+            account.FailedAttempts = 0;
+            events.Report(new SecurityEvent("Account locked", account.UserName, from,
+                $"{MaxAccountFailures} failed attempts from any address; locked for {LockoutDuration.TotalMinutes:0} minutes", Alert: true));
+        }
+
+        await store.UpdateAsync(account, ct);
+    }
+
+    private static string PairKey(RemoteAccount account, string from) => $"{account.Id:N}|{from}";
 
     private byte[] SecretOf(RemoteAccount account) => Base32.Decode(protector.Unprotect(account.TotpSecretProtected));
 

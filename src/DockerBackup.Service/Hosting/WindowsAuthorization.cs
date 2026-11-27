@@ -58,6 +58,13 @@ public static class AccessPolicies
 
     public const string AccountClaim = "dockerbackup:account";
     public const string StampClaim = "dockerbackup:stamp";
+    public const string IssuedClaim = "dockerbackup:issued";
+
+    /// <summary>Remote sessions end after this long without requests…</summary>
+    public static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(30);
+
+    /// <summary>…and after this long in any case.</summary>
+    public static readonly TimeSpan AbsoluteTimeout = TimeSpan.FromHours(8);
 }
 
 public sealed class OperatorHandler(ILogger<OperatorHandler> logger) : AuthorizationHandler<OperatorRequirement>
@@ -170,8 +177,8 @@ public static class WindowsAuthorization
                 o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
                 o.Cookie.SameSite = SameSiteMode.Strict;
                 o.Cookie.Path = "/";
-                o.ExpireTimeSpan = TimeSpan.FromHours(12);
-                o.SlidingExpiration = false;
+                o.ExpireTimeSpan = AccessPolicies.IdleTimeout;
+                o.SlidingExpiration = true;
                 o.Events.OnRedirectToLogin = context => Status(context.Response, StatusCodes.Status401Unauthorized);
                 o.Events.OnRedirectToAccessDenied = context => Status(context.Response, StatusCodes.Status403Forbidden);
                 o.Events.OnValidatePrincipal = ValidateSessionAsync;
@@ -195,6 +202,15 @@ public static class WindowsAuthorization
     private static async Task ValidateSessionAsync(CookieValidatePrincipalContext context)
     {
         var id = context.Principal?.FindFirst(AccessPolicies.AccountClaim)?.Value;
+        var time = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>();
+        if (!long.TryParse(context.Principal?.FindFirst(AccessPolicies.IssuedClaim)?.Value, out var issued)
+            || time.GetUtcNow() - DateTimeOffset.FromUnixTimeSeconds(issued) > AccessPolicies.AbsoluteTimeout)
+        {
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return;
+        }
+
         var stamp = context.Principal?.FindFirst(AccessPolicies.StampClaim)?.Value;
         var store = context.HttpContext.RequestServices.GetRequiredService<IRemoteAccountStore>();
         var account = Guid.TryParse(id, out var accountId) ? await store.GetAsync(accountId, context.HttpContext.RequestAborted) : null;

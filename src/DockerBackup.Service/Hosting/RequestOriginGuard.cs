@@ -22,7 +22,7 @@ public static class RequestOriginGuard
         return app.Use(async (context, next) =>
         {
             // Defence in depth: Kestrel only listens beyond loopback when remote access is on.
-            if (!remote.Applied.Enabled && RemoteAccess.IsRemote(context))
+            if (RemoteAccess.IsRemote(context) && (!remote.Applied.Enabled || !remote.IsAllowedRemotePeer(context)))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;

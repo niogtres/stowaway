@@ -134,6 +134,23 @@ public sealed class NotificationService(
         }
     }
 
+    /// <summary>Security alerts go to every enabled channel that wants failures.</summary>
+    public async Task SecurityAlertAsync(string title, string body, CancellationToken ct)
+    {
+        var message = new NotificationMessage(NotificationEvent.Security, title, body, Link);
+        foreach (var channel in (await store.ListAsync(ct)).Where(c => c.Enabled && c.OnFailure))
+        {
+            try
+            {
+                await SendAsync(channel, message, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Security alert via {Channel} failed", channel.Name);
+            }
+        }
+    }
+
     internal async Task<NotificationMessage?> DescribeAsync(BackupRun run, CancellationToken ct)
     {
         if (run.Status is not (RunStatus.Succeeded or RunStatus.Failed))

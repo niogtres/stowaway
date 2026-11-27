@@ -369,12 +369,24 @@ export class ApiError extends Error {
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
-async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
+/**
+ * Remote sessions must confirm protected changes with a fresh authenticator code (HTTP 428). The app registers a
+ * prompt here; it resolves true once the code was accepted, and the request is then sent again.
+ */
+let freshCodePrompt: (() => Promise<boolean>) | null = null
+export function setFreshCodePrompt(prompt: (() => Promise<boolean>) | null) {
+  freshCodePrompt = prompt
+}
+
+async function request<T>(method: Method, path: string, body?: unknown, retried = false): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   // Required by the server for state-changing calls (anti-CSRF; see RequestOriginGuard).
   if (method !== 'GET') headers['X-DockerBackup-Request'] = '1'
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   const response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+  if (response.status === 428 && !retried && freshCodePrompt && (await freshCodePrompt())) {
+    return request<T>(method, path, body, true)
+  }
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`
     try {
@@ -429,6 +441,22 @@ export function useAuthMode(enabled: boolean) {
 
 export const signIn = (userName: string, password: string, code: string) => request<void>('POST', '/api/auth/login', { userName, password, code })
 export const signOut = () => request<void>('POST', '/api/auth/logout')
+export const confirmFreshCode = (code: string) => request<void>('POST', '/api/auth/elevate', { code })
+
+export interface AuditEntry {
+  id: number
+  at: string
+  actor: string
+  address: string
+  remote: boolean
+  action: string
+  detail: string
+  status: number | null
+}
+
+export function useAudit() {
+  return useQuery({ queryKey: ['audit'], queryFn: () => getJson<AuditEntry[]>('/api/audit?limit=200'), refetchInterval: 30_000 })
+}
 
 export type FirewallProfile = 'domain' | 'private' | 'public'
 export type RemoteCertificateSource = 'selfSigned' | 'store'
@@ -439,6 +467,7 @@ export interface RemoteAccessSettings {
   certificateSource: RemoteCertificateSource
   certificateThumbprint: string | null
   firewallProfiles: FirewallProfile[]
+  trustedProxies: string[]
 }
 
 export interface StoreCertificate {

@@ -33,6 +33,9 @@ public sealed class RemoteAccount
     public DateTimeOffset CreatedAt { get; set; }
     public string CreatedBy { get; set; } = "";
     public DateTimeOffset? LastSignInAt { get; set; }
+
+    /// <summary>Recent client addresses this account signed in from (newest first); a new one raises an alert.</summary>
+    public List<string> KnownAddresses { get; set; } = [];
 }
 
 public interface IRemoteAccountStore

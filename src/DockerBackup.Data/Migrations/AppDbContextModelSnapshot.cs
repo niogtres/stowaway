@@ -17,6 +17,48 @@ namespace DockerBackup.Data.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
+            modelBuilder.Entity("DockerBackup.Core.Access.AuditEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("At")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Remote")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.ToTable("AuditEntries");
+                });
+
             modelBuilder.Entity("DockerBackup.Core.Access.RemoteAccount", b =>
                 {
                     b.Property<Guid>("Id")
@@ -33,6 +75,10 @@ namespace DockerBackup.Data.Migrations
 
                     b.Property<int>("FailedAttempts")
                         .HasColumnType("INTEGER");
+
+                    b.PrimitiveCollection<string>("KnownAddresses")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<long?>("LastSignInAt")
                         .HasColumnType("INTEGER");

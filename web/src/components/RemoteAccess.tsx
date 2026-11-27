@@ -115,6 +115,7 @@ function SettingsForm({ view, readyAccounts }: { view: RemoteAccessView; readyAc
   const save = useSaveRemoteAccess()
   const [f, setF] = useState<RemoteAccessSettings>(view.settings)
   const [names, setNames] = useState(view.settings.hostNames.join(', '))
+  const [proxies, setProxies] = useState(view.settings.trustedProxies.join(', '))
   const hostNames = names
     .split(/[\s,;]+/)
     .map((n) => n.trim())
@@ -124,7 +125,14 @@ function SettingsForm({ view, readyAccounts }: { view: RemoteAccessView; readyAc
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    save.mutate({ ...f, hostNames })
+    save.mutate({
+      ...f,
+      hostNames,
+      trustedProxies: proxies
+        .split(/[\s,;]+/)
+        .map((p) => p.trim())
+        .filter(Boolean),
+    })
   }
 
   return (
@@ -157,6 +165,13 @@ function SettingsForm({ view, readyAccounts }: { view: RemoteAccessView; readyAc
             ))}
           </div>
         )}
+
+        <Field
+          label="Reverse proxy (optional)"
+          hint="The IPv4 address of a proxy such as nginx in front of DockerBackup. Then only the proxy may connect, and the visitor address it forwards (X-Forwarded-For) is used for lockouts, rate limits and the audit log."
+        >
+          <TextInput value={proxies} onChange={(e) => setProxies(e.target.value)} placeholder="192.168.1.10" className="font-mono" />
+        </Field>
 
         <fieldset>
           <legend className="mb-2 text-xs font-medium text-muted">HTTPS certificate</legend>

@@ -4,6 +4,8 @@ using DockerBackup.Docker.Backups;
 using DockerBackup.Docker.Plans;
 using DockerBackup.Service.Notifications;
 
+using DockerBackup.Service.Access;
+
 namespace DockerBackup.Service.Api;
 
 public sealed record PlanRunSummary(Guid Id, RunStatus Status, string AppName, DateTimeOffset QueuedAt, DateTimeOffset? FinishedAt, string? Error);
@@ -53,14 +55,17 @@ public static class PlanEndpoints
             await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound());
 
         plans.MapPost("/{id:guid}/run", (Guid id, PlanService service, CancellationToken ct) =>
-            Guard(async () => Results.Accepted(value: new { queued = await service.RunNowAsync(id, ct) })));
+            Guard(async () => Results.Accepted(value: new { queued = await service.RunNowAsync(id, ct) })))
+            .AllowWithoutFreshCode();
 
-        plans.MapPost("/preview", (PreviewBody body, PlanService service) => service.Preview(body.Cron ?? string.Empty));
+        plans.MapPost("/preview", (PreviewBody body, PlanService service) => service.Preview(body.Cron ?? string.Empty))
+            .AllowWithoutFreshCode();
 
         api.MapPost("/destinations/{id:guid}/maintenance", (Guid id, BackupService backups, CancellationToken ct) =>
             Guard(async () => await backups.EnqueueMaintenanceAsync(id, "manual", ct) is { } run
                 ? Results.Accepted(value: run)
-                : Results.Conflict(new { detail = "Maintenance for this destination is already queued." })));
+                : Results.Conflict(new { detail = "Maintenance for this destination is already queued." })))
+            .AllowWithoutFreshCode();
 
         var channels = api.MapGroup("/notifications");
 
@@ -80,7 +85,8 @@ public static class PlanEndpoints
             {
                 var error = await service.TestAsync(id, ct);
                 return Results.Ok(new TestResult(error is null, error));
-            }));
+            }))
+            .AllowWithoutFreshCode();
 
         return api;
     }

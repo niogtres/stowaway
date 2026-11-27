@@ -39,6 +39,13 @@ public sealed record RemoteAccessSettings
     public string? CertificateThumbprint { get; init; }
     public IReadOnlyList<FirewallProfile> FirewallProfiles { get; init; } = [FirewallProfile.Domain, FirewallProfile.Private];
 
+    /// <summary>
+    /// Reverse proxies (IPv4 addresses) that remote traffic comes through, such as nginx behind Cloudflare. When set,
+    /// only these addresses may connect from other computers (firewall and service), and the client address they
+    /// pass in <c>X-Forwarded-For</c> is used for rate limits, lockouts and the audit log.
+    /// </summary>
+    public IReadOnlyList<string> TrustedProxies { get; init; } = [];
+
     public static readonly RemoteAccessSettings Off = new();
 
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -129,6 +136,49 @@ public sealed partial class RemoteAccess
         return !IPAddress.IsLoopback(ip);
     }
 
+    public const string ClientAddressItem = "DockerBackup.ClientAddress";
+
+    /// <summary>
+    /// The address to log and rate-limit by: the connecting peer, or, when the peer is a trusted proxy, the last
+    /// <c>X-Forwarded-For</c> entry. Never used to decide whether a request is local (see <see cref="IsRemote"/>):
+    /// a forged header can change what's logged, not what's allowed.
+    /// </summary>
+    public string ClientAddress(HttpContext context)
+    {
+        if (context.Items[ClientAddressItem] is string cached)
+        {
+            return cached;
+        }
+
+        var peer = Normalize(context.Connection.RemoteIpAddress);
+        var address = peer?.ToString() ?? "unknown";
+        if (peer is not null && IsTrustedProxy(peer)
+            && context.Request.Headers["X-Forwarded-For"].ToString().Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) is [.., var last]
+            && IPAddress.TryParse(last, out var forwarded)
+            && Normalize(forwarded) is { } client && !IPAddress.IsLoopback(client) && !client.Equals(IPAddress.Any) && !client.Equals(IPAddress.IPv6Any))
+        {
+            address = client.ToString();
+        }
+
+        context.Items[ClientAddressItem] = address;
+        return address;
+    }
+
+    public bool IsTrustedProxy(IPAddress? peer) =>
+        Normalize(peer) is { } ip && Applied.TrustedProxies.Any(p => IPAddress.TryParse(p, out var proxy) && proxy.Equals(ip));
+
+    /// <summary>With trusted proxies configured, other computers may only connect through them.</summary>
+    public bool IsAllowedRemotePeer(HttpContext context) =>
+        Applied.TrustedProxies.Count == 0 || IsTrustedProxy(context.Connection.RemoteIpAddress);
+
+    private static IPAddress? Normalize(IPAddress? ip) => ip is { IsIPv4MappedToIPv6: true } ? ip.MapToIPv4() : ip;
+
+    /// <summary>Null when usable as a trusted proxy, otherwise why not.</summary>
+    public static string? ValidateProxy(string address) =>
+        IPAddress.TryParse(address, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(ip) && !ip.Equals(IPAddress.Any)
+            ? null
+            : $"\"{address}\" isn't the IPv4 address of another computer.";
+
     public bool IsAllowedRemoteOrigin(Uri origin) =>
         Applied.Enabled
         && origin.Scheme == Uri.UriSchemeHttps
@@ -194,12 +244,14 @@ public static class RemoteFirewall
         }
 
         var profiles = string.Join(',', applied.FirewallProfiles.Select(p => p.ToString().ToLowerInvariant()));
+        // Behind a reverse proxy, only the proxy may connect.
+        var remoteIp = applied.TrustedProxies.Count > 0 ? string.Join(',', applied.TrustedProxies) : "any";
         var (code, output) = Netsh(
             $"advfirewall firewall add rule name=\"{RuleName}\" dir=in action=allow protocol=TCP localport={port} "
-            + $"program=\"{Environment.ProcessPath}\" profile={profiles} enable=yes");
+            + $"program=\"{Environment.ProcessPath}\" profile={profiles} remoteip={remoteIp} enable=yes");
         if (code == 0)
         {
-            logger.LogInformation("Firewall rule {Rule} allows TCP {Port} on the {Profiles} profile(s)", RuleName, port, profiles);
+            logger.LogInformation("Firewall rule {Rule} allows TCP {Port} from {RemoteIp} on the {Profiles} profile(s)", RuleName, port, remoteIp, profiles);
         }
         else
         {

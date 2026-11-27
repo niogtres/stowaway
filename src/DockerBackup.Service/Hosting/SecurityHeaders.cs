@@ -15,6 +15,12 @@ public static class SecurityHeaders
             headers.XFrameOptions = "DENY";
             headers["Referrer-Policy"] = "no-referrer";
             headers["Cross-Origin-Opener-Policy"] = "same-origin";
+            if (RemoteAccess.IsRemote(context))
+            {
+                // Remote names only: HSTS on localhost would stick to every other local development site too.
+                headers.StrictTransportSecurity = "max-age=31536000";
+            }
+
             if (context.Request.Path.StartsWithSegments("/api"))
             {
                 headers.CacheControl = "no-store";

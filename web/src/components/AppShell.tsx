@@ -4,6 +4,7 @@ import logoMark from '@/assets/logo-mark.svg'
 import { ApiError, displayVersion, signOut, useAuthMode, useMe, useSystemInfo } from '@/lib/api'
 import { useRealtime } from '@/lib/realtime'
 import { EngineStatusPill } from './EngineStatusPill'
+import { FreshCodePrompt } from './FreshCode'
 import { SignIn } from './SignIn'
 import { ThemeToggle } from './ThemeToggle'
 import { StatusDot } from './ui'
@@ -112,6 +113,7 @@ export function AppShell() {
         <main className="min-h-0 flex-1 overflow-y-auto px-8 pb-10 pt-4">
           <Outlet />
         </main>
+        {me.data?.method === 'account' && <FreshCodePrompt />}
       </div>
     </div>
   )

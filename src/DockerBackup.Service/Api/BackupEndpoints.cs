@@ -1,6 +1,8 @@
 using DockerBackup.Core.Backups;
 using DockerBackup.Docker.Backups;
 
+using DockerBackup.Service.Access;
+
 namespace DockerBackup.Service.Api;
 
 public sealed record DestinationResponse(
@@ -64,7 +66,7 @@ public static class BackupEndpoints
             {
                 return Problem(ex.Message);
             }
-        });
+        }).AllowWithoutFreshCode(); // only starts a sign-in; creating the destination needs a code
 
         api.MapGet("/dropbox/connect/{id:guid}", (Guid id, DropboxAuthService dropbox) =>
             dropbox.Get(id) is { } status ? Results.Ok(status) : Results.NotFound());
@@ -79,7 +81,7 @@ public static class BackupEndpoints
             {
                 return Results.NotFound();
             }
-        });
+        }).AllowWithoutFreshCode();
 
         destinations.MapPost("/{id:guid}/recovery-key", async (Guid id, DestinationService service, CancellationToken ct) =>
         {
@@ -113,10 +115,11 @@ public static class BackupEndpoints
             {
                 return Problem(ex.Message);
             }
-        });
+        }).AllowWithoutFreshCode();
 
         backups.MapPost("/{id:guid}/cancel", async (Guid id, BackupService service, CancellationToken ct) =>
-            await service.CancelAsync(id, ct) ? Results.Accepted() : Results.NotFound());
+            await service.CancelAsync(id, ct) ? Results.Accepted() : Results.NotFound())
+            .AllowWithoutFreshCode();
 
         return api;
     }

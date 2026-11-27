@@ -1,6 +1,8 @@
 using DockerBackup.Core.Engine;
 using DockerBackup.Core.Inventory;
 
+using DockerBackup.Service.Access;
+
 namespace DockerBackup.Service.Api;
 
 /// <param name="EngineReachable">False means <paramref name="Snapshot"/> is the last known state, not live.</param>
@@ -20,7 +22,8 @@ public static class InventoryEndpoints
                 inventory.RequestRefresh();
                 return Results.Accepted();
             })
-            .WithName("RefreshInventory");
+            .WithName("RefreshInventory")
+            .AllowWithoutFreshCode();
 
         return api;
     }

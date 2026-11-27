@@ -3,6 +3,8 @@ using DockerBackup.Core.Restore;
 using DockerBackup.Docker.Backups;
 using DockerBackup.Docker.Restore;
 
+using DockerBackup.Service.Access;
+
 namespace DockerBackup.Service.Api;
 
 public sealed record SnapshotContentsResponse(string AppId, string AppName, string AppKind, IReadOnlyList<SnapshotSource> Sources);
@@ -24,7 +26,8 @@ public static class RestoreEndpoints
             Results.Ok(await catalog.BrowseAsync(id, RequireSnapshotId(snapshot), path, ct))));
 
         api.MapPost("/restores/preview", (RestoreRequest body, RestoreService service, CancellationToken ct) => Guard(async () =>
-            Results.Ok(await service.PreviewAsync(body with { SnapshotId = RequireSnapshotId(body.SnapshotId) }, ct))));
+            Results.Ok(await service.PreviewAsync(body with { SnapshotId = RequireSnapshotId(body.SnapshotId) }, ct))))
+            .AllowWithoutFreshCode();
 
         api.MapPost("/drills", (DrillRequest body, SnapshotCatalog catalog, BackupService backups, CancellationToken ct) => Guard(async () =>
         {
@@ -33,7 +36,7 @@ public static class RestoreEndpoints
             return await backups.EnqueueDrillAsync(request, contents.App.Id, contents.App.Name, "manual", ct) is { } run
                 ? Results.Accepted($"/api/backups/{run.Id}", run)
                 : Results.Conflict(new { detail = "A drill for this app is already queued." });
-        }));
+        })).AllowWithoutFreshCode(); // restores into scratch space only
 
         api.MapPost("/restores", (RestoreRequest body, RestoreService service, CancellationToken ct) => Guard(async () =>
         {

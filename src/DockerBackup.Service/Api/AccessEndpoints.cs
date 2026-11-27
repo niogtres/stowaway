@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using DockerBackup.Core.Access;
 using DockerBackup.Service.Access;
+using DockerBackup.Core.Notifications;
 using DockerBackup.Service.Hosting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -55,14 +56,14 @@ public static class AccessEndpoints
                 auth.Mode == AuthMode.None ? "none" : RemoteAccess.IsRemote(context) ? "account" : "windows"))
             .AllowAnonymous();
 
-        api.MapPost("/auth/login", async (SignInRequest body, HttpContext context, AccountService accounts, CancellationToken ct) =>
+        api.MapPost("/auth/login", async (SignInRequest body, HttpContext context, AccountService accounts, RemoteAccess remote, TimeProvider time, CancellationToken ct) =>
             {
                 if (!RemoteAccess.IsRemote(context))
                 {
                     return Results.Problem("On this computer you're signed in with Windows.", statusCode: StatusCodes.Status400BadRequest);
                 }
 
-                var from = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                var from = remote.ClientAddress(context);
                 if (await accounts.SignInAsync(body.UserName, body.Password, body.Code, from, ct) is not { } account)
                 {
                     return Results.Problem(
@@ -71,18 +72,39 @@ public static class AccessEndpoints
                         title: "Sign-in failed");
                 }
 
-                var identity = new ClaimsIdentity(
-                    [
-                        new Claim(ClaimTypes.Name, account.UserName),
-                        new Claim(AccessPolicies.AccountClaim, account.Id.ToString()),
-                        new Claim(AccessPolicies.StampClaim, account.SecurityStamp),
-                    ],
-                    CookieAuthenticationDefaults.AuthenticationScheme);
-                await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+                await IssueSessionAsync(context, account, issuedAt: time.GetUtcNow(), elevatedUntil: null);
                 return Results.NoContent();
             })
             .AllowAnonymous()
+            .AllowWithoutFreshCode()
             .RequireRateLimiting(SignInRateLimit);
+
+        // A fresh authenticator code unlocks protected changes for a few minutes (remote sessions only).
+        api.MapPost("/auth/elevate", async (CodeRequest body, HttpContext context, AccountService accounts, IRemoteAccountStore store,
+            RemoteAccess remote, TimeProvider time, CancellationToken ct) =>
+            {
+                if (!Guid.TryParse(context.User.FindFirst(AccessPolicies.AccountClaim)?.Value, out var accountId))
+                {
+                    return Results.Problem("Only needed for remote sessions.", statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (!await accounts.VerifyFreshCodeAsync(accountId, body.Code, remote.ClientAddress(context), ct)
+                    || await store.GetAsync(accountId, ct) is not { } account)
+                {
+                    return Results.Problem("That code didn't work. Wait for the next one and try again.", statusCode: StatusCodes.Status400BadRequest, title: "Code not accepted");
+                }
+
+                var issued = long.TryParse(context.User.FindFirst(AccessPolicies.IssuedClaim)?.Value, out var unix)
+                    ? DateTimeOffset.FromUnixTimeSeconds(unix)
+                    : time.GetUtcNow();
+                await IssueSessionAsync(context, account, issued, time.GetUtcNow() + AuditAndFreshCode.ElevationWindow);
+                return Results.NoContent();
+            })
+            .AllowWithoutFreshCode()
+            .RequireRateLimiting(SignInRateLimit);
+
+        api.MapGet("/audit", async (IAuditStore store, int? limit, CancellationToken ct) =>
+            await store.ListRecentAsync(Math.Clamp(limit ?? 200, 1, 1000), ct));
 
         api.MapPost("/auth/logout", async (HttpContext context) =>
             {
@@ -93,7 +115,8 @@ public static class AccessEndpoints
 
                 return Results.NoContent();
             })
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .AllowWithoutFreshCode();
 
         api.MapGet("/me", (HttpContext context, AuthOptions auth) =>
         {
@@ -117,9 +140,16 @@ public static class AccessEndpoints
                 return Problem(invalid);
             }
 
+            var proxies = body.TrustedProxies.Select(h => h.Trim()).Where(h => h.Length > 0).Distinct().ToList();
+            if (proxies.Select(RemoteAccess.ValidateProxy).FirstOrDefault(p => p is not null) is { } invalidProxy)
+            {
+                return Problem(invalidProxy);
+            }
+
             var settings = body with
             {
                 HostNames = hostNames,
+                TrustedProxies = proxies,
                 FirewallProfiles = body.FirewallProfiles.Distinct().ToList(),
                 CertificateThumbprint = body.CertificateSource == RemoteCertificateSource.Store ? body.CertificateThumbprint?.Trim().ToUpperInvariant() : null,
             };
@@ -163,10 +193,22 @@ public static class AccessEndpoints
             return Results.Ok(View(state, options, paths, time));
         });
 
-        remote.MapGet("/certificate", (AppPaths paths) =>
-            HttpsCertificate.ExportRemotePublic(paths.Certificates) is { } cer
-                ? Results.File(cer, "application/pkix-cert", "DockerBackup-remote-access.cer")
-                : Results.NotFound());
+        // DER (.cer) for Windows and browsers; ?format=pem for a reverse proxy such as nginx (proxy_ssl_trusted_certificate).
+        remote.MapGet("/certificate", (AppPaths paths, string? format) =>
+        {
+            if (HttpsCertificate.ExportRemotePublic(paths.Certificates) is not { } cer)
+            {
+                return Results.NotFound();
+            }
+
+            if (string.Equals(format, "pem", StringComparison.OrdinalIgnoreCase))
+            {
+                var pem = System.Text.Encoding.ASCII.GetBytes(new string(System.Security.Cryptography.PemEncoding.Write("CERTIFICATE", cer)) + "\n");
+                return Results.File(pem, "application/x-pem-file", "dockerbackup-remote-access.pem");
+            }
+
+            return Results.File(cer, "application/pkix-cert", "DockerBackup-remote-access.cer");
+        });
 
         // ---- Remote access accounts (this computer only) ---------------------------------------------
 
@@ -296,6 +338,28 @@ public static class AccessEndpoints
                 c.Dispose();
             }
         }
+    }
+
+    /// <summary>
+    /// The remote session cookie. <paramref name="issuedAt"/> is kept across re-issues so the session's absolute
+    /// lifetime can't be extended by confirming codes.
+    /// </summary>
+    private static Task IssueSessionAsync(HttpContext context, RemoteAccount account, DateTimeOffset issuedAt, DateTimeOffset? elevatedUntil)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, account.UserName),
+            new(AccessPolicies.AccountClaim, account.Id.ToString()),
+            new(AccessPolicies.StampClaim, account.SecurityStamp),
+            new(AccessPolicies.IssuedClaim, issuedAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        };
+        if (elevatedUntil is { } until)
+        {
+            claims.Add(new(AuditAndFreshCode.ElevatedUntilClaim, until.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        return context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
     }
 
     private static AccountView ToView(RemoteAccount a) =>

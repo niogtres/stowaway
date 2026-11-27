@@ -34,3 +34,6 @@ Thumbs.db
 .claude/settings.local.json
 
 src/DockerBackup.Service/wwwroot/
+
+# Local, never committed (owner-supplied configs etc.)
+/ignore/

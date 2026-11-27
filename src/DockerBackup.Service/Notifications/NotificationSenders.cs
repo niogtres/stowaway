@@ -97,9 +97,10 @@ public sealed class NtfySender(IHttpClientFactory httpFactory) : INotificationSe
         {
             NotificationEvent.Failure => "rotating_light",
             NotificationEvent.Recovery => "white_check_mark",
+            NotificationEvent.Security => "lock",
             _ => "floppy_disk",
         });
-        request.Headers.Add("Priority", message.Event == NotificationEvent.Failure ? "high" : "default");
+        request.Headers.Add("Priority", message.Event is NotificationEvent.Failure or NotificationEvent.Security ? "high" : "default");
         if (!string.IsNullOrEmpty(settings.AccessToken))
         {
             request.Headers.Authorization = new("Bearer", settings.AccessToken);

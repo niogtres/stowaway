@@ -68,10 +68,33 @@ public sealed class RemoteSettingsApiTests(ServiceFactory factory) : IClassFixtu
         Assert.Equal(HttpsCertificate.RemoteSubject, certificate.Subject);
         Assert.False(certificate.HasPrivateKey);
 
+        // PEM for nginx (proxy_ssl_trusted_certificate).
+        var pem = await _client.GetStringAsync("/api/remote/certificate?format=pem", _ct);
+        Assert.StartsWith("-----BEGIN CERTIFICATE-----", pem);
+        using var fromPem = System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPem(pem);
+        Assert.Equal(certificate.Thumbprint, fromPem.Thumbprint);
+
         // The last account that can sign in can't be deleted while remote access is on.
         Assert.Equal(HttpStatusCode.Conflict, (await _client.DeleteAsync($"/api/remote/accounts/{id}", _ct)).StatusCode);
         var off = await (await PutSettingsAsync(new { enabled = false, hostNames = new[] { "nas.home.lan" } })).Content.ReadFromJsonAsync<JsonElement>(_ct);
         Assert.False(off.GetProperty("restartRequired").GetBoolean()); // off stays off; the kept names change nothing
         Assert.Equal(HttpStatusCode.NoContent, (await _client.DeleteAsync($"/api/remote/accounts/{id}", _ct)).StatusCode);
+
+        // Trusted proxies must be other computers' IPv4 addresses.
+        Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(new { enabled = false, hostNames = Array.Empty<string>(), trustedProxies = new[] { "127.0.0.1" } })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(new { enabled = false, hostNames = Array.Empty<string>(), trustedProxies = new[] { "nginx.lan" } })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await PutSettingsAsync(new { enabled = false, hostNames = Array.Empty<string>(), trustedProxies = new[] { "192.168.1.10" } })).StatusCode);
+
+        // Every change above is in the audit log, without request bodies.
+        JsonElement[] audit = [];
+        for (var i = 0; i < 50 && !audit.Any(e => e.GetProperty("action").GetString() == $"DELETE /api/remote/accounts/{id}"); i++)
+        {
+            await Task.Delay(100, _ct);
+            audit = (await _client.GetFromJsonAsync<JsonElement[]>("/api/audit", _ct))!;
+        }
+
+        Assert.Contains(audit, e => e.GetProperty("action").GetString() == "PUT /api/remote" && e.GetProperty("status").GetInt32() == 200);
+        Assert.Contains(audit, e => e.GetProperty("action").GetString() == $"DELETE /api/remote/accounts/{id}");
+        Assert.DoesNotContain("a long enough password", JsonSerializer.Serialize(audit));
     }
 }

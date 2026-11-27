@@ -135,11 +135,13 @@ builder.Services.AddDataProtection()
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Per client: behind a trusted proxy, the address it forwarded, so one visitor can't use up everyone's attempts.
     o.AddPolicy(AccessEndpoints.SignInRateLimit, context => RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        remoteAccess.ClientAddress(context),
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 builder.Services.AddSingleton<AccountService>();
+builder.Services.AddSingleton<ISecurityEvents, SecurityEventSink>();
 
 builder.Services.AddDockerEngine(builder.Configuration);
 builder.Services.AddDockerBackupData(Path.Combine(paths.Root, "dockerbackup.db"));
@@ -169,6 +171,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles(); // the UI shell holds no data, so it's served before sign-in
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAuditAndFreshCode();
 app.UseRateLimiter();
 
 app.MapGroup("/api").MapSystemEndpoints().MapAccessEndpoints().MapInventoryEndpoints().MapBackupEndpoints().MapPlanEndpoints().MapRestoreEndpoints();

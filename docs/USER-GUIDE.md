@@ -18,8 +18,9 @@ This guide covers installing it, making your first backup, restoring, and keepin
 10. [Notifications](#10-notifications)
 11. [The tray icon](#11-the-tray-icon)
 12. [Remote access](#12-remote-access)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Uninstall](#14-uninstall)
+13. [Remote access over the internet (Cloudflare and nginx)](#13-remote-access-over-the-internet-cloudflare-and-nginx)
+14. [Troubleshooting](#14-troubleshooting)
+15. [Uninstall](#15-uninstall)
 
 ## 1. Before you start
 
@@ -165,13 +166,80 @@ By default only this computer can open DockerBackup. To manage it from another c
 5. **Choose networks** to allow through Windows Firewall: *Domain* and *Private* are on by default; leave *Public* off unless you're sure.
 6. Choose **Save**, then **Restart service**. After a few seconds, other computers can open `https://<name>:8484`.
 
-Signing in from another computer needs the user name, password and the current code from the app (or a recovery code). After 5 wrong attempts the account is locked for 15 minutes; an administrator can unlock it at once by setting a new password. Sessions last 12 hours.
+Signing in from another computer needs the user name, password and the current code from the app (or a recovery code).
+
+- **Lockouts:** 5 wrong attempts from one address lock that address out of the account for 15 minutes, so strangers guessing can't lock *you* out. 20 wrong attempts from anywhere lock the whole account for 15 minutes. Setting a new password (on this computer) lifts both at once.
+- **Sessions** end after 30 minutes without activity, and after 8 hours in any case.
+- **Protected changes** ask for a fresh code from the app: restoring, recreating an app, deleting anything, and creating or changing plans, destinations or notifications. After that, you're not asked again for 10 minutes. Backing up, checking and test restores (drills) don't ask.
+- **Alerts:** a sign-in from a new address, a lockout, or a recovery code being used is sent to your notification channels (those set to report failures) and to the Windows Event Log.
+- **Audit log:** **Settings → Audit log** lists sign-ins and every change made through DockerBackup, with who and from which address, for 180 days.
 
 For safety, these only work **on this computer**: managing remote access and its accounts, restarting the service, and showing recovery keys.
 
 To turn remote access off, untick it, **Save** and **Restart service**. The firewall rule is removed.
 
-## 13. Troubleshooting
+## 13. Remote access over the internet (Cloudflare and nginx)
+
+To reach DockerBackup from anywhere, put it behind a reverse proxy you already run, such as nginx behind Cloudflare. Your public certificate stays on the proxy, and DockerBackup only accepts connections from the proxy.
+
+```
+browser ──https──▶ Cloudflare ──https (origin pull)──▶ nginx ──https──▶ DockerBackup (this computer, port 8484)
+```
+
+**1. In DockerBackup** (Settings → Remote access, on this computer):
+
+- **Names:** the public name, for example `backup.example.com`.
+- **Reverse proxy:** the LAN address of the nginx server. From then on, only nginx can connect (Windows Firewall and DockerBackup both enforce it). The visitor's address that nginx forwards is used for lockouts, rate limits, alerts and the audit log.
+- **Certificate:** *Issued by DockerBackup* is fine here, because only nginx sees it. Download it for nginx at `https://localhost:8484/api/remote/certificate?format=pem` and copy it to the nginx server.
+- **Save** and **Restart service**.
+
+**2. In nginx**, a server block like this (adjust names, paths and addresses):
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name backup.example.com;
+
+    ssl_certificate     /etc/nginx/certs/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/example.com/privkey.pem;
+
+    # Only Cloudflare may connect (Authenticated Origin Pulls).
+    ssl_client_certificate /etc/nginx/certs/cloudflare-origin-pull-ca.pem;
+    ssl_verify_client on;
+
+    client_max_body_size 1m;
+
+    location / {
+        proxy_pass https://192.168.1.20:8484;          # this computer
+        proxy_http_version 1.1;
+
+        # Check that it's really DockerBackup on the other end.
+        proxy_ssl_trusted_certificate /etc/nginx/certs/dockerbackup-remote-access.pem;
+        proxy_ssl_verify on;
+        proxy_ssl_name backup.example.com;
+        proxy_ssl_server_name on;
+
+        proxy_set_header Host              $host;
+        # The visitor, as Cloudflare saw them. Safe because only Cloudflare gets past ssl_verify_client.
+        proxy_set_header X-Forwarded-For   $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # Live updates (WebSocket).
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+    }
+}
+```
+
+**3. In Cloudflare:**
+
+- Add `backup` as a **proxied** (orange cloud) DNS record pointing at your nginx, like your other sites. Use SSL mode **Full (strict)** and keep **Authenticated Origin Pulls** on.
+- **Strongly recommended:** put a **Cloudflare Access** application in front (Zero Trust → Access → Applications → Self-hosted, for `backup.example.com`), with a policy that only allows your own email address. Cloudflare then asks for a one-time code sent to your email before anything reaches nginx. That's a second, independent lock in front of DockerBackup's own sign-in, and it's free for small teams.
+
+With remote access through a proxy, computers on your LAN also go through the proxy (open the public name). On this computer, `https://localhost:8484` keeps working with Windows sign-in.
+
+## 14. Troubleshooting
 
 | Problem | What to do |
 |---|---|
@@ -180,12 +248,13 @@ To turn remote access off, untick it, **Save** and **Restart service**. The fire
 | **No access** | Your Windows account needs to be an administrator or in `DockerBackup Operators` ([section 3](#3-signing-in)). |
 | **A backup failed** | Open it in **Activity**: each step shows its log. Common causes: the destination is unreachable or full, a share password changed, or a database dump couldn't sign in (use *Stop & start* for that app). |
 | **"Repository is locked"** | DockerBackup clears locks left behind by its own interrupted runs automatically. A lock held by something else (for example restic run by hand) has to be removed by whoever created it. |
-| **Remote access doesn't connect** | Check **Settings → Remote access** for a message (for example a missing certificate), that the name you use is in the list, and that the network type is allowed through the firewall. |
+| **Remote access doesn't connect** | Check **Settings → Remote access** for a message (for example a missing certificate), that the name you use is in the list, and that the network type is allowed through the firewall. Behind a proxy: check that the proxy's address is the one entered, and the nginx error log (a `502` usually means the certificate or `proxy_ssl_name` doesn't match). |
+| **"Confirm with your authenticator" keeps coming back** | Each code works once. Wait for the app to show the next code. |
 | **Lost the authenticator phone** | Sign in with a recovery code, or on this computer choose **New authenticator** for the account. |
 
 **Logs** are in `C:\ProgramData\DockerBackup\logs` (one file per day, kept for 14 days).
 
-## 14. Uninstall
+## 15. Uninstall
 
 Uninstall **DockerBackup** from *Settings → Apps* in Windows. This removes the service, the tray icon, the firewall rule and the certificate it trusted.
 

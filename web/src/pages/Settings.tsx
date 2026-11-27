@@ -1,6 +1,7 @@
 import { Bell, Mail, Pencil, Plus, Send, Trash2, Webhook } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Button, Dialog, Field, TextInput } from '@/components/forms'
+import { AuditLogSection } from '@/components/AuditLog'
 import { RemoteAccessSection } from '@/components/RemoteAccess'
 import { Badge, Card, Skeleton } from '@/components/ui'
 import {
@@ -69,6 +70,8 @@ export function Settings() {
       <ChannelDialog open={open} onClose={() => setOpen(false)} channel={editing} />
 
       <RemoteAccessSection />
+
+      <AuditLogSection />
     </div>
   )
 }

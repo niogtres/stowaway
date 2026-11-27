@@ -56,6 +56,9 @@ public enum NotificationEvent
     Recovery,
     Success,
     Test,
+
+    /// <summary>Remote access: a sign-in from a new address, a lockout, a recovery code used. Sent where failures go.</summary>
+    Security,
 }
 
 /// <summary>What to tell people. Senders format it for their medium.</summary>

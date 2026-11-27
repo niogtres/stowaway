@@ -15,6 +15,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<BackupPlan> Plans => Set<BackupPlan>();
     public DbSet<NotificationChannel> NotificationChannels => Set<NotificationChannel>();
     public DbSet<RemoteAccount> RemoteAccounts => Set<RemoteAccount>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configuration)
     {
@@ -77,6 +78,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(a => a.PasswordHash).HasMaxLength(200);
             e.Property(a => a.SecurityStamp).HasMaxLength(64);
             e.Property(a => a.CreatedBy).HasMaxLength(200);
+        });
+
+        model.Entity<AuditEntry>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.Property(a => a.Actor).HasMaxLength(200);
+            e.Property(a => a.Address).HasMaxLength(64);
+            e.Property(a => a.Action).HasMaxLength(300);
+            e.Property(a => a.Detail).HasMaxLength(500);
+            e.HasIndex(a => a.At);
         });
     }
 }

@@ -256,6 +256,28 @@ public sealed class RemoteAccountStore(IDbContextFactory<AppDbContext> factory) 
     }
 }
 
+public sealed class AuditStore(IDbContextFactory<AppDbContext> factory) : IAuditStore
+{
+    public async Task AddAsync(AuditEntry entry, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        db.AuditEntries.Add(entry);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<AuditEntry>> ListRecentAsync(int limit, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.AuditEntries.AsNoTracking().OrderByDescending(a => a.At).ThenByDescending(a => a.Id).Take(limit).ToListAsync(ct);
+    }
+
+    public async Task<int> PruneAsync(DateTimeOffset olderThan, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.AuditEntries.Where(a => a.At < olderThan).ExecuteDeleteAsync(ct);
+    }
+}
+
 public static class DataServiceCollectionExtensions
 {
     public static IServiceCollection AddDockerBackupData(this IServiceCollection services, string databasePath)
@@ -266,6 +288,7 @@ public static class DataServiceCollectionExtensions
         services.AddSingleton<IPlanStore, PlanStore>();
         services.AddSingleton<INotificationStore, NotificationStore>();
         services.AddSingleton<IRemoteAccountStore, RemoteAccountStore>();
+        services.AddSingleton<IAuditStore, AuditStore>();
         return services;
     }
 
