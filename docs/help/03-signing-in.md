@@ -6,7 +6,7 @@ There are two ways to sign in, depending on where you open Stowaway.
 
 At `https://localhost:8484` you're signed in with your Windows account automatically: there's no separate password.
 
-- **Local administrators** have access.
+- **Local administrators** have access, including accounts that are administrators through a domain group.
 - **Standard users** need to be in a local group called `Stowaway Operators`. An administrator creates it once, from an elevated PowerShell:
 
   ```powershell

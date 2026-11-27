@@ -1,6 +1,6 @@
 # Stowaway — Design
 
-Status: **v0.3: M0–M5 implemented; M6 in progress.** Decisions are in §10. Sections 3–8 describe the system as built; the per-milestone notes in §9 have the details. · Updated: 2026-11-27
+Status: **v0.11: M0–M7 implemented** (Linux and Windows-container engines), plus built-in database and destination providers (decision 9). Decisions are in §10. Sections 3–8 describe the system as built; the per-milestone notes in §9 have the details. · Updated: 2026-11-28
 
 ## 1. Goal
 
@@ -40,7 +40,7 @@ The dev machine (Docker Desktop 29.5, Linux engine, `npipe:////./pipe/dockerDesk
 │                      └─ Secrets     (DPAPI, service-account scope)     │
 │                              │ named pipe (Docker Engine API)          │
 │                              ▼                                         │
-│                      Docker Engine (Desktop/WSL2 or dockerd)           │
+│                      Docker Engine (Desktop/WSL2, dockerd, or Windows) │
 │                              │                                         │
 │              ┌───────────────┴────────────────┐                        │
 │              ▼                                ▼                        │
@@ -53,6 +53,8 @@ The dev machine (Docker Desktop 29.5, Linux engine, `npipe:////./pipe/dockerDesk
    restic repository: local disk · SMB/UNC · S3-compatible · B2 · Azure · SFTP · Dropbox (rclone)
 ```
 
+On a **Windows-container engine** there is no Linux runner: the service runs the bundled `restic.exe` (and `rclone.exe`) on the host, reading volume folders through a VSS snapshot (M7a), and SQL Server databases are backed up inside their containers (M7b).
+
 ### 3.1 Why one service process
 A single self-contained process hosts the API, UI, scheduler and engine, so there's one thing to install, update, log and secure. The UI is a static SPA embedded in the service binary. The **tray app** is the same executable started with `--tray` at each user's logon: it only shows status and opens the browser.
 
@@ -63,10 +65,10 @@ A single self-contained process hosts the API, UI, scheduler and engine, so ther
   - gives file-level snapshots, so the UI can browse and restore single files
   - needs no host access to `/var/lib/docker` (which doesn't exist on Windows with Desktop)
 - Local Windows destinations (e.g. `D:\Backups`, `\\nas\docker`) are bind-mounted into the runner. Cloud backends are reached directly.
-- **Fallback:** for a Windows-containers engine, run host-side `restic.exe` fed by the Docker archive API (phase 2).
+- **Windows-container engines** (M7a): restic runs on the host (`restic.exe`, bundled and pinned) and reads the volume folders directly, through a VSS snapshot while containers run.
 
 ### 3.3 Consistency strategies (per app, chosen automatically and overridable)
-1. **App-aware dump** *(default for detected DBs)*: Postgres (`pg_dumpall`), MySQL/MariaDB (`mysqldump`/`mariadb-dump --single-transaction`), MongoDB (`mongodump --archive`), Redis (`redis-cli --rdb -`). We run `docker exec` in the DB container, so the dump tool matches the server version, and stream its stdout into a temporary volume that is backed up with the data. Credentials come from the container env (`POSTGRES_USER`, `MYSQL_ROOT_PASSWORD`, …). *Not built yet:* SQLite `.backup` and a per-app credential override form.
+1. **App-aware dump** *(default for detected DBs)*: Postgres (`pg_dumpall`), MySQL/MariaDB (`mysqldump`/`mariadb-dump --single-transaction`), MongoDB (`mongodump --archive`), Redis (`redis-cli --rdb -`); on Windows-container engines, SQL Server (`BACKUP DATABASE … COPY_ONLY`, M7b). We run `docker exec` in the DB container, so the dump tool matches the server version, and stream its output into the backup. Credentials come from the container env (`POSTGRES_USER`, `MYSQL_ROOT_PASSWORD`, …, including `*_FILE` secrets) or from a login saved per database container. Each family of databases is a provider (decision 9). *Not built yet:* SQLite `.backup`.
 2. **Stop → copy → start**: respects compose `depends_on` order and restores the previous state. Shows the expected downtime.
 3. **Live copy**: for config-style volumes; fastest, no downtime.
 4. **Hooks** *(not built yet)*: pre/post commands (exec in container or on host) for anything custom.
@@ -101,7 +103,7 @@ This makes **"restore the whole stack on a fresh machine"** possible, not just "
 - **Flow:** pick a point in time (timeline), preview what will change (sources, containers that will be stopped or recreated, deleted extra files), type the app's name for in-place restores, then run with live progress. *Not built yet:* snapshot comparison and a post-restore health check.
 
 ### 3.8 Notifications
-Email (SMTP), webhook (generic JSON or Slack-compatible, which also covers Discord and Mattermost) and ntfy. Rules: on failure / on recovery / on every success. *Planned for M6:* the Windows Event Log. *Not built yet:* a daily digest.
+Email (SMTP), webhook (generic JSON, or Slack-compatible, which also covers Discord and Mattermost; Teams through a workflow) and ntfy. Rules: on failure / on recovery / on every success; security events (new-address sign-ins, lockouts, recovery codes) go to channels that report failures. Warnings and errors also go to the Windows Event Log. *Not built yet:* a daily digest.
 
 ## 4. Technology stack
 
@@ -112,10 +114,10 @@ Email (SMTP), webhook (generic JSON or Slack-compatible, which also covers Disco
 | Scheduler | **Cronos** (cron parsing) + own scheduler over the plans table | Cron, catch-up of missed runs, no second persistence model (see §10 #7) |
 | Store | **SQLite** + EF Core | Zero-admin, in `%ProgramData%\Stowaway` |
 | Live updates | **SignalR** | Progress, logs, inventory changes |
-| Logging | Serilog → rolling file (Event Log planned for M6) | Supportability |
-| Backup | **restic** (pinned) + **rclone** in a locally built runner image | See §3.2 |
+| Logging | Serilog → rolling file (14 days), plus the Windows Event Log for warnings and errors | Supportability |
+| Backup | **restic** (pinned) + **rclone**: in a locally built runner image, or bundled `.exe`s on the host for Windows-container engines | See §3.2 |
 | UI | **React 19 + TypeScript + Vite**, **Tailwind v4**, own small component set, TanStack Query/Router, Motion, SignalR client | A modern, accessible, fast UI with a component system we own |
-| Installer | **WiX v5 MSI** (service install, wizard UI, Start-menu link; the service creates and trusts its own certificate) + winget manifest later | Silent install / GPO friendly, clean upgrades |
+| Installer | **WiX v5 MSI** (service install, wizard UI, Start-menu link, tray autostart; the service creates and trusts its own certificate) + winget manifests with each release | Silent install / GPO friendly, clean upgrades |
 | CI/CD | GitHub Actions (windows-latest): build, test, MSI artifact; GitHub release with the MSI on `vX.Y.Z` tags | — |
 | Tests | xUnit v3, including real-engine integration tests (skipped on engines without Linux containers); Playwright drives the UI during development | Backup software must be tested against real engines |
 
@@ -123,14 +125,15 @@ Email (SMTP), webhook (generic JSON or Slack-compatible, which also covers Disco
 
 Dark-first with a light theme, glass surfaces over a subtle gradient, one accent colour, generous spacing, motion only for state changes. Every screen answers **"am I safe?"** at a glance.
 
-- **Dashboard:** a large *Protection Score* ring (% of discovered data covered by a healthy plan); "Needs attention" cards (unprotected volume appeared, failing plan, unverified restore); a 14-day run heat-strip; storage growth sparkline per destination; next scheduled runs.
-- **Inventory:** apps as cards (or a stack graph: app → containers → volumes) with status chips and sizes. Bulk select → "Protect with plan…". Orphans and excluded binds are clearly separated.
-- **Plans:** a 4-step wizard (What → How → Where → When/Keep) with live summaries: "Backs up 6 apps · ~4.2 GB · ~3 min downtime for blog-db · daily 02:00 · keeps 7d/4w/12m".
-- **Snapshots / Time Machine:** pick an app, scrub a timeline, browse files, compare two points (added/changed/removed), then restore from the context menu.
-- **Restore wizard:** what → point in time → target → impact preview → run. Destructive steps need a typed confirmation.
-- **Activity:** live job view with step timeline and streaming log; history with filters.
-- **Destinations & Settings:** connection test buttons, repository stats, secrets never shown again after saving.
-- Global **⌘K / Ctrl+K command palette** ("backup shop now", "restore blog-db…"), toasts, keyboard-first, WCAG AA.
+- **Dashboard:** a *Protection Score* ring (share of discovered data covered by a healthy plan), the engine's status, how much data was found, "Needs attention" cards (unprotected data, failing or stale items), and a getting-started checklist on a fresh install.
+- **Inventory:** apps as cards with status chips and sizes, their containers and mounts, database logins, "Back up now", and unowned volumes and excluded mounts shown separately with the reason.
+- **Plans:** a 4-step wizard (What → How → Where → When & keep) with a live summary and the next runs.
+- **Snapshots:** pick an app, then a point in time; browse files; restore, recreate the app, or verify restore (drill).
+- **Restore dialog:** scope → target → impact preview → run. In-place restores need the app's name typed.
+- **Activity:** live runs with progress and the log; history of backups, restores, maintenance and drills.
+- **Destinations & Settings:** forms drawn from the server's destination types, connection checks, repository stats, recovery keys (local only), notifications, remote access and the audit log. Secrets are never shown again after saving.
+- **Help:** the user guide (`docs/help/`) built into the UI.
+- *Ideas, not built:* a Ctrl+K command palette, a run heat-strip and storage sparklines on the dashboard, bulk "Protect with plan…" in the inventory, and comparing two snapshots.
 
 ## 6. Security
 
@@ -155,17 +158,20 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 
 ```
 /src
-  Stowaway.Service/        ASP.NET Core host, API, SignalR, notifications, Windows Service, tray app (--tray)
-  Stowaway.Core/           domain: inventory, plans, backups, restore, restic output parsing
-  Stowaway.Docker/         Docker access, discovery, runner (restic) orchestration, dumps, restore, drills
+  Stowaway.Service/        ASP.NET Core host, API, SignalR, notifications, access control, Windows Service, tray app (--tray)
+  Stowaway.Core/           domain: inventory, plans, backups, restore, restic output; Databases/ (shell database
+                           definitions), Destinations/ (descriptor types)
+  Stowaway.Docker/         Docker access, discovery, restic runners (container and host), restore, drills;
+                           Databases/ and Destinations/ (the providers, decision 9)
   Stowaway.Data/           EF Core / SQLite, migrations
 /web                           React SPA (Vite) → built into the Service's wwwroot
 /installer                     WiX v5 project
 /tests                         xUnit v3: unit + real-engine integration
-/tools                         brand asset generator
+/tools                         bundled restic/rclone download, notices and brand asset generators, winget manifests
 /assets/brand                  artwork masters (supplied by the owner)
-/docs                          design, imagery requests
-/.github/workflows             ci.yml, release.yml
+/docs                          this design, the user guide (docs/help/, also built into the UI)
+/.github                       CI and release workflows, issue forms, CONTRIBUTING.md, SECURITY.md
+/.config                       dotnet local tools (EF Core CLI)
 ```
 
 ## 9. Milestones
@@ -236,7 +242,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
     - **Results:** a failed drill fails the run and alerts. The snapshot shows "Verified restorable …".
 - **M6a (done):** sign-in and hardening.
   - **Windows sign-in:** Negotiate (Kerberos/NTLM) on every API and hub request; Edge and Chrome sign in silently because localhost is in the Local intranet zone. Allowed: local `Administrators` and members of an optional local group `Stowaway Operators`.
-    - Loopback NTLM tokens can be filtered so the Administrators SID is missing entirely, so membership falls back to a machine-account lookup (`System.DirectoryServices.AccountManagement`, recursive, cached 5 minutes).
+    - Loopback NTLM tokens can be filtered so the Administrators SID is missing entirely, so membership falls back to a lookup (cached 5 minutes): the group's member SIDs are read with `NetLocalGroupGetMembers` (no name lookups) and matched against the user's SID and the group SIDs in the token. Name-resolving enumeration failed for everyone when one member couldn't be resolved, such as Domain Admins on a domain PC off the network (issue #4, phase 10). A refusal is logged with the reason.
     - Anonymous: `/api/health` and the static UI shell (it holds no data). The UI shows "Sign-in required" or "No access" screens.
     - `Stowaway:Auth:Mode` = `Windows` (default) or `None` (development and tests only).
   - **Stale locks:** see §7.
@@ -254,7 +260,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
     - **Local-only** (policy `LocalOnly`): `/api/remote/**`, `/api/system/restart`, and the recovery-key reveal. Enabling requires at least one confirmed account; the last confirmed account can't be deleted while it's on.
     - **Restart from the UI:** a detached `cmd /c "net stop … & net start …"` (a service can't start itself once stopped).
   - **Code signing:** `build.ps1 -SignThumbprint` (certificate in a store, including hardware tokens) or `STOWAWAY_SIGN_PFX`/`_PASSWORD` (release workflow secrets). `Set-AuthenticodeSignature` (no Windows SDK needed) signs the service executable before it goes into the MSI, then the MSI; RFC 3161 timestamp from DigiCert by default. Cloud HSM signing (Azure Trusted Signing, KeyLocker) would need its own step.
-  - **winget:** `tools/New-WingetManifest.ps1` writes the version/installer/locale manifests (schema 1.9.0, MSI ProductCode, SHA-256); releases attach them with a `.sha256` file. Submission to winget-pkgs waits for public releases and the final product name.
+  - **winget:** `tools/New-WingetManifest.ps1` writes the version/installer/locale manifests (schema 1.9.0, MSI ProductCode, SHA-256); releases attach them with a `.sha256` file. Not submitted to winget-pkgs yet.
   - **User guide:** `docs/USER-GUIDE.md`.
 - **M6c (done):** remote access over the internet, through a reverse proxy (the owner's setup: Cloudflare → nginx on another LAN host → this host).
   - **Trusted proxies** (`TrustedProxies` in `remote-access.json`): when set, only those addresses may connect from other computers (firewall `remoteip` and the origin guard). The client address for rate limits, lockouts, alerts and the audit log is the last `X-Forwarded-For` entry, but only from a trusted proxy. **Local vs remote is always the TCP peer**, never a header: a forged `X-Forwarded-For: 127.0.0.1` can't turn a remote request into a local (Windows sign-in, `LocalOnly`) one.
@@ -270,7 +276,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Stowaway's own resources are invisible:** containers and volumes labelled `stowaway.runner`, the runner image (`stowaway.runner.image`) and the restic cache volume are filtered out of the inventory (`InventoryBuilder.WithoutOwnResources`).
   - **Database logins:** `DatabaseCredentials` table keyed by container name; `/api/databases/credentials` (list, put, delete, test). Dump scripts take `STOWAWAY_DB_USER/PASSWORD/NAME` first, then the image variables and `*_FILE` secrets.
   - **Dump robustness:** commands report their own exit code on stderr (Docker may delete a finished exec before it can be inspected), and the sink is considered done once its file holds every byte (the attach connection doesn't always pass on end-of-input).
-  - **Tray:** started by the installer's Finish button; closes on Restart Manager requests during upgrades and registers for restart.
+  - **Tray:** started by the installer's Finish button; closes on Restart Manager requests during upgrades and registers for restart. The executable is a Windows (GUI) app so the tray opens no console window; run from a terminal, the service attaches to it for its log output.
 - **M7a (done): Windows-container engines.** Facts from a real host are in issue #4.
   - **Detection:** `EngineStatus.OsType == windows` → `AppInfo.Platform = windows` (stored in every snapshot's `app.json`).
   - **Where restic runs:** on the host (`tools\restic.exe`, shipped and pinned with SHA-256 by `tools/Get-BundledTools.ps1`; rclone too). `ResticRunner.OnHost` routes every call to `HostResticRunner`, which translates the runner-container paths (`/repo`, `/restore`, `/run/stowaway/…`, `/data/_stowaway/…`) to host paths (`HostPathMap`). Secrets go to a per-run folder in the protected data directory; `RESTIC_CACHE_DIR` is in the data directory too.
@@ -289,18 +295,20 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Not covered by CI:** no SQL Server Windows image runs on the hosted runners; the end-to-end check runs on a real Business Central host (issue #4, phase 9: `SqlServerWindowsTests` with `STOWAWAY_TEST_SQL_IMAGE`).
   - **Archive streams:** Docker.DotNet's chunked response stream throws on a zero-byte read, which `TarReader` makes at the end of every entry; archives are read through `ZeroReadSafeStream`. Found on the real host in phase 9.
 
+- **After M7 (2026-11-28):** destinations can be edited (rename, credentials, Dropbox reconnect, and following a moved repository, accepted only when the repository id matches); a destination a plan uses can't be removed; Dropbox folders always live under `/Stowaway`, a new Dropbox destination can reuse another's sign-in, and the sign-in works from another computer (the callback address is pasted back and forwarded to rclone's local listener, `state`/`code`/`error` only). The pre-rename cache volume `dockerbackup-restic-cache` is hidden and removed at startup.
+
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 
 ## 10. Decisions (2026-11-27)
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Repo name | `niogtres/stowaway` (private). Created as `docker_backuup`, then `docker_backup`, renamed with the product (decision 8). |
+| 1 | Repo name | `niogtres/stowaway`, public since the MIT release (decision 2). Created as `docker_backuup`, then `docker_backup`, renamed with the product (decision 8). |
 | 2 | License | Closed source at first. *2026-11-27:* **MIT**, copyright (c) 2026 Thomas Kraft, published as open source. Third-party licenses in `THIRD-PARTY-NOTICES.txt` (generated, shipped with the program, shown on the About page). |
 | 3 | Backup engine | **restic** (BSD-2-Clause, bundled). The service already owns scheduling, policy and UI, and restic is a minimal, scriptable engine with JSON output and a stable repo format. Kopia would duplicate our UI/server/policy layers. *Correction:* restic calls are concentrated in `ResticRepository`, but a formal `IBackupEngine` interface was not introduced; add one if a second engine is ever needed. |
 | 4 | Container platforms | v1: Linux containers only. *M7 (2026-11-27):* Windows-container engines too, with host-side restic, based on experiments on a real Windows-container host (issue #4). |
 | 5 | Remote access | Localhost only for the MVP. *M6b:* opt-in remote access, approved with the M6b scope. Off by default, switched on only from this computer, and only with Windows sign-in on. Remote users need a Stowaway account with password and authenticator. |
 | 6 | Multi-host | Planned for later; v1 manages one host. *Correction:* the data model does **not** carry an engine id yet, so multi-host will need a migration (adding an engine id to destinations, plans and runs). |
-| 8 | Product name | **Stowaway**, tagline "Sensible Docker backup management" (2026-11-27). Renamed everywhere before the first real install: product, service (`Stowaway`), data folder (`%ProgramData%\Stowaway`), namespaces and projects, runner image, restic tags. Repository renamed to `niogtres/stowaway`. |
-| 9 | Extension points | *2026-11-28:* database support (and later destinations) is structured as **built-in providers** behind interfaces, registered with dependency injection, not as plugins loaded at run time. The service runs as SYSTEM and holds every backup key and cloud token, so third-party code inside it would be a security hole; new providers arrive as pull requests with tests. Databases: `IDatabaseProvider` (login check, dump, drill check) with a Linux shell provider driven by one `ShellDatabase` definition per database, and the SQL Server provider for Windows containers; the inventory's `dumpSupported` comes from the same registry, so the web client no longer keeps its own list. Destinations: `IDestinationProvider` per type (descriptor with fields, validation, preparation such as SSH host keys, browser sign-in, and how restic reaches the repository); the web client renders the add and edit forms from `GET /api/destination-types`; stored destinations are unchanged (older types keep their own columns). Next: a generic rclone destination. If outside extensions are ever needed, they run as separate programs, never in-process. |
 | 7 | Scheduler | **Cronos + own scheduler** instead of Quartz.NET (decided during M3). Plans already live in our SQLite database. Quartz's persistent store would add a second persistence model with about a dozen tables, and the behaviour we need is small: compute the next run, catch up once, wait for the engine. |
+| 8 | Product name | **Stowaway**, tagline "Sensible Docker backup management" (2026-11-27). Renamed everywhere before the first real install: product, service (`Stowaway`), data folder (`%ProgramData%\Stowaway`), namespaces and projects, runner image, restic tags. Repository renamed to `niogtres/stowaway`. |
+| 9 | Extension points | *2026-11-28:* database and destination support is structured as **built-in providers** behind interfaces, registered with dependency injection, not as plugins loaded at run time. The service runs as SYSTEM and holds every backup key and cloud token, so third-party code inside it would be a security hole; new providers arrive as pull requests with tests. Databases: `IDatabaseProvider` (login check, dump, drill check) with a Linux shell provider driven by one `ShellDatabase` definition per database, and the SQL Server provider for Windows containers; the inventory's `dumpSupported` comes from the same registry, so the web client no longer keeps its own list. Destinations: `IDestinationProvider` per type (descriptor with fields, validation, preparation such as SSH host keys, browser sign-in, and how restic reaches the repository); the web client renders the add and edit forms from `GET /api/destination-types`; stored destinations are unchanged (older types keep their own columns). Next: a generic rclone destination. If outside extensions are ever needed, they run as separate programs, never in-process. |

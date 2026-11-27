@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Thanks for reporting! This issue will be **public**: leave out passwords, keys, tokens, host names, IP addresses and anything else you don't want on the internet.
-        Security problems don't belong here: see [SECURITY.md](https://github.com/niogtres/stowaway/blob/main/SECURITY.md).
+        Security problems don't belong here: see [SECURITY.md](https://github.com/niogtres/stowaway/security/policy).
   - type: textarea
     id: what
     attributes:

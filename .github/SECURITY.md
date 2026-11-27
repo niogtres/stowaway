@@ -17,4 +17,4 @@ Only the latest release receives security fixes.
 
 In particular: sign-in and remote access (Windows sign-in, accounts, authenticator codes, sessions, lockouts), host and origin checks, the handling of repository passwords and cloud credentials, and anything that lets one user reach data or actions they shouldn't.
 
-How Stowaway is secured is described in [docs/DESIGN.md](docs/DESIGN.md) (§6, and the M6 notes).
+How Stowaway is secured is described in [docs/DESIGN.md](../docs/DESIGN.md) (§6, and the M6 notes).
