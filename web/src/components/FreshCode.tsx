@@ -13,6 +13,7 @@ export function FreshCodePrompt() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const pending = useRef<((ok: boolean) => void) | null>(null)
+  const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setFreshCodePrompt(
@@ -44,6 +45,7 @@ export function FreshCodePrompt() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That code didn’t work.')
       setCode('')
+      input.current?.focus() // ready for the next code
     } finally {
       setBusy(false)
     }
@@ -59,6 +61,7 @@ export function FreshCodePrompt() {
       <form onSubmit={submit} className="space-y-4">
         <Field label="Code from your authenticator app">
           <TextInput
+            ref={input}
             required
             autoFocus
             inputMode="numeric"

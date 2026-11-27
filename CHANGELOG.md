@@ -13,6 +13,7 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 - **Dropbox:** backups always go under `/Stowaway`. The folder field is now an optional subfolder of it. Existing destinations keep their folder until you change their location.
 
 ### Fixed
+- **Authenticator code boxes** (confirming a change remotely, connecting an authenticator) now put the cursor in the code field, and again after a wrong code. Other dialogs' first field gets the cursor too: opening a dialog used to move it to the close button.
 - **Removing a destination** that a backup plan uses showed "An error occurred while processing your request". It now names the plans to change first.
 
 ## [0.10.1] - 2026-11-27
