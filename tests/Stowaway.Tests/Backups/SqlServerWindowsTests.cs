@@ -16,6 +16,7 @@ namespace Stowaway.Tests.Backups;
 /// SQL Server in a Windows container, end to end: backup while it runs, file copy while it's stopped, and a drill of
 /// each. Opt-in, because it needs a large image with SQL Server inside (e.g. Business Central): set
 /// <c>STOWAWAY_TEST_SQL_IMAGE</c> to an image that is already on the machine. Run elevated (it reads volume folders).
+/// The run's log is written to <c>%TEMP%\stowaway-wintest-sql.log</c>.
 /// Only throwaway containers and volumes named stowaway-wintest-*; the image's own startup never runs.
 /// </summary>
 public sealed class SqlServerWindowsTests
@@ -90,7 +91,7 @@ public sealed class SqlServerWindowsTests
         }
         finally
         {
-            TestContext.Current.SendDiagnosticMessage(string.Join('\n', log));
+            File.WriteAllLines(Path.Combine(Path.GetTempPath(), "stowaway-wintest-sql.log"), log); // for the report
             if (containerId is not null)
             {
                 await Ignore(() => client.Containers.RemoveContainerAsync(containerId, new ContainerRemoveParameters { Force = true }, CancellationToken.None));
