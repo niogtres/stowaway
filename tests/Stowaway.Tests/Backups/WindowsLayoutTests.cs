@@ -87,4 +87,13 @@ public sealed class WindowsLayoutTests
     [InlineData(@"C:\Program Files\App")]
     public void Windows_system_folders_are_plumbing(string source) =>
         Assert.StartsWith("System folder", HostPaths.BindExclusionReason(source, @"c:\x", projectDir: null));
+
+    [Fact]
+    public void Snapshot_paths_from_windows_restic_use_the_tree_form()
+    {
+        const string json = """{"id":"abc","time":"2026-11-27T10:00:00Z","paths":["C:\\ProgramData\\docker\\volumes\\v\\_data","C:\\data\\stowaway-stage","/data"]}""";
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<Stowaway.Core.Restic.ResticSnapshot>(json)!;
+        Assert.Equal(["/C/ProgramData/docker/volumes/v/_data", "/C/data/stowaway-stage", "/data"], snapshot.Paths!);
+        Assert.Equal("/C/data/stowaway-stage/_stowaway", BackupPlanner.MetadataDirOf(snapshot.Paths));
+    }
 }
