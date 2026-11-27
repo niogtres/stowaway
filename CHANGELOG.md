@@ -4,6 +4,9 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+- **Dropbox from another computer:** the Add destination window now shows the three steps (allow in Dropbox, copy the address of the page that can't load, paste it and choose Finish) before you start, with the current step highlighted.
+
 ## [0.11.0] - 2026-11-27
 
 ### Added
