@@ -3,6 +3,9 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <!-- The same executable also runs the notification-area app ("tray" mode). -->
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- No console window: the tray starts at sign-in and after setup. Started from a terminal (dotnet run), the
+         service attaches to that terminal instead (ParentConsole). -->
+    <OutputType>WinExe</OutputType>
   </PropertyGroup>
   <PropertyGroup>
     <AssemblyName>Stowaway.Service</AssemblyName>
