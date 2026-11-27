@@ -4,7 +4,7 @@ Thanks for helping make Docker backups on Windows less painful. Bug reports, ide
 
 ## Reporting a bug
 
-[Open an issue](https://github.com/niogtres/stowaway/issues/new) with:
+[Open an issue](https://github.com/niogtres/stowaway/issues/new/choose) (the *Bug report* form asks for these):
 
 - what you did, what you expected, and what happened instead;
 - the Stowaway version (sidebar, or *About*), Windows version, and Docker Desktop or engine version;

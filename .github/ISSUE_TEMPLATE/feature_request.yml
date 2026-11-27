@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest something Stowaway should do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first, then the solution you have in mind. Before writing code for anything large, let's agree on the approach here; [docs/DESIGN.md](https://github.com/niogtres/stowaway/blob/main/docs/DESIGN.md) §10 lists the decisions made so far.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would help
+      description: How you'd like it to work.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use now, or other ways it could be solved.
