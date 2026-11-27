@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/niogtres/stowaway/security/advisories/new
+    about: Please report security problems privately, not in a public issue.
+  - name: User guide
+    url: https://github.com/niogtres/stowaway/tree/main/docs/help
+    about: How to set up plans, destinations, restores and remote access. Also built into the web client under Help.
