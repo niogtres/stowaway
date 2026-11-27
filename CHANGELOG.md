@@ -4,6 +4,11 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+
+- The sidebar no longer shows the signed-in user name (it can be an email address).
+- Help: *Signing in* now also covers signing in from another computer with a Stowaway account.
+
 ## [0.8.0] - 2026-11-27
 
 The first public release.
