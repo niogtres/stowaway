@@ -404,6 +404,10 @@ export const queryKeys = {
   snapshots: ['snapshots'] as const,
 }
 
+export function useMe() {
+  return useQuery({ queryKey: ['me'], queryFn: () => getJson<{ name: string; signInRequired: boolean }>('/api/me'), staleTime: Infinity, retry: false })
+}
+
 export function useSystemInfo() {
   return useQuery({
     queryKey: queryKeys.system,

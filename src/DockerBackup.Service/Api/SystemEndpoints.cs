@@ -27,7 +27,8 @@ public static class SystemEndpoints
     public static RouteGroupBuilder MapSystemEndpoints(this RouteGroupBuilder api)
     {
         api.MapGet("/health", () => new HealthResponse("ok"))
-            .WithName("Health");
+            .WithName("Health")
+            .AllowAnonymous();
 
         api.MapGet("/system", (IEngineStatusProvider engine) => new SystemInfoResponse(
                 Product: "DockerBackup",

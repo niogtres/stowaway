@@ -74,6 +74,27 @@ public static class HttpsCertificate
         return request.CreateSelfSigned(now.AddDays(-1), now.Add(Lifetime));
     }
 
+    /// <summary>Removes every DockerBackup certificate from LocalMachine\Root (uninstall). Returns how many.</summary>
+    public static int RemoveTrusted()
+    {
+        try
+        {
+            using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadWrite);
+            var ours = store.Certificates.Find(X509FindType.FindBySubjectDistinguishedName, Subject, false);
+            foreach (var certificate in ours)
+            {
+                store.Remove(certificate);
+            }
+
+            return ours.Count;
+        }
+        catch (Exception ex) when (ex is CryptographicException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
     /// <summary>
     /// Adds the certificate to LocalMachine\Root so browsers trust the UI, and removes older DockerBackup
     /// certificates. Requires administrative rights: only attempted when running as the service.

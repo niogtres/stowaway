@@ -46,6 +46,7 @@ public sealed record RunnerResult(long ExitCode, IReadOnlyList<string> StdOut, I
 public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOptions> options, ILogger<ResticRunner> logger)
 {
     public const string RunnerLabel = "dockerbackup.runner";
+    public const string RunnerHostPrefix = "dockerbackup-";
     public const string EnvFile = CloudRepositories.SecretsDir + "/env";
 
     // Sources the env file (secrets) and hands over to restic with the remaining arguments.
@@ -88,6 +89,8 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
         var created = await client.Containers.CreateContainerAsync(new CreateContainerParameters
         {
             Image = Image,
+            // Recognisable hostname: restic records it in repository locks, which lets stale locks of ours be told apart.
+            Hostname = RunnerHostPrefix + Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)),
             Entrypoint = ["sh"],
             Cmd = request.Script is { } script ? ["-c", script] : ["-c", ResticWrapper, "restic", .. request.Args],
             Env = ["RESTIC_CACHE_DIR=/cache"],

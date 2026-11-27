@@ -46,7 +46,14 @@
     <Feature Id="Main" Title="DockerBackup" AllowAbsent="no">
       <ComponentGroupRef Id="ServiceComponents" />
       <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="TrayAutostart" />
     </Feature>
+
+    <!-- On uninstall (not upgrade): remove the certificate the service trusted and its event source. -->
+    <CustomAction Id="UninstallCleanup" FileRef="ServiceExe" ExeCommand="--uninstall-cleanup" Execute="deferred" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="UninstallCleanup" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
   </Package>
 
   <Fragment>
@@ -79,6 +86,14 @@
         <Exclude Files="$(PublishDir)*.pdb" />
       </Files>
     </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!-- The tray app starts at every user's logon. -->
+    <Component Id="TrayAutostart" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="DockerBackupTray"
+                     Type="string" Value="&quot;[INSTALLFOLDER]DockerBackup.Service.exe&quot; --tray" KeyPath="yes" />
+    </Component>
   </Fragment>
 
   <Fragment>

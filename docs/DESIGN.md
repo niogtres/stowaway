@@ -1,6 +1,6 @@
-# DockerBackup — Design Proposal
+# DockerBackup — Design
 
-Status: **v0.2 — accepted, decisions recorded in §10** · Date: 2026-11-27
+Status: **v0.3: M0–M5 implemented; M6 in progress.** Decisions are in §10. Sections 3–8 describe the system as built; the per-milestone notes in §9 have the details. · Updated: 2026-11-27
 
 ## 1. Goal
 
@@ -37,7 +37,7 @@ The dev machine (Docker Desktop 29.5, Linux engine, `npipe:////./pipe/dockerDesk
 │                      ├─ Scheduler   (Cronos, plans in SQLite)          │
 │                      ├─ Job engine  (plans → steps → runner)           │
 │                      ├─ Store       (SQLite: config, history, catalog) │
-│                      └─ Secrets     (DPAPI, LocalMachine scope)        │
+│                      └─ Secrets     (DPAPI, service-account scope)     │
 │                              │ named pipe (Docker Engine API)          │
 │                              ▼                                         │
 │                      Docker Engine (Desktop/WSL2 or dockerd)           │
@@ -45,20 +45,20 @@ The dev machine (Docker Desktop 29.5, Linux engine, `npipe:////./pipe/dockerDesk
 │              ┌───────────────┴────────────────┐                        │
 │              ▼                                ▼                        │
 │   ephemeral "runner" container      docker exec into DB container      │
-│   (restic + tar + zstd)             (pg_dump / mysqldump / …) ──stdout─┤
-│   mounts target volumes :ro         piped into runner's restic --stdin │
+│   (restic + rclone, local image)    (pg_dumpall / mysqldump / …)       │
+│   mounts target volumes :ro         stdout → sink runner → dump volume │
 │              │                                                         │
 └──────────────┼─────────────────────────────────────────────────────────┘
                ▼
-   restic repository: local disk · SMB/UNC · S3/MinIO · B2 · Azure · SFTP
+   restic repository: local disk · SMB/UNC · S3-compatible · B2 · Azure · SFTP · Dropbox (rclone)
 ```
 
 ### 3.1 Why one service process
-A single self-contained process hosts the API, UI, scheduler and engine, so there's one thing to install, update, log and secure. The UI is a static SPA embedded in the service binary. A small optional **tray app** (phase 2) only shows status and opens the browser.
+A single self-contained process hosts the API, UI, scheduler and engine, so there's one thing to install, update, log and secure. The UI is a static SPA embedded in the service binary. The **tray app** is the same executable started with `--tray` at each user's logon: it only shows status and opens the browser.
 
 ### 3.2 Backup engine: restic, run inside a runner container
 - **restic** gives deduplication, encryption (AES-256), compression, many backends (native plus rclone), `forget/prune` retention, `check` integrity, and file-level restore. Its repository format is mature and well documented, so users are never locked in to us.
-- Backups run in an **ephemeral runner container** (`ghcr.io/niogtres/dockerbackup-runner`, Alpine plus restic, a few MB). We mount the target volumes read-only at `/data/<container>/<mountpath>`. This approach:
+- Backups run in an **ephemeral runner container** (`dockerbackup/runner:<hash>`, built locally on first use from the pinned `restic/restic` image plus rclone and socat; see M5a). We mount the target volumes read-only at `/data/<container>/<mountpath>`. This approach:
   - works the same for named, anonymous and bind mounts, and on Docker Desktop and native dockerd
   - gives file-level snapshots, so the UI can browse and restore single files
   - needs no host access to `/var/lib/docker` (which doesn't exist on Windows with Desktop)
@@ -66,58 +66,58 @@ A single self-contained process hosts the API, UI, scheduler and engine, so ther
 - **Fallback:** for a Windows-containers engine, run host-side `restic.exe` fed by the Docker archive API (phase 2).
 
 ### 3.3 Consistency strategies (per app, chosen automatically and overridable)
-1. **App-aware dump** *(default for detected DBs)*: Postgres (`pg_dumpall`), MySQL/MariaDB (`mysqldump`/`mariadb-dump --single-transaction`), MongoDB (`mongodump --archive`), Redis (`BGSAVE` then copy), SQLite files (`.backup`). We run `docker exec` in the DB container, so the dump tool matches the server version, and stream its stdout into `restic backup --stdin`. Credentials come from the container env (`POSTGRES_USER`, `MYSQL_ROOT_PASSWORD`, …) or a user override.
+1. **App-aware dump** *(default for detected DBs)*: Postgres (`pg_dumpall`), MySQL/MariaDB (`mysqldump`/`mariadb-dump --single-transaction`), MongoDB (`mongodump --archive`), Redis (`redis-cli --rdb -`). We run `docker exec` in the DB container, so the dump tool matches the server version, and stream its stdout into a temporary volume that is backed up with the data. Credentials come from the container env (`POSTGRES_USER`, `MYSQL_ROOT_PASSWORD`, …). *Not built yet:* SQLite `.backup` and a per-app credential override form.
 2. **Stop → copy → start**: respects compose `depends_on` order and restores the previous state. Shows the expected downtime.
 3. **Live copy**: for config-style volumes; fastest, no downtime.
-4. **Hooks**: pre/post commands (exec in container or on host) for anything custom.
+4. **Hooks** *(not built yet)*: pre/post commands (exec in container or on host) for anything custom.
 
 ### 3.4 What a "backup" contains
-For each app (compose project or standalone container), one restic snapshot tagged `app=<name>,plan=<id>,run=<id>` holding:
-- `/data/...` volume and bind contents (per policy)
-- `/dumps/...` DB dumps
-- `/meta/` `docker inspect` JSON, network definitions, the compose file(s) and `.env` (found from `com.docker.compose.project.config_files` / `working_dir` labels), image digests
-- `/images/*.tar` (optional) `docker save` of locally built images
+For each app (compose project or standalone container), one restic snapshot tagged `dockerbackup`, `app=<id>`, `run=<id>` (and `plan=<id>` for scheduled runs) holding:
+- `/data/<container>/<mount path>`: volume and bind contents (per policy)
+- `/data/_dumps/`: database dumps
+- `/data/_dockerbackup/`: `app.json`, `run.json`, `docker inspect` JSON per container, the compose file(s) and `.env` (found from the `com.docker.compose.project.config_files` / `working_dir` labels)
+- *Not built yet:* `docker save` of locally built images. Today the recreate tells you to rebuild them from the saved compose files.
 
 This makes **"restore the whole stack on a fresh machine"** possible, not just "put files back".
 
 ### 3.5 Discovery
 - Full scan on start, then live updates from `GET /events`, pushed to the UI over SignalR.
 - Inventory model: **App** (compose project or standalone) → **Containers** → **Mounts** (volume / bind / tmpfs) → **Volumes**, plus **Orphan volumes**.
-- Each item has a **protection status**: Protected · Stale (last success older than the plan interval × 2) · Failing · Unprotected · Excluded.
-- Size estimates come from `docker system df -v` (volumes) and a background `du` in the runner (binds, throttled).
-- Engines: auto-detect pipes (`docker_engine`, `dockerDesktopLinuxEngine`), with optional extra endpoints (TCP+TLS) so one install can manage several hosts later.
+- Each item has a **protection status**: Protected · Pending (new plan, not run yet) · Stale (last success older than 2× the plan's longest gap) · Failing · Unprotected · Stateless (no data).
+- Size estimates come from the engine's `/system/df` (volumes) and a budgeted walk of the Windows filesystem (bind mounts).
+- Engines: auto-detect pipes (`docker_engine`, `dockerDesktopLinuxEngine`) or an explicit endpoint. Managing several hosts is future work (§10 #6).
 
 ### 3.6 Scheduling, retention, verification
-- **Plan** = selection (apps/volumes/tags, including *"all apps matching rule"* so new containers are picked up automatically) + strategy + destination + schedule + retention + notifications.
+- **Plan** = selection (all apps, including future ones, minus exclusions; or selected apps; optionally unowned volumes) + strategy + destination + schedule + retention + weekly restore drills. Notifications are global channels.
 - Schedules: presets (hourly/daily/weekly) or cron, with a plain-language preview and "next 5 runs" shown in the UI. A missed run (e.g. the PC was off) is caught up once at startup, not once per missed occurrence.
-- Retention: GFS (`keep-last`, `-hourly`, `-daily`, `-weekly`, `-monthly`, `-yearly`) applied with `restic forget --prune`, scheduled separately from backups.
+- Retention: GFS (`keep-last`, `-hourly`, `-daily`, `-weekly`, `-monthly`, `-yearly`) applied with `restic forget` after each scheduled backup; space is reclaimed by the weekly `prune`.
 - **Integrity:** weekly `restic check --read-data-subset=5%`.
 - **Restore drills** *(differentiator)*: on a schedule, restore the latest snapshot into a scratch volume, start a throwaway DB container on dumps, run a probe query, then tear it down. The dashboard shows "last verified restorable: 2 days ago".
-- Concurrency: one job per repository at a time, a global parallelism limit, and bandwidth/CPU limits.
+- Concurrency: one job at a time in a single queue (backups, restores, maintenance, drills). *Not built yet:* bandwidth/CPU limits.
 
 ### 3.7 Restore
-- **Targets:** overwrite in place (a safety snapshot is taken first, automatically) · restore into a **new volume** · extract to a **host folder** · **recreate the stack** (compose file, volumes, images, `compose up`).
+- **Targets:** overwrite in place (a safety snapshot is taken first by default) · restore into a **new volume** · extract to a **host folder** · **recreate the app** (data in place, then missing containers rebuilt from their saved definitions; see M5b).
 - **Granularity:** whole app → single volume → single file/folder (via restic `ls`/`restore --include`).
-- **Flow:** pick a point in time (timeline slider), preview what will change (sizes, files, containers that will be stopped), dry-run, run with live progress, then post-restore health check (container healthcheck status).
+- **Flow:** pick a point in time (timeline), preview what will change (sources, containers that will be stopped or recreated, deleted extra files), type the app's name for in-place restores, then run with live progress. *Not built yet:* snapshot comparison and a post-restore health check.
 
 ### 3.8 Notifications
-Email (SMTP), webhook (generic JSON), Teams/Slack/Discord, ntfy, and the Windows Event Log. Rules: on failure / on recovery / daily digest.
+Email (SMTP), webhook (generic JSON or Slack-compatible, which also covers Discord and Mattermost) and ntfy. Rules: on failure / on recovery / on every success. *Planned for M6:* the Windows Event Log. *Not built yet:* a daily digest.
 
 ## 4. Technology stack
 
 | Layer | Choice | Why |
 |---|---|---|
 | Service | **.NET 10 (LTS)** Worker + ASP.NET Core, `UseWindowsService()` | First-class Windows Service support, self-contained single-file publish, no runtime prerequisite, the SDK is already on the dev box |
-| Docker API | **Docker.DotNet** (named pipe), thin wrapper of our own for gaps | Native npipe support, streams, events |
+| Docker API | **Docker.DotNet.Enhanced** (named pipe), thin wrapper of our own for gaps (`/system/df`) | Native npipe support, streams, events |
 | Scheduler | **Cronos** (cron parsing) + own scheduler over the plans table | Cron, catch-up of missed runs, no second persistence model (see §10 #7) |
 | Store | **SQLite** + EF Core | Zero-admin, in `%ProgramData%\DockerBackup` |
 | Live updates | **SignalR** | Progress, logs, inventory changes |
-| Logging | Serilog → rolling file + Event Log | Supportability |
-| Backup | **restic** (pinned version) in runner image; `restic.exe` bundled for fallback | See §3.2 |
-| UI | **React 19 + TypeScript + Vite**, **Tailwind v4 + shadcn/ui (Radix)**, TanStack Query/Router, Framer Motion, Recharts, cmdk | A modern, accessible, fast UI with a component system we own |
-| Installer | **WiX v5 MSI** (service install, firewall, URL ACL, cert) + winget manifest later | Silent install / GPO friendly, clean upgrades |
-| CI/CD | GitHub Actions (windows-latest): build, test, publish MSI + runner image to GHCR on tag | — |
-| Tests | xUnit + Testcontainers (real Docker), Playwright for UI | Backup software must be tested against real engines |
+| Logging | Serilog → rolling file (Event Log planned for M6) | Supportability |
+| Backup | **restic** (pinned) + **rclone** in a locally built runner image | See §3.2 |
+| UI | **React 19 + TypeScript + Vite**, **Tailwind v4**, own small component set, TanStack Query/Router, Motion, SignalR client | A modern, accessible, fast UI with a component system we own |
+| Installer | **WiX v5 MSI** (service install, wizard UI, Start-menu link; the service creates and trusts its own certificate) + winget manifest later | Silent install / GPO friendly, clean upgrades |
+| CI/CD | GitHub Actions (windows-latest): build, test, MSI artifact; GitHub release with the MSI on `vX.Y.Z` tags | — |
+| Tests | xUnit v3, including real-engine integration tests (skipped on engines without Linux containers); Playwright drives the UI during development | Backup software must be tested against real engines |
 
 ## 5. UX concept — "calm confidence"
 
@@ -134,38 +134,37 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 
 ## 6. Security
 
-- Kestrel binds to **localhost only** by default over HTTPS (a per-install self-signed certificate is added to LocalMachine\Root by the installer). Remote access is opt-in: bind address + your own certificate.
-- **Auth:** Windows Negotiate (members of local `Administrators` or a `DockerBackup Operators` group), plus optional local accounts with TOTP for remote use.
-- Repository passwords and cloud keys are encrypted with **DPAPI in the service account's (LocalSystem's) user scope** in SQLite. *LocalMachine* scope is deliberately not used: any local user could decrypt it. An export of the repo key is offered at setup: *lose it and backups are unrecoverable*.
-- The service runs as **LocalSystem** (it needs access to the Docker pipe). Every API call is audit-logged.
-- The runner container gets read-only mounts for backup and no network except to the backend.
+- Kestrel binds to **localhost only** over HTTPS. A per-install self-signed certificate is created by the service and added to LocalMachine\Root when it runs as a service. Host filtering blocks DNS rebinding; a request-origin guard blocks cross-site WebSocket and CSRF attempts. *M6b:* opt-in remote access with your own certificate.
+- **Auth** *(M6a)*: Windows Negotiate (members of local `Administrators` or a `DockerBackup Operators` group). *M6b:* optional local accounts with TOTP for remote use.
+- Repository passwords and cloud keys are encrypted with **DPAPI in the service account's (LocalSystem's) user scope** in SQLite. *LocalMachine* scope is deliberately not used: any local user could decrypt it. Each destination's recovery key can be revealed (and the reveal is logged): *lose it and backups are unrecoverable*.
+- The service runs as **LocalSystem** (it needs access to the Docker pipe). *Not built yet:* audit logging of every API call.
+- Runner containers get read-only source mounts, `no-new-privileges`, and no network for local and SMB destinations. Secrets arrive as files inside the container, never in its configuration.
 
 ## 7. Known constraints and risks
 
 | Risk | Mitigation |
 |---|---|
-| **Docker Desktop only runs while a user is logged in** | Detect "engine unavailable", mark runs *Missed* (not failed), retry when the engine returns. Docs recommend "Start Docker Desktop when you sign in" plus auto-logon, or native dockerd/Docker CE in WSL for servers. |
-| Bind mounts to huge drives | Opt-in only, a size estimate first, per-mount exclude patterns. |
-| DB credential discovery fails | Fall back to stop/copy/start and raise an "app-aware dump unavailable" warning with a credential override form. |
+| **Docker Desktop only runs while a user is logged in** | Detect "engine unavailable"; queued runs wait ("waiting for Docker") until the engine returns, and missed schedules are caught up once. Docs recommend "Start Docker Desktop when you sign in" plus auto-logon, or native dockerd/Docker CE in WSL for servers. |
+| Bind mounts to huge drives | Whole drives are excluded by default and sized only when included. *Not built yet:* per-mount include/exclude overrides. |
+| DB credential discovery fails | The dump fails the run (alerting), files are still copied live; use Stop & start for that app. *Not built yet:* a credential override form. |
 | Windows-containers engine | v1 targets Linux containers (the vast majority). The Windows engine path is phase 2 (§3.2 fallback). |
-| restic repo lock left behind by a crash | Automatic `unlock` of stale locks older than N hours, owned by our host. |
+| restic repo lock left behind by a crash | A run that hits a lock checks who holds it. Locks held only by our own runners (hostname `dockerbackup-*`) are stale by construction, since runs on one repository are serialised, so they're removed and the command retried once. Any other holder fails the run with a clear "locked" message. |
 | **"Docker" is a trademark of Docker, Inc.** Their brand guidelines restrict its use in product names and logos | Fine while private. Choose a distinct product name before any public release ("for Docker" phrasing is the usual safe form). Artwork must never use the whale or Docker logos. |
 
 ## 8. Repository layout
 
 ```
 /src
-  DockerBackup.Service/        ASP.NET Core host, API, SignalR, Windows Service
-  DockerBackup.Core/           domain: inventory, plans, jobs, strategies
-  DockerBackup.Docker/         Docker API wrapper, discovery, runner orchestration
-  DockerBackup.Restic/         restic CLI wrapper, JSON output parsing
-  DockerBackup.Data/           EF Core / SQLite
-  DockerBackup.Tray/           (phase 2) tray app
-/web                           React SPA (Vite) → embedded into Service at build
-/runner                        Dockerfile for dockerbackup-runner image
-/installer                     WiX project
-/tests                         unit + integration (Testcontainers) + e2e (Playwright)
-/docs                          design, ADRs, user guide
+  DockerBackup.Service/        ASP.NET Core host, API, SignalR, notifications, Windows Service, tray app (--tray)
+  DockerBackup.Core/           domain: inventory, plans, backups, restore, restic output parsing
+  DockerBackup.Docker/         Docker access, discovery, runner (restic) orchestration, dumps, restore, drills
+  DockerBackup.Data/           EF Core / SQLite, migrations
+/web                           React SPA (Vite) → built into the Service's wwwroot
+/installer                     WiX v5 project
+/tests                         xUnit v3: unit + real-engine integration
+/tools                         brand asset generator
+/assets/brand                  artwork masters (supplied by the owner)
+/docs                          design, imagery requests
 /.github/workflows             ci.yml, release.yml
 ```
 
@@ -176,10 +175,10 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 | M0 | Skeleton | Solution, CI, MSI installs a service that serves the UI shell over HTTPS |
 | M1 | Discovery | Live inventory of apps, containers, volumes, binds, orphans; protection status |
 | M2 | Backup core | Runner image, restic repos (local/SMB), live and stop/start strategies, manual "back up now" |
-| M3 | Scheduling | Plans wizard, Quartz schedules, retention/prune, history, notifications |
+| M3 | Scheduling | Plans wizard, schedules (Cronos), retention/prune, history, notifications |
 | M4 | Restore | Volume / new volume / file-level / host folder; snapshot browser and timeline |
 | M5 | App-aware and cloud | DB dumps, S3/B2/Azure/SFTP and **Dropbox**, stack recreate, restore drills |
-| M6 | Polish and ship | Tray app, code signing, winget, remote access + TOTP, docs site |
+| M6 | Polish and ship | M6a: Windows sign-in, stale-lock recovery, Event Log, tray app, uninstall cleanup. M6b: remote access + TOTP, code signing, winget, user guide |
 
 ### Implementation notes
 - **M0 (done):** service host, HTTPS on loopback, engine monitor, UI shell, MSI, CI.
@@ -193,7 +192,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Queue:** one backup at a time. Interrupted runs are marked failed at startup.
   - **Persistence:** SQLite through EF Core with migrations (`dotnet ef migrations add <Name> --project src/DockerBackup.Data --startup-project src/DockerBackup.Data`).
 - **M3 (done):** plans and protection.
-  - **Plans:** *All apps* (including future apps, minus exclusions) or *Selected*, optionally with unowned volumes (each backed up as its own `volume:<name>` item). Strategy *Auto* (stop & start only for apps running a database), *Live* or *Stop & start*. Five-field cron in host local time.
+  - **Plans:** *All apps* (including future apps, minus exclusions) or *Selected*, optionally with unowned volumes (each backed up as its own `volume:<name>` item). Strategy *Auto* (stop & start only for apps running a database; since M5a, only for databases that can't be dumped), *Live* or *Stop & start*. Five-field cron in host local time.
   - **Retention:** a GFS policy applied after each scheduled backup with `restic forget`, filtered by `app=<id>,plan=<id>` tags, so manual snapshots and other plans are never touched. `--keep-last` is always at least 1.
   - **Scheduling:** the scheduler ticks every 30 s and catches up a missed occurrence once. While the engine is down, runs wait in the queue ("waiting for Docker") instead of failing. Scheduled items already pending are not queued twice.
   - **Maintenance:** weekly `prune` + `check --read-data-subset=5%` per destination, in the 01:00–06:00 window (any time once a day overdue), plus a manual button.
@@ -235,10 +234,15 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
     - **Dumps:** each dump is loaded into a throwaway, network-less container of the same image. Readiness waits for the real TCP listener (the official images run a socket-only init server first). A probe query (databases or keys count) must answer.
     - **Scheduling:** weekly per plan item (plan option `VerifyRestores`, default on for new plans), in the night window, and only when there's a newer snapshot to verify. Also available on demand ("Verify restore").
     - **Results:** a failed drill fails the run and alerts. The snapshot shows "Verified restorable …".
-- **M5 (planned) Dropbox:** restic has no native Dropbox backend, but it supports rclone (`-r rclone:<remote>:<path>`). The plan:
-  - Ship a runner image that bundles rclone next to restic.
-  - Add a "Connect Dropbox" OAuth flow in the UI. Its token is stored DPAPI-protected and passed to rclone as an environment-based remote config (`RCLONE_CONFIG_DROPBOX_TYPE=dropbox`, `RCLONE_CONFIG_DROPBOX_TOKEN=…`), never written to disk.
-  - Cloud destinations need the runner to have network access (local and SMB runners stay offline).
+- **M6a (done):** sign-in and hardening.
+  - **Windows sign-in:** Negotiate (Kerberos/NTLM) on every API and hub request; Edge and Chrome sign in silently because localhost is in the Local intranet zone. Allowed: local `Administrators` and members of an optional local group `DockerBackup Operators`.
+    - Loopback NTLM tokens can be filtered so the Administrators SID is missing entirely, so membership falls back to a machine-account lookup (`System.DirectoryServices.AccountManagement`, recursive, cached 5 minutes).
+    - Anonymous: `/api/health` and the static UI shell (it holds no data). The UI shows "Sign-in required" or "No access" screens.
+    - `DockerBackup:Auth:Mode` = `Windows` (default) or `None` (development and tests only).
+  - **Stale locks:** see §7.
+  - **Event Log:** as a service, warnings and errors also go to the Application log under source `DockerBackup`.
+  - **Tray app:** `DockerBackup.Service.exe --tray`, started for every user at logon (HKLM `Run`). Polls `/api/inventory` with the user's Windows credentials; shows the protection status; balloon when the failing count rises.
+  - **Uninstall cleanup:** a deferred custom action runs `--uninstall-cleanup` on full uninstall (not upgrades): removes our certificate from LocalMachine\Root and the event source. `%ProgramData%\DockerBackup` is kept on purpose: it holds the repository keys.
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 
@@ -248,8 +252,8 @@ M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworth
 |---|---|---|
 | 1 | Repo name | Renamed to `niogtres/docker_backup` (private). |
 | 2 | License | Closed source for now. No license file. |
-| 3 | Backup engine | **restic** (BSD-2-Clause, bundled). The service already owns scheduling, policy and UI, and restic is a minimal, scriptable engine with JSON output, `--stdin` support for DB dumps and a stable repo format. Kopia would duplicate our UI/server/policy layers. All engine calls go through an `IBackupEngine` abstraction so it can be swapped later. |
+| 3 | Backup engine | **restic** (BSD-2-Clause, bundled). The service already owns scheduling, policy and UI, and restic is a minimal, scriptable engine with JSON output and a stable repo format. Kopia would duplicate our UI/server/policy layers. *Correction:* restic calls are concentrated in `ResticRepository`, but a formal `IBackupEngine` interface was not introduced; add one if a second engine is ever needed. |
 | 4 | Container platforms | v1: Linux containers only. Windows-containers engine in phase 2. |
 | 5 | Remote access | Localhost only for the MVP. |
+| 6 | Multi-host | Planned for later; v1 manages one host. *Correction:* the data model does **not** carry an engine id yet, so multi-host will need a migration (adding an engine id to destinations, plans and runs). |
 | 7 | Scheduler | **Cronos + own scheduler** instead of Quartz.NET (decided during M3). Plans already live in our SQLite database. Quartz's persistent store would add a second persistence model with about a dozen tables, and the behaviour we need is small: compute the next run, catch up once, wait for the engine. |
-| 6 | Multi-host | Planned for later. v1 manages one host, but the data model carries an `EngineEndpoint` id from day one so adding hosts later needs no migration. |

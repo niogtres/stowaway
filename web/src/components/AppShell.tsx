@@ -1,7 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { Activity, Boxes, CalendarClock, HardDrive, History, LayoutDashboard, Settings, type LucideIcon } from 'lucide-react'
 import logoMark from '@/assets/logo-mark.svg'
-import { displayVersion, useSystemInfo } from '@/lib/api'
+import { ApiError, displayVersion, useMe, useSystemInfo } from '@/lib/api'
 import { useRealtime } from '@/lib/realtime'
 import { EngineStatusPill } from './EngineStatusPill'
 import { ThemeToggle } from './ThemeToggle'
@@ -26,8 +26,13 @@ const navItems: NavItem[] = [
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const current = navItems.find((item) => (item.to === '/' ? pathname === '/' : pathname.startsWith(item.to)))
-  const { data } = useSystemInfo()
+  const { data, error } = useSystemInfo()
+  const me = useMe()
   const realtime = useRealtime()
+
+  if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+    return <AccessDenied forbidden={error.status === 403} />
+  }
 
   return (
     <div className="relative flex h-full">
@@ -63,6 +68,7 @@ export function AppShell() {
               <div>{data.runningAsService ? 'Windows Service' : 'Console mode'}</div>
             </>
           )}
+          {me.data?.signInRequired && <div className="truncate" title="Signed in with Windows">{me.data.name}</div>}
           <div className="mt-2 flex items-center gap-1.5" title="Live updates from the service">
             <StatusDot tone={realtime === 'live' ? 'ok' : realtime === 'connecting' ? 'warn' : 'muted'} />
             {realtime === 'live' ? 'Live' : realtime === 'connecting' ? 'Connecting…' : 'Offline'}
@@ -81,6 +87,23 @@ export function AppShell() {
         <main className="min-h-0 flex-1 overflow-y-auto px-8 pb-10 pt-4">
           <Outlet />
         </main>
+      </div>
+    </div>
+  )
+}
+
+function AccessDenied({ forbidden }: { forbidden: boolean }) {
+  return (
+    <div className="relative grid h-full place-items-center px-6">
+      <div className="aurora pointer-events-none fixed inset-0 -z-10" aria-hidden />
+      <div className="glass max-w-md rounded-2xl p-8 text-center">
+        <img src={logoMark} alt="" className="mx-auto mb-4 size-12" />
+        <h1 className="text-lg font-semibold tracking-tight">{forbidden ? 'No access' : 'Sign-in required'}</h1>
+        <p className="mt-2 text-sm text-muted">
+          {forbidden
+            ? 'DockerBackup is available to local administrators and members of the "DockerBackup Operators" group. Ask an administrator to add your Windows account to that group.'
+            : 'DockerBackup signs you in with your Windows account. If your browser asks, enter your Windows user name and password.'}
+        </p>
       </div>
     </div>
   )

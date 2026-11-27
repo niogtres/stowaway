@@ -4,10 +4,19 @@
 
 Scheduled backup and restore for everything Docker holds on a Windows 10/11 host: containers, compose stacks, volumes and bind mounts. It runs as a Windows Service and is managed from a web UI at **https://localhost:8484**.
 
-> Status: **M5**. Live inventory; scheduled, encrypted, deduplicated backups (restic) to local folders, SMB shares, S3-compatible storage, Backblaze B2, Azure Blob, SFTP and Dropbox; consistent database dumps (Postgres, MySQL/MariaDB, MongoDB, Redis) with no downtime; retention, maintenance, protection status, alerts; snapshot browser and restore; full app recreation after a disaster; weekly restore drills that prove backups restore. Next: M6 (polish and ship). See [docs/DESIGN.md](docs/DESIGN.md).
+> Status: **M6a**. Live inventory; scheduled, encrypted, deduplicated backups (restic) to local folders, SMB shares, S3-compatible storage, Backblaze B2, Azure Blob, SFTP and Dropbox; consistent database dumps (Postgres, MySQL/MariaDB, MongoDB, Redis) with no downtime; retention, maintenance, protection status, alerts; snapshot browser and restore; full app recreation after a disaster; weekly restore drills that prove backups restore; Windows sign-in, a tray app. Next: M6b (remote access, signing, winget). See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Install
 Run `DockerBackup-<version>-x64.msi` (from CI artifacts or Releases). It installs the `DockerBackup` service (LocalSystem, delayed auto-start) and a Start-menu link to the UI. Data lives in `%ProgramData%\DockerBackup` (access restricted to SYSTEM and Administrators).
+
+**Who can use it:** the UI signs you in with your Windows account. Local administrators have access. To let a standard user in, add them to a local group named `DockerBackup Operators` (from an elevated prompt):
+
+```powershell
+New-LocalGroup -Name "DockerBackup Operators" -Description "Can manage DockerBackup"
+Add-LocalGroupMember -Group "DockerBackup Operators" -Member "<user>"
+```
+
+Uninstalling removes the trusted UI certificate but keeps `%ProgramData%\DockerBackup` (it holds your repository keys); delete it yourself if you no longer need those backups.
 
 ## Build
 Requirements: .NET SDK 10.0.1xx, Node.js 24. Restore local tools once with `dotnet tool restore`.
@@ -18,7 +27,7 @@ Requirements: .NET SDK 10.0.1xx, Node.js 24. Restore local tools once with `dotn
 
 ## Develop
 ```powershell
-dotnet run --project src/DockerBackup.Service   # API on https://localhost:8484
+dotnet run --project src/DockerBackup.Service   # API on https://localhost:8484 (sign-in off in Development)
 cd web; npm run dev                              # UI on http://localhost:5173 (proxies /api)
 dotnet test
 ```

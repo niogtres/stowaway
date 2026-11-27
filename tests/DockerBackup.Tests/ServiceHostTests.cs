@@ -16,6 +16,7 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
     {
         // Read by Program before the host is built, so it must be process-level configuration.
         Environment.SetEnvironmentVariable("DockerBackup__DataDirectory", Path.Combine(Path.GetTempPath(), "DockerBackup.Tests", Guid.NewGuid().ToString("N")));
+        Environment.SetEnvironmentVariable("DockerBackup__Auth__Mode", "None");
     }
 
     public static readonly EngineStatus FakeEngine = new()
@@ -69,6 +70,7 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
     }
 }
 
+[Collection(ServiceHosts.Name)]
 public sealed class ServiceHostTests(ServiceFactory factory) : IClassFixture<ServiceFactory>
 {
     private readonly HttpClient _client = factory.CreateClient();

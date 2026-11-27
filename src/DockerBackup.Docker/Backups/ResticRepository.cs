@@ -214,7 +214,79 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         return summary;
     }
 
+    /// <summary>
+    /// Runs restic; if the repository is locked, removes stale locks once and retries. DockerBackup serializes its
+    /// own runs, so a lock found here is normally left over from a runner that crashed or was killed.
+    /// </summary>
     private async Task<RunnerResult> RunAsync(
+        Destination destination,
+        string? passwordOverride,
+        IReadOnlyList<string> args,
+        IReadOnlyList<RunnerMount> extraMounts,
+        IReadOnlyDictionary<string, byte[]> extraFiles,
+        Action<string, bool>? onLine,
+        string purpose,
+        CancellationToken ct)
+    {
+        var result = await RunOnceAsync(destination, passwordOverride, args, extraMounts, extraFiles, onLine, purpose, ct);
+        if (result.ExitCode != ResticExitCodes.RepositoryLocked || args.FirstOrDefault() is "unlock" or "init")
+        {
+            return result;
+        }
+
+        if (!await RemoveOwnStaleLocksAsync(destination, passwordOverride, ct))
+        {
+            return result;
+        }
+
+        onLine?.Invoke("Removed a stale lock left by an interrupted DockerBackup run; retrying", true);
+        return await RunOnceAsync(destination, passwordOverride, args, extraMounts, extraFiles, onLine, purpose, ct);
+    }
+
+    /// <summary>
+    /// Removes the repository's locks if every one of them was taken by a DockerBackup runner. Runs are serialized,
+    /// so such a lock can only be left over from a runner that died. Locks from anything else are left alone.
+    /// </summary>
+    private async Task<bool> RemoveOwnStaleLocksAsync(Destination destination, string? password, CancellationToken ct)
+    {
+        var empty = new Dictionary<string, byte[]>();
+        var list = await RunOnceAsync(destination, password, ["list", "locks", "--no-lock"], [], empty, null, "locks", ct);
+        var ids = list.StdOut.Select(l => l.Trim()).Where(l => l.Length > 0 && l.All(char.IsAsciiHexDigit)).ToList();
+        if (list.ExitCode != 0 || ids.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var id in ids)
+        {
+            var cat = await RunOnceAsync(destination, password, ["cat", "lock", id, "--no-lock"], [], empty, null, "locks", ct);
+            var hostname = cat.ExitCode == 0 ? LockHostname(cat.StdOutText) : null;
+            if (hostname is null || !hostname.StartsWith(ResticRunner.RunnerHostPrefix, StringComparison.Ordinal))
+            {
+                logger.LogWarning("Repository {Destination} is locked by {Host}, not by DockerBackup; leaving the lock alone", destination.Name, hostname ?? "an unknown process");
+                return false;
+            }
+        }
+
+        logger.LogWarning("Removing {Count} stale DockerBackup lock(s) from {Destination}", ids.Count, destination.Name);
+        var unlock = await RunOnceAsync(destination, password, ["unlock", "--remove-all"], [], empty, null, "unlock", ct);
+        return unlock.ExitCode == 0;
+    }
+
+    internal static string? LockHostname(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty("hostname", out var h) ? h.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<RunnerResult> RunOnceAsync(
         Destination destination,
         string? passwordOverride,
         IReadOnlyList<string> args,
