@@ -546,11 +546,17 @@ export function useAccountActions() {
 
 export const restartService = () => request<void>('POST', '/api/system/restart')
 
+/** 401/403: not signed in, or no access. Retrying or polling won't change that until the user acts. */
+export const isAuthError = (error: unknown) => error instanceof ApiError && (error.status === 401 || error.status === 403)
+
 export function useSystemInfo() {
   return useQuery({
     queryKey: queryKeys.system,
     queryFn: () => getJson<SystemInfo>('/api/system'),
-    refetchInterval: 15_000,
+    // While signed out, stop polling: a refetch of a query that never succeeded goes back to "pending",
+    // which would swap the sign-in screen for the app shell and back, wiping what was typed.
+    refetchInterval: (query) => (isAuthError(query.state.error) ? false : 15_000),
+    retry: (count, error) => !isAuthError(error) && count < 3,
   })
 }
 

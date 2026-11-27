@@ -63,9 +63,12 @@ export function useRealtime(): RealtimeState {
       try {
         await connection.start()
         if (!disposed) setState('live')
-      } catch {
+      } catch (error) {
         if (disposed) return
         setState('offline')
+        // Not signed in: retrying can't help; the page reloads after signing in anyway.
+        const status = (error as { statusCode?: number }).statusCode
+        if (status === 401 || status === 403) return
         setTimeout(() => void start(attempt + 1), Math.min(30_000, 1_000 * 2 ** attempt))
       }
     }

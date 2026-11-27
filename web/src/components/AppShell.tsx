@@ -1,7 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { Activity, Boxes, CalendarClock, HardDrive, History, LayoutDashboard, LogOut, Settings, type LucideIcon } from 'lucide-react'
 import logoMark from '@/assets/logo-mark.svg'
-import { ApiError, displayVersion, signOut, useAuthMode, useMe, useSystemInfo } from '@/lib/api'
+import { ApiError, displayVersion, isAuthError, signOut, useAuthMode, useMe, useSystemInfo } from '@/lib/api'
 import { useRealtime } from '@/lib/realtime'
 import { EngineStatusPill } from './EngineStatusPill'
 import { FreshCodePrompt } from './FreshCode'
@@ -31,7 +31,7 @@ export function AppShell() {
   const { data, error } = useSystemInfo()
   const me = useMe()
   const realtime = useRealtime()
-  const blocked = error instanceof ApiError && (error.status === 401 || error.status === 403) ? error.status : null
+  const blocked = isAuthError(error) ? (error as ApiError).status : null
   const mode = useAuthMode(blocked !== null)
 
   if (blocked !== null) {
