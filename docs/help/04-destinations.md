@@ -16,8 +16,26 @@ Backups are **encrypted** before they leave your computer. Each destination has 
 
 > **Save the recovery key somewhere safe, away from this computer.** If this computer is lost, you need it (and the destination) to get your data back. Without it, nobody can read the backups, including you.
 
-Because the data is encrypted, you won't see your own files at the destination. In a folder or in Dropbox you'll see a `config` file and the folders `data`, `index`, `keys`, `locks` and `snapshots`. That is the backup. Browse and restore it from Stowaway. For Dropbox, backups go in a folder named `Stowaway` unless you name another (enter `/` to use the root). The destination list shows where each one is.
-
 You can show it again later with the key button on the destination. It can only be shown on this computer, never through remote access.
+
+## What you see at the destination
+
+Because the data is encrypted, you won't see your own files at the destination. In a folder or in Dropbox you'll see a `config` file and the folders `data`, `index`, `keys`, `locks` and `snapshots`. That is the backup. Browse and restore it from Stowaway. The destination list shows where each one is.
+
+## Dropbox
+
+- **Folder:** Dropbox backups always go under `/Stowaway`. You can add a subfolder, for example `/Stowaway/server1`, to keep backups from several computers apart.
+- **More than one Dropbox destination:** when you add another one, choose **Same account as …** to reuse the sign-in you already have, and give it a different subfolder.
+- **Signing in from another computer** (remote access): after you allow access, Dropbox sends the browser to an address starting with `http://localhost:53682/`, which can't load there. Copy that whole address from the browser's address bar, paste it into the **Add destination** window and choose **Finish**.
+
+## Editing a destination
+
+Use the pencil button to rename a destination, change its password or keys, or reconnect Dropbox. **Change location** follows backups you have moved, for example a folder you moved in Dropbox or on the NAS. Stowaway only saves the new location if it holds the same backups, so an edit can't point a destination at different ones.
+
+Older Dropbox destinations may sit in the root of your Dropbox. To tidy one up: move its `config` file and its folders into `/Stowaway` (or a subfolder) in Dropbox, then edit the destination and change its location to match.
+
+## Removing a destination
+
+Removing a destination only makes Stowaway forget it. The backups stay where they are, and you can connect them again with the recovery key. A destination that a backup plan still uses can't be removed: point the plan at another destination, or delete the plan, first.
 
 **See also:** [Backup plans](05-plans.md), [Restore](07-restore.md)

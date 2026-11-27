@@ -44,18 +44,36 @@ public static class CloudRepositories
 {
     public const string SecretsDir = "/run/stowaway";
 
-    /// <summary>The Dropbox folder used when none is given, so a new repository never lands in the Dropbox root by accident.</summary>
-    public const string DefaultDropboxFolder = "Stowaway";
+    /// <summary>Every Dropbox destination set up or moved by this version lives under this folder.</summary>
+    public const string DropboxRoot = "Stowaway";
 
     /// <summary>
-    /// Fills in defaults for a destination that is being created. Applied only at creation: changing what an empty
-    /// setting means for existing destinations would point them at a different repository. "/" keeps the Dropbox root.
+    /// The Dropbox folder for a subfolder the user typed: always under <see cref="DropboxRoot"/>. A leading
+    /// "Stowaway/" is accepted as already meaning that folder. Only applied when a destination is created or its
+    /// location is changed: older destinations keep the folder they were set up with.
     /// </summary>
-    public static void ApplyCreationDefaults(DestinationKind kind, IDictionary<string, string> settings)
+    public static string DropboxFolder(string? subfolder)
     {
-        if (kind == DestinationKind.Dropbox && (!settings.TryGetValue(DestinationKeys.Prefix, out var folder) || string.IsNullOrWhiteSpace(folder)))
+        var parts = (subfolder ?? string.Empty).Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (parts.Count > 0 && string.Equals(parts[0], DropboxRoot, StringComparison.OrdinalIgnoreCase))
         {
-            settings[DestinationKeys.Prefix] = DefaultDropboxFolder;
+            parts.RemoveAt(0);
+        }
+
+        if (parts.Any(p => p is "." or ".."))
+        {
+            throw new DestinationValidationException("The folder can't contain . or .. parts.");
+        }
+
+        return string.Join('/', [DropboxRoot, .. parts]);
+    }
+
+    /// <summary>Turns the typed Dropbox subfolder into the stored folder. Use on creation and on a location change only.</summary>
+    public static void ApplyDropboxFolder(DestinationKind kind, IDictionary<string, string> settings)
+    {
+        if (kind == DestinationKind.Dropbox)
+        {
+            settings[DestinationKeys.Prefix] = DropboxFolder(settings.TryGetValue(DestinationKeys.Prefix, out var folder) ? folder : null);
         }
     }
 

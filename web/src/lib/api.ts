@@ -154,6 +154,8 @@ export interface Destination {
   repositoryId: string | null
   createdAt: string
   status: DestinationStatus | null
+  /** Non-secret settings of cloud destinations (bucket, folder, host…). */
+  settings: Record<string, string> | null
 }
 
 export interface CreateDestination {
@@ -164,6 +166,20 @@ export interface CreateDestination {
   smbPassword?: string
   smbDomain?: string
   existingRepositoryPassword?: string
+  settings?: Record<string, string>
+  secrets?: Record<string, string>
+  dropboxSession?: string
+  /** Reuse the credentials (e.g. the Dropbox sign-in) of this destination of the same type. */
+  credentialsFrom?: string
+}
+
+/** Only the fields being changed. A new location or credentials must open the same backups. */
+export interface UpdateDestination {
+  name?: string
+  path?: string
+  smbUsername?: string
+  smbPassword?: string
+  smbDomain?: string
   settings?: Record<string, string>
   secrets?: Record<string, string>
   dropboxSession?: string
@@ -637,6 +653,14 @@ export function useCreateDestination() {
   })
 }
 
+export function useUpdateDestination(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: UpdateDestination) => request<Destination>('PUT', `/api/destinations/${id}`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.destinations }),
+  })
+}
+
 export function useCheckDestination() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -662,6 +686,7 @@ export interface DropboxSession {
 
 export const startDropbox = () => request<DropboxSession>('POST', '/api/dropbox/connect')
 export const pollDropbox = (id: string) => request<DropboxSession>('GET', `/api/dropbox/connect/${id}`)
+export const completeDropbox = (id: string, url: string) => request<DropboxSession>('POST', `/api/dropbox/connect/${id}/callback`, { url })
 
 export const revealRecoveryKey = (id: string) =>
   request<{ recoveryKey: string }>('POST', `/api/destinations/${id}/recovery-key`).then((r) => r.recoveryKey)

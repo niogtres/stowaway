@@ -1,7 +1,8 @@
 import { motion } from 'motion/react'
-import { Copy, Eye, HardDrive, KeyRound, Plus, RefreshCw, Trash2, TriangleAlert, Wrench } from 'lucide-react'
+import { Copy, Eye, HardDrive, KeyRound, Pencil, Plus, RefreshCw, Trash2, TriangleAlert, Wrench } from 'lucide-react'
 import { createElement, useState } from 'react'
 import { AddDestinationDialog } from '@/components/AddDestinationDialog'
+import { EditDestinationDialog } from '@/components/EditDestinationDialog'
 import { Button, Dialog } from '@/components/forms'
 import { Badge, Card, Skeleton, Stat, StatusDot } from '@/components/ui'
 import {
@@ -66,6 +67,7 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
   const maintenance = useRunMaintenance()
   const [showKey, setShowKey] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editing, setEditing] = useState(false)
   const status = d.status
 
   return (
@@ -104,6 +106,9 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
           >
             <Wrench className="size-4" />
           </Button>
+          <Button variant="ghost" onClick={() => setEditing(true)} title="Edit name, location or credentials" aria-label="Edit destination">
+            <Pencil className="size-4" />
+          </Button>
           <Button variant="ghost" onClick={() => setShowKey(true)} title="Recovery key" aria-label="Show recovery key">
             <KeyRound className="size-4" />
           </Button>
@@ -127,10 +132,14 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
         <Stat label="Last backup" value={relativeTime(status?.lastSnapshotAt ?? null)} />
       </div>
 
+      {editing && <EditDestinationDialog destination={d} onClose={() => setEditing(false)} />}
       <RecoveryKeyDialog destination={d} open={showKey} onClose={() => setShowKey(false)} />
       <Dialog
         open={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
+        onClose={() => {
+          setConfirmDelete(false)
+          remove.reset()
+        }}
         title={`Remove ${d.name}?`}
         description="Stowaway forgets this destination. The backup data at the location is not deleted. You can reconnect later with its recovery key."
         footer={
