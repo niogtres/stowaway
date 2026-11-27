@@ -4,8 +4,11 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-27
+
 ### Added
 
+- **Issue forms** on GitHub for bug reports and feature requests.
 - **SQL Server in Windows containers** (Business Central, for example): while the container runs, each database is backed up with SQL Server's own copy-only `BACKUP DATABASE`; while it's stopped, its database files are copied out without starting it. Restore drills restore the databases into a temporary container from the same image and run `DBCC CHECKDB`. SQL logins can be set under **Login** when Windows authentication isn't enough.
 
 ## [0.9.0] - 2026-11-27
@@ -65,6 +68,7 @@ Since the internal 0.7.x builds:
 - Dialogs with fields closed when clicking outside them, losing what was typed.
 - A database dump could hang the backup when Docker didn't pass on the end of the dump stream, and could fail with "No such exec instance" when Docker removed a finished command before its exit code was read.
 
-[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/niogtres/stowaway/releases/tag/v0.10.0
 [0.9.0]: https://github.com/niogtres/stowaway/releases/tag/v0.9.0
 [0.8.0]: https://github.com/niogtres/stowaway/releases/tag/v0.8.0
