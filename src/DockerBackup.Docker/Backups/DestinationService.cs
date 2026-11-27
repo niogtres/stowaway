@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using DockerBackup.Core.Backups;
+using DockerBackup.Core.Restic;
 using Microsoft.Extensions.Logging;
 
 namespace DockerBackup.Docker.Backups;
@@ -41,8 +42,12 @@ public sealed class DestinationService(
     ILogger<DestinationService> logger)
 {
     private readonly ConcurrentDictionary<Guid, DestinationStatus> _status = new();
+    private readonly ConcurrentDictionary<Guid, IReadOnlyList<ResticSnapshot>> _snapshots = new();
 
     public DestinationStatus? GetStatus(Guid id) => _status.GetValueOrDefault(id);
+
+    /// <summary>Snapshots seen at the last successful check (refreshed after every backup and at least every 30 minutes).</summary>
+    public IReadOnlyList<ResticSnapshot>? GetSnapshots(Guid id) => _snapshots.GetValueOrDefault(id);
 
     public Task<IReadOnlyList<Destination>> ListAsync(CancellationToken ct) => store.ListAsync(ct);
 
@@ -110,6 +115,7 @@ public sealed class DestinationService(
             }
 
             var snapshots = await repository.SnapshotsAsync(destination, ct);
+            _snapshots[id] = snapshots;
             var stats = await repository.StatsAsync(destination, ct);
             status = new DestinationStatus(true, null, snapshots.Count, stats?.TotalSize, snapshots.Count == 0 ? null : snapshots.Max(s => s.Time), DateTimeOffset.UtcNow);
         }
@@ -138,6 +144,7 @@ public sealed class DestinationService(
         if (deleted)
         {
             _status.TryRemove(id, out _);
+            _snapshots.TryRemove(id, out _);
             events.DestinationsChanged();
         }
 

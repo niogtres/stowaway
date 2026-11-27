@@ -4,7 +4,7 @@
 
 Scheduled backup and restore for everything Docker holds on a Windows 10/11 host: containers, compose stacks, volumes and bind mounts. It runs as a Windows Service and is managed from a web UI at **https://localhost:8484**.
 
-> Status: **M3 (usable MVP)**. Live inventory; scheduled, encrypted, deduplicated backups (restic) to local folders or SMB shares; retention, weekly repository maintenance, protection status per app, and email/webhook/ntfy alerts. Restore (M4) comes next. See [docs/DESIGN.md](docs/DESIGN.md).
+> Status: **M4 (restore)**. Live inventory; scheduled, encrypted, deduplicated backups (restic) to local folders or SMB shares; retention, maintenance, protection status and alerts. Browse any snapshot and restore a whole app, one volume or a single file, in place (with a safety snapshot), into a new volume or into a folder. Next: M5 (database dumps, cloud and Dropbox destinations, stack recreate). See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Install
 Run `DockerBackup-<version>-x64.msi` (from CI artifacts or Releases). It installs the `DockerBackup` service (LocalSystem, delayed auto-start) and a Start-menu link to the UI. Data lives in `%ProgramData%\DockerBackup` (access restricted to SYSTEM and Administrators).

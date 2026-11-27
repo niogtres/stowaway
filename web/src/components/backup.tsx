@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { CheckCircle2, CircleSlash, Clock, Loader2, PauseCircle, Play, XCircle, Zap } from 'lucide-react'
+import { CheckCircle2, CircleSlash, Clock, History, Loader2, PauseCircle, Play, XCircle, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Dialog, ProgressBar } from '@/components/forms'
 import {
@@ -191,9 +191,20 @@ export function AppBackupStatus({ app, onBackup }: { app: AppInfo; onBackup: () 
               </span>
             )}
           </div>
-          <Button variant="secondary" className="px-3 py-1.5 text-xs" onClick={onBackup}>
-            <Play className="size-3.5" /> Back up now
-          </Button>
+          <div className="flex shrink-0 gap-1.5">
+            {lastDone && (
+              <Link
+                to="/snapshots"
+                search={{ app: app.id }}
+                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium text-muted transition hover:bg-accent-soft hover:text-fg"
+              >
+                <History className="size-3.5" /> Restore
+              </Link>
+            )}
+            <Button variant="secondary" className="px-3 py-1.5 text-xs" onClick={onBackup}>
+              <Play className="size-3.5" /> Back up now
+            </Button>
+          </div>
         </div>
       )}
     </div>

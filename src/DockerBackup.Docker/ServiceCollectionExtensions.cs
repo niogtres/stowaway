@@ -34,6 +34,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ResticRunner>();
         services.AddSingleton<ResticRepository>();
         services.AddSingleton<DestinationService>();
+        services.AddSingleton<Restore.SnapshotCatalog>();
+        services.AddSingleton<Restore.RestoreService>();
         services.AddSingleton<BackupService>();
         services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
         services.AddHostedService<DestinationMonitor>();

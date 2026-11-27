@@ -80,7 +80,7 @@ app.UseRequestOriginGuard();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGroup("/api").MapSystemEndpoints().MapInventoryEndpoints().MapBackupEndpoints().MapPlanEndpoints();
+app.MapGroup("/api").MapSystemEndpoints().MapInventoryEndpoints().MapBackupEndpoints().MapPlanEndpoints().MapRestoreEndpoints();
 app.MapHub<EventsHub>(EventsHub.Path);
 app.MapFallback("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html");

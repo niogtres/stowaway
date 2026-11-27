@@ -68,6 +68,28 @@ public sealed class BackupIntegrationTests
             Assert.Contains("app=container:itest", snapshot.Tags!);
             Assert.Equal("itest-host", snapshot.Hostname);
 
+            // Restore: the whole source into a new volume, and one file into a host folder.
+            var restoredVolume = $"{volume}-restored";
+            var hostFolder = Directory.CreateTempSubdirectory("DockerBackup.Restore.").FullName;
+            try
+            {
+                await client.Volumes.CreateAsync(new VolumesCreateParameters { Name = restoredVolume, Labels = new Dictionary<string, string> { ["dockerbackup.test"] = "true" } }, ct);
+                var toVolume = await repository.RestoreAsync(destination, snapshot.Id, BackupPlanner.DataRoot, new RunnerMount("volume", restoredVolume, "/restore", false), null, false, _ => { }, _ => { }, ct);
+                Assert.True(toVolume.FilesRestored >= 1);
+
+                var listing = await repository.ListAsync(destination, snapshot.Id, BackupPlanner.MetadataDir, ct);
+                Assert.Contains(listing, n => n.Name == "app.json");
+                Assert.Equal("{}", (await repository.ReadTextAsync(destination, snapshot.Id, $"{BackupPlanner.MetadataDir}/app.json", ct)).Trim());
+
+                await repository.RestoreAsync(destination, snapshot.Id, BackupPlanner.MetadataDir, new RunnerMount("bind", hostFolder, "/restore", false), "/app.json", false, _ => { }, _ => { }, ct);
+                Assert.Equal("{}", File.ReadAllText(Path.Combine(hostFolder, "app.json")).Trim());
+            }
+            finally
+            {
+                await client.Volumes.RemoveAsync(restoredVolume, force: true, CancellationToken.None);
+                Directory.Delete(hostFolder, recursive: true);
+            }
+
             var wrong = new Destination { Name = "wrong", Kind = DestinationKind.Local, Path = repoDir, ProtectedRepositoryPassword = protector.Protect("nope") };
             var ex = await Assert.ThrowsAsync<ResticException>(() => repository.SnapshotsAsync(wrong, ct));
             Assert.Equal("Wrong repository password", ex.Message);

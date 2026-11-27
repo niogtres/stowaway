@@ -20,6 +20,9 @@ public sealed record ResticSummary(
 
 public sealed record ResticExitError(int Code, string Message) : ResticMessage;
 
+/// <summary>Final line of <c>restic restore --json</c>.</summary>
+public sealed record ResticRestoreSummary(long TotalFiles, long FilesRestored, long FilesDeleted, long TotalBytes, long BytesRestored) : ResticMessage;
+
 public sealed record ResticInitialized(string RepositoryId) : ResticMessage;
 
 /// <summary>Plain text (warnings, non-JSON stderr).</summary>
@@ -31,7 +34,15 @@ public sealed record ResticSnapshot(
     [property: JsonPropertyName("time")] DateTimeOffset Time,
     [property: JsonPropertyName("hostname")] string? Hostname,
     [property: JsonPropertyName("tags")] IReadOnlyList<string>? Tags,
-    [property: JsonPropertyName("paths")] IReadOnlyList<string>? Paths);
+    [property: JsonPropertyName("paths")] IReadOnlyList<string>? Paths,
+    [property: JsonPropertyName("summary")] ResticSnapshotSummary? Summary = null);
+
+public sealed record ResticSnapshotSummary(
+    [property: JsonPropertyName("total_bytes_processed")] long TotalBytesProcessed,
+    [property: JsonPropertyName("data_added")] long DataAdded);
+
+/// <summary>A node from <c>restic ls --json</c>.</summary>
+public sealed record ResticNode(string Name, string Path, string Type, long? Size, DateTimeOffset? ModifiedAt);
 
 public sealed record ResticStats(
     [property: JsonPropertyName("total_size")] long TotalSize,
@@ -79,8 +90,15 @@ public static class ResticOutputParser
             var root = doc.RootElement;
             return Str(root, "message_type") switch
             {
+                // Backup status uses files_done/bytes_done, restore status files_restored/bytes_restored.
                 "status" => new ResticStatus(
-                    Dbl(root, "percent_done"), Lng(root, "total_files"), Lng(root, "files_done"), Lng(root, "total_bytes"), Lng(root, "bytes_done")),
+                    Dbl(root, "percent_done"),
+                    Lng(root, "total_files"),
+                    Lng(root, "files_done") + Lng(root, "files_restored"),
+                    Lng(root, "total_bytes"),
+                    Lng(root, "bytes_done") + Lng(root, "bytes_restored")),
+                "summary" when !root.TryGetProperty("snapshot_id", out _) && root.TryGetProperty("total_files", out _) => new ResticRestoreSummary(
+                    Lng(root, "total_files"), Lng(root, "files_restored"), Lng(root, "files_deleted"), Lng(root, "total_bytes"), Lng(root, "bytes_restored")),
                 "summary" => new ResticSummary(
                     Str(root, "snapshot_id") ?? string.Empty,
                     Lng(root, "files_new"),
@@ -107,6 +125,36 @@ public static class ResticOutputParser
 
     public static ResticStats? ParseStats(string json) =>
         JsonSerializer.Deserialize<ResticStats>(json);
+
+    /// <summary>
+    /// Parses <c>restic ls --json &lt;snapshot&gt; &lt;dir&gt;</c> (non-recursive): skips the snapshot header line
+    /// and the directory itself, returning its direct children.
+    /// </summary>
+    public static IReadOnlyList<ResticNode> ParseLs(IEnumerable<string> lines, string directory)
+    {
+        var dir = directory.TrimEnd('/');
+        var nodes = new List<ResticNode>();
+        foreach (var line in lines)
+        {
+            if (!line.TrimStart().StartsWith('{'))
+            {
+                continue;
+            }
+
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (Str(root, "struct_type") is "snapshot" || Str(root, "path") is not { } path || path.TrimEnd('/') == dir)
+            {
+                continue;
+            }
+
+            DateTimeOffset? mtime = root.TryGetProperty("mtime", out var m) && m.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(m.GetString(), out var t) ? t : null;
+            nodes.Add(new ResticNode(Str(root, "name") ?? path[(path.LastIndexOf('/') + 1)..], path, Str(root, "type") ?? "file",
+                root.TryGetProperty("size", out var size) && size.ValueKind == JsonValueKind.Number ? size.GetInt64() : null, mtime));
+        }
+
+        return nodes.OrderBy(n => n.Type != "dir").ThenBy(n => n.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
 
     /// <summary>Counts snapshots listed under "remove" in <c>restic forget --json</c> output.</summary>
     public static int CountForgotten(string json)

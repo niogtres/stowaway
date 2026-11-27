@@ -48,6 +48,9 @@ public enum RunKind
 
     /// <summary>Repository upkeep: prune unreferenced data and verify a sample of it.</summary>
     Maintenance,
+
+    /// <summary>Put data from a snapshot back (in place, into a new volume or into a folder).</summary>
+    Restore,
 }
 
 public enum RunStatus
@@ -77,6 +80,9 @@ public sealed class BackupRun
 
     /// <summary>Snapshots removed by the plan's retention policy after this backup.</summary>
     public int? SnapshotsForgotten { get; set; }
+
+    /// <summary>Kind-specific request (JSON), e.g. the restore request for restore runs.</summary>
+    public string? Details { get; set; }
     public RunStatus Status { get; set; } = RunStatus.Queued;
     public DateTimeOffset QueuedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? StartedAt { get; set; }

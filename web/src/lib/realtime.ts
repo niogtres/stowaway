@@ -21,7 +21,10 @@ export function useRealtime(): RealtimeState {
       .build()
 
     connection.on('inventoryUpdated', () => queryClient.invalidateQueries({ queryKey: queryKeys.inventory }))
-    connection.on('destinationsChanged', () => queryClient.invalidateQueries({ queryKey: queryKeys.destinations }))
+    connection.on('destinationsChanged', () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.destinations })
+      queryClient.invalidateQueries({ queryKey: queryKeys.snapshots })
+    })
     connection.on('plansChanged', () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.plans })
       queryClient.invalidateQueries({ queryKey: queryKeys.inventory })

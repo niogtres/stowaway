@@ -56,7 +56,13 @@ export function Activity() {
                     <div className="flex flex-wrap items-center gap-x-2">
                       <span className="font-medium">{run.appName}</span>
                       <span className="text-sm text-muted">→ {destinationNames.get(run.destinationId) ?? 'removed destination'}</span>
-                      {run.kind === 'maintenance' ? <Badge tone="accent">Maintenance</Badge> : <Badge>{run.strategy === 'stopStart' ? 'Stop & start' : 'Live'}</Badge>}
+                      {run.kind === 'maintenance' ? (
+                        <Badge tone="accent">Maintenance</Badge>
+                      ) : run.kind === 'restore' ? (
+                        <Badge tone="warn">Restore</Badge>
+                      ) : (
+                        <Badge>{run.strategy === 'stopStart' ? 'Stop & start' : 'Live'}</Badge>
+                      )}
                       {run.trigger !== 'manual' && <Badge>{triggerLabels[run.trigger] ?? run.trigger}</Badge>}
                     </div>
                     {active ? (
@@ -66,7 +72,10 @@ export function Activity() {
                     ) : (
                       <div className="mt-0.5 text-xs text-muted">
                         {runStatusLabels[run.status]} {relativeTime(run.finishedAt ?? run.queuedAt)} · took {duration(run)}
-                        {run.bytesProcessed !== null && ` · ${formatBytes(run.bytesProcessed)} scanned, ${formatBytes(run.bytesAdded)} new`}
+                        {run.bytesProcessed !== null &&
+                          (run.kind === 'restore'
+                            ? ` · ${formatBytes(run.bytesProcessed)} restored`
+                            : ` · ${formatBytes(run.bytesProcessed)} scanned, ${formatBytes(run.bytesAdded)} new`)}
                         {run.downtimeSeconds !== null && ` · ${run.downtimeSeconds}s downtime`}
                         {run.snapshotsForgotten ? ` · ${run.snapshotsForgotten} old snapshot(s) expired` : ''}
                       </div>

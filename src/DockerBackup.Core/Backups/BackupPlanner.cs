@@ -8,6 +8,19 @@ namespace DockerBackup.Core.Backups;
 /// <param name="Target">Path inside the runner container.</param>
 public sealed record RunnerMount(string Type, string Source, string Target, bool ReadOnly);
 
+/// <summary>A data source as laid out inside a snapshot.</summary>
+/// <param name="SnapshotPath">Path in the snapshot, e.g. <c>/data/blog-db/var/lib/mysql</c>.</param>
+/// <param name="Kind">"volume" or "bind".</param>
+/// <param name="Source">Volume name, or the bind source as the engine reported it.</param>
+public sealed record SnapshotSource(
+    string SnapshotPath,
+    string Kind,
+    string Source,
+    string DisplaySource,
+    string ContainerName,
+    string Destination,
+    long? SizeBytes);
+
 /// <summary>What one backup run does: mounts, tags and stop/start order. Pure data, built by <see cref="BackupPlanner"/>.</summary>
 public sealed record RunnerPlan(
     IReadOnlyList<RunnerMount> SourceMounts,
@@ -28,23 +41,20 @@ public static class BackupPlanner
     public const string RunTagPrefix = "run=";
     public const string ProductTag = "dockerbackup";
 
-    public static RunnerPlan Plan(AppInfo app, BackupStrategy strategy, Guid runId)
+    /// <summary>
+    /// Where each included data source lives in a snapshot. Deterministic for a given app, so restores can
+    /// recompute it from the <c>app.json</c> stored in the snapshot. Each source appears once.
+    /// </summary>
+    public static IReadOnlyList<SnapshotSource> Layout(AppInfo app)
     {
-        var mounts = new List<RunnerMount>();
-        var notes = new List<string>();
+        var sources = new List<SnapshotSource>();
         var seenSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var seenTargets = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var container in app.Containers.OrderBy(c => c.Name, StringComparer.Ordinal))
         {
-            foreach (var mount in container.Mounts)
+            foreach (var mount in container.Mounts.Where(m => m.Included))
             {
-                if (!mount.Included)
-                {
-                    notes.Add($"Skipping {mount.DisplaySource} → {mount.Destination}: {mount.ExclusionReason}");
-                    continue;
-                }
-
                 var source = mount.Kind == MountKind.Volume ? mount.VolumeName ?? mount.Source : mount.Source;
                 if (!seenSources.Add($"{mount.Kind}:{source}"))
                 {
@@ -52,9 +62,28 @@ public static class BackupPlanner
                 }
 
                 var target = UniqueTarget(TargetPath(container.Name, mount.Destination), seenTargets);
-                mounts.Add(new RunnerMount(mount.Kind == MountKind.Volume ? "volume" : "bind", source, target, ReadOnly: true));
+                sources.Add(new SnapshotSource(
+                    target,
+                    mount.Kind == MountKind.Volume ? "volume" : "bind",
+                    source,
+                    mount.DisplaySource,
+                    container.Name,
+                    mount.Destination,
+                    mount.SizeBytes));
             }
         }
+
+        return sources;
+    }
+
+    public static RunnerPlan Plan(AppInfo app, BackupStrategy strategy, Guid runId)
+    {
+        var notes = app.Containers
+            .SelectMany(c => c.Mounts)
+            .Where(m => !m.Included)
+            .Select(m => $"Skipping {m.DisplaySource} → {m.Destination}: {m.ExclusionReason}")
+            .ToList();
+        var mounts = Layout(app).Select(s => new RunnerMount(s.Kind, s.Source, s.SnapshotPath, ReadOnly: true)).ToList();
 
         var startOrder = StartOrder(app.Containers);
         var running = startOrder.Where(c => c.State is "running" or "restarting").ToList();

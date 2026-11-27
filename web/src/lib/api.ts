@@ -131,7 +131,7 @@ export interface InventoryResponse {
 export type DestinationKind = 'local' | 'smb'
 export type BackupStrategy = 'live' | 'stopStart'
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
-export type RunKind = 'backup' | 'maintenance'
+export type RunKind = 'backup' | 'maintenance' | 'restore'
 
 export interface DestinationStatus {
   reachable: boolean
@@ -289,6 +289,67 @@ export interface NotificationChannel {
   createdAt: string
 }
 
+// ---- Snapshots & restore ------------------------------------------------
+
+export interface SnapshotInfo {
+  destinationId: string
+  id: string
+  shortId: string
+  time: string
+  host: string | null
+  appId: string | null
+  planId: string | null
+  safety: boolean
+  totalBytes: number | null
+  dataAdded: number | null
+}
+
+export interface SnapshotSource {
+  snapshotPath: string
+  kind: 'volume' | 'bind'
+  source: string
+  displaySource: string
+  containerName: string
+  destination: string
+  sizeBytes: number | null
+}
+
+export interface SnapshotContents {
+  appId: string
+  appName: string
+  appKind: string
+  sources: SnapshotSource[]
+}
+
+export interface SnapshotEntry {
+  name: string
+  path: string
+  type: 'dir' | 'file' | 'symlink' | string
+  size: number | null
+  modifiedAt: string | null
+}
+
+export type RestoreTarget = 'inPlace' | 'newVolume' | 'hostFolder'
+
+export interface RestoreRequest {
+  destinationId: string
+  snapshotId: string
+  sourcePaths: string[]
+  subPath: string | null
+  target: RestoreTarget
+  newVolumeName: string | null
+  hostFolder: string | null
+  safetySnapshot: boolean
+}
+
+export interface RestorePreview {
+  items: { source: string; kind: string; target: string; snapshotBytes: number | null }[]
+  containersToStop: string[]
+  deletesExtraFiles: boolean
+  safetySnapshot: boolean
+  warnings: string[]
+}
+
 // ---- Transport ------------------------------------------------------------
 
 export class ApiError extends Error {
@@ -334,6 +395,7 @@ export const queryKeys = {
   progress: ['backupProgress'] as const,
   plans: ['plans'] as const,
   channels: ['channels'] as const,
+  snapshots: ['snapshots'] as const,
 }
 
 export function useSystemInfo() {
@@ -488,6 +550,38 @@ export function useDeleteChannel() {
 }
 
 export const testChannel = (id: string) => request<{ ok: boolean; error: string | null }>('POST', `/api/notifications/${id}/test`)
+
+export function useSnapshots() {
+  return useQuery({ queryKey: queryKeys.snapshots, queryFn: () => getJson<SnapshotInfo[]>('/api/snapshots'), refetchInterval: 120_000 })
+}
+
+export function useSnapshotContents(destinationId: string | undefined, snapshotId: string | undefined) {
+  return useQuery({
+    queryKey: ['snapshotContents', destinationId, snapshotId],
+    queryFn: () => getJson<SnapshotContents>(`/api/destinations/${destinationId}/snapshots/${snapshotId}/contents`),
+    enabled: !!destinationId && !!snapshotId,
+    staleTime: Infinity, // snapshots never change
+  })
+}
+
+export function useSnapshotListing(destinationId: string, snapshotId: string, path: string | null) {
+  return useQuery({
+    queryKey: ['snapshotListing', destinationId, snapshotId, path],
+    queryFn: () => getJson<SnapshotEntry[]>(`/api/destinations/${destinationId}/snapshots/${snapshotId}/browse?path=${encodeURIComponent(path!)}`),
+    enabled: !!path,
+    staleTime: Infinity,
+  })
+}
+
+export const previewRestore = (body: RestoreRequest) => request<RestorePreview>('POST', '/api/restores/preview', body)
+
+export function useStartRestore() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: RestoreRequest) => request<BackupRun>('POST', '/api/restores', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.backups }),
+  })
+}
 
 /** Latest progress per running backup, fed by SignalR (see realtime.ts). */
 export function useBackupProgress() {

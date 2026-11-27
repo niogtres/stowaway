@@ -42,6 +42,9 @@ namespace DockerBackup.Data.Migrations
                     b.Property<Guid>("DestinationId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Details")
+                        .HasColumnType("TEXT");
+
                     b.Property<double?>("DowntimeSeconds")
                         .HasColumnType("REAL");
 

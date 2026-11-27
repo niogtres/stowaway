@@ -10,6 +10,8 @@ using DockerBackup.Core.Backups;
 using DockerBackup.Core.Engine;
 using DockerBackup.Core.Inventory;
 using DockerBackup.Core.Plans;
+using DockerBackup.Core.Restore;
+using DockerBackup.Docker.Restore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -35,6 +37,7 @@ public sealed class BackupService(
     ResticRunner runner,
     ResticRepository repository,
     DestinationService destinationService,
+    SnapshotCatalog catalog,
     IBackupEvents events,
     IEnumerable<IRunObserver> observers,
     IOptions<BackupOptions> options,
@@ -76,6 +79,25 @@ public sealed class BackupService(
             QueuedAt = time.GetUtcNow(),
         };
         return await QueueAsync(run, key, ct) ? run : null;
+    }
+
+    /// <summary>Queues a restore (validated by the caller).</summary>
+    public async Task<BackupRun> EnqueueRestoreAsync(RestoreRequest request, string itemId, string itemName, CancellationToken ct)
+    {
+        var run = new BackupRun
+        {
+            AppId = itemId,
+            AppName = itemName,
+            DestinationId = request.DestinationId,
+            Strategy = BackupStrategy.Live,
+            Kind = RunKind.Restore,
+            Trigger = "manual",
+            SnapshotId = request.SnapshotId,
+            Details = JsonSerializer.Serialize(request),
+            QueuedAt = time.GetUtcNow(),
+        };
+        await QueueAsync(run, $"restore:{run.Id:N}", ct);
+        return run;
     }
 
     private async Task<BackupRun?> EnqueueCoreAsync(string itemId, Guid destinationId, BackupStrategy strategy, Guid? planId, string trigger, CancellationToken ct)
@@ -227,6 +249,10 @@ public sealed class BackupService(
         if (run.Kind == RunKind.Maintenance)
         {
             await ExecuteMaintenanceAsync(run, log, ct);
+        }
+        else if (run.Kind == RunKind.Restore)
+        {
+            await ExecuteRestoreAsync(run, log, ct);
         }
         else
         {
@@ -390,6 +416,139 @@ public sealed class BackupService(
             log.Add($"Warning: applying retention failed: {ex.Message}");
             logger.LogWarning(ex, "Retention for {App} failed", run.AppName);
         }
+    }
+
+    private async Task ExecuteRestoreAsync(BackupRun run, RunLog log, CancellationToken ct)
+    {
+        var stopped = new List<ContainerInfo>();
+        DockerClient? client = null;
+        try
+        {
+            var request = JsonSerializer.Deserialize<RestoreRequest>(run.Details ?? "null") ?? throw new InvalidOperationException("The restore request is missing.");
+            var destination = await destinations.GetAsync(request.DestinationId, ct) ?? throw new InvalidOperationException("The destination no longer exists.");
+            var contents = await catalog.ContentsAsync(request.DestinationId, request.SnapshotId, ct);
+            var steps = RestorePlanner.Plan(request, contents.Sources);
+            log.Add($"Restoring {steps.Count} source(s) of {contents.App.Name} from snapshot {request.SnapshotId[..8]} ({request.Target})");
+
+            client = runner.CreateClient(TimeSpan.FromMinutes(5));
+            foreach (var step in steps)
+            {
+                if (step.NewVolumeName is { } volume)
+                {
+                    if (inventory.Current?.Volumes.Any(v => v.Name == volume) == true)
+                    {
+                        throw new InvalidOperationException($"A volume named {volume} already exists.");
+                    }
+
+                    await client.Volumes.CreateAsync(new VolumesCreateParameters
+                    {
+                        Name = volume,
+                        Labels = new Dictionary<string, string> { ["dockerbackup.restored-from"] = request.SnapshotId[..8] },
+                    }, ct);
+                    log.Add($"Created volume {volume}");
+                }
+
+                if (step.HostPath is { } folder)
+                {
+                    Directory.CreateDirectory(folder);
+                }
+                else if (request.Target == RestoreTarget.InPlace && step.Source.Kind == "bind" && HostPaths.ToWindowsPath(step.Source.Source) is { } original)
+                {
+                    Directory.CreateDirectory(original); // the folder may have been deleted
+                }
+            }
+
+            if (request.Target == RestoreTarget.InPlace)
+            {
+                foreach (var container in Enumerable.Reverse(RestorePlanner.ContainersUsing(inventory.Current, steps.Select(s => s.Source)).ToList()))
+                {
+                    log.Add($"Stopping {container.Name}");
+                    Report(run.Id, $"stopping {container.Name}", null, 0, 0, 0, 0);
+                    await client.Containers.StopContainerAsync(container.Id, new ContainerStopParameters { WaitBeforeKillSeconds = (uint)options.Value.StopTimeoutSeconds }, ct);
+                    stopped.Add(container);
+                }
+
+                await SaveAsync(run, log);
+                if (request.SafetySnapshot)
+                {
+                    await TakeSafetySnapshotAsync(run, destination, contents, steps, log, ct);
+                }
+            }
+
+            long files = 0, bytes = 0;
+            foreach (var step in steps)
+            {
+                log.Add($"Restoring {step.Source.DisplaySource}{(step.Include is null ? string.Empty : step.Include)} {step.TargetDescription}");
+                await SaveAsync(run, log);
+                var phase = $"restoring {step.Source.ContainerName}";
+                var summary = await repository.RestoreAsync(destination, request.SnapshotId, step.Source.SnapshotPath, step.Mount, step.Include, step.DeleteExtra,
+                    status => Report(run.Id, phase, status.PercentDone * 100, status.BytesDone, status.TotalBytes, status.FilesDone, status.TotalFiles),
+                    log.Add, ct);
+                files += summary.FilesRestored;
+                bytes += summary.BytesRestored;
+                log.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"Restored {summary.FilesRestored:N0} files ({summary.BytesRestored:N0} bytes){(summary.FilesDeleted > 0 ? $", removed {summary.FilesDeleted:N0} files not in the snapshot" : string.Empty)}"));
+            }
+
+            run.FilesProcessed = files;
+            run.BytesProcessed = bytes;
+            run.Status = RunStatus.Succeeded;
+            if (request.Target == RestoreTarget.InPlace && request.SafetySnapshot)
+            {
+                _ = destinationService.RefreshStatusAsync(destination.Id, CancellationToken.None); // show the safety snapshot
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            run.Status = RunStatus.Cancelled;
+            log.Add("Cancelled. The restored data may be incomplete.");
+        }
+        catch (Exception ex)
+        {
+            run.Status = RunStatus.Failed;
+            run.Error = ex.Message;
+            log.Add($"Failed: {ex.Message}");
+            logger.LogWarning(ex, "Restore of {App} failed", run.AppName);
+        }
+        finally
+        {
+            if (client is not null)
+            {
+                foreach (var container in Enumerable.Reverse(stopped))
+                {
+                    try
+                    {
+                        log.Add($"Starting {container.Name}");
+                        await client.Containers.StartContainerAsync(container.Id, new ContainerStartParameters(), CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        run.Status = RunStatus.Failed;
+                        run.Error = $"Could not restart {container.Name}: {ex.Message}";
+                        log.Add(run.Error);
+                        logger.LogError(ex, "Could not restart {Container} after restore", container.Name);
+                    }
+                }
+
+                client.Dispose();
+            }
+        }
+    }
+
+    /// <summary>Backs up the current state of the sources about to be overwritten, so the restore can be undone.</summary>
+    private async Task TakeSafetySnapshotAsync(BackupRun run, Destination destination, SnapshotContents contents, IReadOnlyList<RestoreStep> steps, RunLog log, CancellationToken ct)
+    {
+        log.Add("Taking a safety snapshot of the current data (undo point)");
+        Report(run.Id, "safety snapshot", null, 0, 0, 0, 0);
+        var plan = new RunnerPlan(
+            steps.Select(s => new RunnerMount(s.Source.Kind, s.Source.Source, s.Source.SnapshotPath, ReadOnly: true)).ToList(),
+            [BackupPlanner.ProductTag, BackupPlanner.AppTagPrefix + contents.App.Id, SnapshotCatalog.SafetyTag, BackupPlanner.RunTagPrefix + run.Id.ToString("N")],
+            [], [], []);
+        var files = new Dictionary<string, byte[]> { [$"{BackupPlanner.MetadataDir}/app.json"] = JsonSerializer.SerializeToUtf8Bytes(contents.App, MetadataJson) };
+        var summary = await repository.BackupAsync(destination, plan, files, Environment.MachineName,
+            status => Report(run.Id, "safety snapshot", status.PercentDone * 100, status.BytesDone, status.TotalBytes, status.FilesDone, status.TotalFiles),
+            log.Add, ct);
+        log.Add($"Safety snapshot {summary.SnapshotId[..8]} saved");
     }
 
     private async Task ExecuteMaintenanceAsync(BackupRun run, RunLog log, CancellationToken ct)

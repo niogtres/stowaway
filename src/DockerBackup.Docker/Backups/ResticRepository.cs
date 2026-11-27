@@ -72,6 +72,79 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         return ResticOutputParser.CountForgotten(result.StdOutText);
     }
 
+    /// <summary>Direct children of a directory in a snapshot.</summary>
+    public async Task<IReadOnlyList<ResticNode>> ListAsync(Destination destination, string snapshotId, string path, CancellationToken ct)
+    {
+        var result = await RunAsync(destination, null, ["ls", "--json", "--no-lock", snapshotId, path], [], new Dictionary<string, byte[]>(), null, "browse", ct);
+        EnsureSuccess(result);
+        return ResticOutputParser.ParseLs(result.StdOut, path);
+    }
+
+    /// <summary>Reads a (small, text) file from a snapshot, e.g. the stored <c>app.json</c>.</summary>
+    public async Task<string> ReadTextAsync(Destination destination, string snapshotId, string path, CancellationToken ct)
+    {
+        var result = await RunAsync(destination, null, ["dump", "--no-lock", snapshotId, path], [], new Dictionary<string, byte[]>(), null, "read", ct);
+        EnsureSuccess(result);
+        return result.StdOutText;
+    }
+
+    /// <summary>
+    /// Restores <paramref name="snapshotPath"/> of a snapshot into <paramref name="target"/> (mounted at /restore).
+    /// <paramref name="include"/> limits it to one file or folder (relative to <paramref name="snapshotPath"/>);
+    /// <paramref name="deleteExtra"/> removes files that aren't in the snapshot, for an exact in-place restore.
+    /// </summary>
+    public async Task<ResticRestoreSummary> RestoreAsync(
+        Destination destination,
+        string snapshotId,
+        string snapshotPath,
+        RunnerMount target,
+        string? include,
+        bool deleteExtra,
+        Action<ResticStatus> onProgress,
+        Action<string> onLog,
+        CancellationToken ct)
+    {
+        var args = new List<string> { "restore", $"{snapshotId}:{snapshotPath}", "--target", "/restore", "--json" };
+        if (include is not null)
+        {
+            args.Add("--include");
+            args.Add(include);
+        }
+
+        if (deleteExtra)
+        {
+            args.Add("--delete");
+        }
+
+        ResticRestoreSummary? summary = null;
+        var mount = target with { Target = "/restore", ReadOnly = false };
+        var result = await RunAsync(destination, null, args, [mount], new Dictionary<string, byte[]>(), (line, _) =>
+        {
+            switch (ResticOutputParser.Parse(line))
+            {
+                case ResticStatus status:
+                    onProgress(status);
+                    break;
+                case ResticRestoreSummary s:
+                    summary = s;
+                    break;
+                case ResticText text when text.Text.Length > 0:
+                    onLog(text.Text);
+                    break;
+                case ResticExitError error:
+                    onLog(error.Message);
+                    break;
+            }
+        }, "restore", ct);
+
+        if (result.ExitCode != 0 || summary is null)
+        {
+            throw new ResticException((int)result.ExitCode, ErrorMessage(result));
+        }
+
+        return summary;
+    }
+
     /// <summary>Removes data no snapshot references any more. Can take a while on big repositories.</summary>
     public async Task PruneAsync(Destination destination, Action<string> onLog, CancellationToken ct)
     {

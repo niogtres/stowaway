@@ -178,7 +178,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 | M2 | Backup core | Runner image, restic repos (local/SMB), live and stop/start strategies, manual "back up now" |
 | M3 | Scheduling | Plans wizard, Quartz schedules, retention/prune, history, notifications |
 | M4 | Restore | Volume / new volume / file-level / host folder; snapshot browser and timeline |
-| M5 | App-aware and cloud | DB dumps, S3/B2/Azure/SFTP, stack recreate, restore drills |
+| M5 | App-aware and cloud | DB dumps, S3/B2/Azure/SFTP and **Dropbox**, stack recreate, restore drills |
 | M6 | Polish and ship | Tray app, code signing, winget, remote access + TOTP, docs site |
 
 ### Implementation notes
@@ -199,6 +199,18 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Maintenance:** weekly `prune` + `check --read-data-subset=5%` per destination, in the 01:00–06:00 window (any time once a day overdue), plus a manual button.
   - **Protection status:** Protected (last success within 2× the plan's longest gap between runs), Pending (new plan, not run yet), Stale, Failing (last scheduled run failed), Unprotected, Stateless (no data or empty). The score is the share of bytes in Protected items.
   - **Notifications:** email (MailKit), webhook (generic JSON or Slack-compatible) and ntfy, for failure / recovery / every success. Settings are DPAPI-protected, and secrets are never returned to the UI (blank on edit means keep).
+- **M4 (done):** restore.
+  - **Snapshot browser:** apps → timeline → snapshot. Sources are recomputed from the snapshot's own `app.json` with `BackupPlanner.Layout`, the same function backups use, so paths always line up. Directory browsing uses non-recursive `restic ls`. Contents and listings are cached (snapshots are immutable).
+  - **Targets:** in place, a new volume, or a folder on this PC.
+  - **Scope:** a whole snapshot, one source, or one file or folder (`restic restore <id>:<source> --include <path>`).
+  - **Full in-place restores** use `--delete`, so the data matches the snapshot exactly.
+  - **Safety:** in-place restores stop every running container that uses the data (from any app) and always restart them. They first take a **safety snapshot** (tag `safety`; retention never touches it), which is the undo point.
+  - **Preview and confirmation:** the impact is shown before anything changes, and an in-place restore requires typing the app's name.
+  - **Execution:** restores run in the same queue as backups, so they never race a backup on the same repository.
+- **M5 (planned) Dropbox:** restic has no native Dropbox backend, but it supports rclone (`-r rclone:<remote>:<path>`). The plan:
+  - Ship a runner image that bundles rclone next to restic.
+  - Add a "Connect Dropbox" OAuth flow in the UI. Its token is stored DPAPI-protected and passed to rclone as an environment-based remote config (`RCLONE_CONFIG_DROPBOX_TYPE=dropbox`, `RCLONE_CONFIG_DROPBOX_TOKEN=…`), never written to disk.
+  - Cloud destinations need the runner to have network access (local and SMB runners stay offline).
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 

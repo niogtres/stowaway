@@ -1,27 +1,24 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
-import { History } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
-import { ComingSoon } from '@/pages/ComingSoon'
-import { Dashboard } from '@/pages/Dashboard'
 import { Activity } from '@/pages/Activity'
+import { Dashboard } from '@/pages/Dashboard'
 import { Destinations } from '@/pages/Destinations'
 import { Inventory } from '@/pages/Inventory'
 import { Plans } from '@/pages/Plans'
 import { Settings } from '@/pages/Settings'
-import emptySnapshots from '@/assets/illustrations/empty-snapshots.webp'
+import { Snapshots } from '@/pages/Snapshots'
 
 const rootRoute = createRootRoute({ component: AppShell })
 
-const placeholders = [
-  {
-    path: '/snapshots',
-    icon: History,
-    title: 'Snapshots',
-    milestone: 'M4',
-    illustration: emptySnapshots,
-    description: 'Scrub back through time, browse files and restore a whole stack, one volume or a single file.',
+const snapshotsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/snapshots',
+  validateSearch: (search: Record<string, unknown>): { app?: string } => ({ app: typeof search.app === 'string' ? search.app : undefined }),
+  component: function SnapshotsPage() {
+    const { app } = snapshotsRoute.useSearch()
+    return <Snapshots key={app ?? ''} initialApp={app} />
   },
-]
+})
 
 const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: Dashboard }),
@@ -30,9 +27,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/activity', component: Activity }),
   createRoute({ getParentRoute: () => rootRoute, path: '/plans', component: Plans }),
   createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: Settings }),
-  ...placeholders.map(({ path, ...props }) =>
-    createRoute({ getParentRoute: () => rootRoute, path, component: () => <ComingSoon {...props} /> }),
-  ),
+  snapshotsRoute,
 ])
 
 export const router = createRouter({ routeTree, defaultPreload: 'intent' })

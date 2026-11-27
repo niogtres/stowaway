@@ -159,6 +159,15 @@ public sealed class ServiceHostTests(ServiceFactory factory) : IClassFixture<Ser
         Assert.True(text.Contains(expectedFragment, StringComparison.OrdinalIgnoreCase), text);
     }
 
+    [Theory]
+    [InlineData("/api/destinations/00000000-0000-0000-0000-000000000000/snapshots/NOTHEX!!/contents")]
+    [InlineData("/api/destinations/00000000-0000-0000-0000-000000000000/snapshots/abc/contents")]
+    public async Task Malformed_snapshot_ids_are_rejected(string url)
+    {
+        var response = await _client.GetAsync(url, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Fact]
     public async Task Destination_listing_never_includes_secrets()
     {
