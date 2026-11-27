@@ -128,6 +128,7 @@ public sealed class DatabaseDumpTests
     private static ContainerInfo Db(string name, DatabaseKind? kind, string state = "running") => new()
     {
         Id = "id-" + name, Name = name, Image = "x", ImageId = "x", State = state, StatusText = state, Database = kind,
+        DumpSupported = kind is { } k && TestDatabases.Support.CanDump(k, Platforms.Linux),
         Mounts = [new MountInfo { Kind = MountKind.Volume, Source = "v", DisplaySource = "v", Destination = "/d", VolumeName = "v-" + name, Included = true }],
     };
 
@@ -140,7 +141,7 @@ public sealed class DatabaseDumpTests
     public void Dumps_running_supported_databases_only()
     {
         var app = App(Db("pg", DatabaseKind.PostgreSql), Db("my", DatabaseKind.MySql, "exited"), Db("es", DatabaseKind.Elasticsearch), Db("web", null));
-        var dump = Assert.Single(DatabaseDumps.For(app));
+        var dump = Assert.Single(Stowaway.Core.Databases.ShellDatabases.DumpsFor(app, Stowaway.Core.Databases.ShellDatabases.All));
         Assert.Equal(("pg.sql", "sh"), (dump.FileName, dump.Command[0]));
         Assert.Equal(["es"], DatabaseDumps.Undumpable(app).Select(c => c.Name));
     }
@@ -148,7 +149,7 @@ public sealed class DatabaseDumpTests
     [Fact]
     public void File_names_follow_the_database_kind()
     {
-        var names = DatabaseDumps.For(App(Db("mongo db", DatabaseKind.MongoDb), Db("cache", DatabaseKind.Redis), Db("maria", DatabaseKind.MariaDb))).Select(d => d.FileName);
+        var names = Stowaway.Core.Databases.ShellDatabases.DumpsFor(App(Db("mongo db", DatabaseKind.MongoDb), Db("cache", DatabaseKind.Redis), Db("maria", DatabaseKind.MariaDb)), Stowaway.Core.Databases.ShellDatabases.All).Select(d => d.FileName);
         Assert.Equal(["mongo_db.archive", "cache.rdb", "maria.sql"], names);
     }
 
@@ -169,9 +170,12 @@ public sealed class DatabaseDumpTests
         Assert.Single(RestorePlanner.Plan(request with { Target = RestoreTarget.HostFolder, HostFolder = @"D:\Dumps\x" }, layout));
     }
 
-    /// <summary>Real Postgres dump through exec + sink. Uses postgres:17 only if it is already present (never pulls).</summary>
+    /// <summary>
+    /// Real Postgres through the Linux provider: dump (exec + sink), then the drill check loads it into a fresh
+    /// container of the same image. Uses postgres:17 only if it is already present (never pulls).
+    /// </summary>
     [Fact]
-    public async Task Dumps_a_real_postgres_database()
+    public async Task Dumps_a_real_postgres_database_and_drills_it()
     {
         var ct = TestContext.Current.CancellationToken;
         var monitor = new DockerEngineMonitor(Options.Create(new DockerEngineOptions()), TimeProvider.System, NullLogger<DockerEngineMonitor>.Instance);
@@ -190,21 +194,36 @@ public sealed class DatabaseDumpTests
         var runId = Guid.NewGuid();
         var runner = new ResticRunner(monitor, Options.Create(new BackupOptions()), NullLogger<ResticRunner>.Instance);
         var dumps = new DumpService(runner, NullLogger<DumpService>.Instance);
+        var provider = TestDatabases.Providers(dumps).For(DatabaseKind.PostgreSql, Platforms.Linux)!;
+        Func<Task>? cleanup = null;
         try
         {
             await client.Containers.StartContainerAsync(created.ID, new ContainerStartParameters(), ct);
             await WaitForPostgresAsync(client, created.ID, ct);
 
-            var container = Db(name, DatabaseKind.PostgreSql) with { Id = created.ID };
-            var results = await dumps.CreateAsync(client, DatabaseDumps.For(App(container)), runId, _ => { }, ct);
-            var result = Assert.Single(results);
-            Assert.Null(result.Error);
-            Assert.True(result.Bytes > 100);
+            var log = new List<string>();
+            var app = App(Db(name, DatabaseKind.PostgreSql) with { Id = created.ID, Image = "postgres:17" });
+            var outcome = await provider.DumpAsync(new Stowaway.Docker.Databases.DumpContext(client, app, runId, BackupStrategy.Live, log.Add, _ => { }), ct);
+            cleanup = outcome.Cleanup;
+            Assert.Empty(outcome.Errors);
+            Assert.Equal(DumpService.VolumeName(runId), Assert.Single(outcome.Mounts).Source);
+            Assert.Contains(log, l => l.StartsWith($"Dumped {name}:", StringComparison.Ordinal));
+
+            // The drill sees the dumps volume as a restore would leave it.
+            var failures = new List<string>();
+            var fileName = Stowaway.Core.Databases.PostgreSqlDatabase.Definition.FileName(app.Containers[0]);
+            await provider.VerifyAsync(new Stowaway.Docker.Databases.DrillContext(client, app, DumpService.VolumeName(runId),
+                _ => Task.FromResult<IReadOnlySet<string>>(new HashSet<string> { fileName }), log.Add, _ => { }, failures), ct);
+            Assert.Empty(failures);
+            Assert.Contains(log, l => l.Contains("dump loaded into a fresh postgres:17", StringComparison.Ordinal));
         }
         finally
         {
             await client.Containers.RemoveContainerAsync(created.ID, new ContainerRemoveParameters { Force = true, RemoveVolumes = true }, CancellationToken.None);
-            await dumps.RemoveAsync(client, runId);
+            if (cleanup is not null)
+            {
+                await cleanup();
+            }
         }
     }
 

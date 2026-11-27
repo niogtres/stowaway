@@ -31,6 +31,19 @@ cd web; npm run dev                          # UI with hot reload on http://loca
 
 Build the installer with `./build.ps1 -Version 0.1.0` (output in `artifacts/`).
 
+## Adding support for a database
+
+Database backups go through **database providers** (`src/Stowaway.Docker/Databases/IDatabaseProvider.cs`): each one backs up a family of databases consistently while they run, checks the login, and proves in restore drills that its dumps load. Providers are built in, not loaded as plugins (see decision 9 in [docs/DESIGN.md](docs/DESIGN.md)).
+
+For a database that can be dumped with its own command-line tools inside its Linux container:
+
+1. Add the kind to `DatabaseKind` and its image names to `DatabaseDetector` (`src/Stowaway.Core/Inventory/`), if it isn't detected yet.
+2. Add a definition next to `PostgreSqlDatabase.cs` in `src/Stowaway.Core/Databases/`: the login script (Stowaway's saved login first, then the image's own variables), the dump and login-check commands, the file extension, and the drill check (start a throwaway server, load the dump, print one number).
+3. Add it to `ShellDatabases.All`. The Linux provider, the inventory and the web client pick it up from there.
+4. Test it against a real container of the image, like `Dumps_a_real_postgres_database_and_drills_it`. `DatabaseProviderTests` checks that every definition is complete.
+
+A database that needs more than shell commands (like SQL Server in Windows containers) gets its own `IDatabaseProvider`, registered in `AddDatabaseProviders`.
+
 ## Before you open a pull request
 
 - **Tests:** `dotnet test`. The integration tests use the local Docker engine and create only throwaway containers and volumes (named `dbtest-*`); they never touch your own containers.

@@ -16,10 +16,10 @@ public sealed class SqlServerDumpTests
     [Fact]
     public void Sql_server_is_dumpable_only_on_windows_engines()
     {
-        Assert.True(DatabaseDumps.Supported(DatabaseKind.SqlServer, Platforms.Windows));
-        Assert.False(DatabaseDumps.Supported(DatabaseKind.SqlServer, Platforms.Linux));
-        Assert.False(DatabaseDumps.Supported(DatabaseKind.PostgreSql, Platforms.Windows));
-        Assert.True(DatabaseDumps.Supported(DatabaseKind.PostgreSql));
+        Assert.True(TestDatabases.Support.CanDump(DatabaseKind.SqlServer, Platforms.Windows));
+        Assert.False(TestDatabases.Support.CanDump(DatabaseKind.SqlServer, Platforms.Linux));
+        Assert.False(TestDatabases.Support.CanDump(DatabaseKind.PostgreSql, Platforms.Windows));
+        Assert.True(TestDatabases.Support.CanDump(DatabaseKind.PostgreSql, Platforms.Linux));
     }
 
     [Fact]
@@ -28,11 +28,11 @@ public sealed class SqlServerDumpTests
         var app = new AppInfo
         {
             Id = "bc", Name = "bc", Kind = AppKind.Standalone, Platform = Platforms.Windows, Protection = ProtectionStatus.Unprotected,
-            Containers = [new ContainerInfo { Id = "1", Name = "bc", Image = "mcr.microsoft.com/businesscentral:ltsc2025", ImageId = "sha256:1", State = "running", StatusText = "Up", Mounts = [], Database = DatabaseKind.SqlServer }],
+            Containers = [new ContainerInfo { Id = "1", Name = "bc", Image = "mcr.microsoft.com/businesscentral:ltsc2025", ImageId = "sha256:1", State = "running", StatusText = "Up", Mounts = [], Database = DatabaseKind.SqlServer, DumpSupported = true }],
         };
 
         Assert.Empty(DatabaseDumps.Undumpable(app));
-        Assert.Empty(DatabaseDumps.For(app));
+        Assert.Empty(Stowaway.Core.Databases.ShellDatabases.DumpsFor(app, Stowaway.Core.Databases.ShellDatabases.All));
         Assert.Single(SqlServerDumps.Containers(app));
         Assert.Empty(SqlServerDumps.Containers(app with { Platform = Platforms.Linux }));
     }

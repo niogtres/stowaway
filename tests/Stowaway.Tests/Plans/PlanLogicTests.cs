@@ -155,7 +155,7 @@ public sealed class RetentionAndItemTests
             ],
             []);
         var sizes = new SizeIndex(new Dictionary<string, long> { ["shop_pg"] = 100, ["old-data"] = 50, ["empty"] = 0 }, new Dictionary<string, long>());
-        return InventoryBuilder.Build(raw, sizes, 1, DateTimeOffset.UnixEpoch);
+        return InventoryBuilder.Build(raw, sizes, 1, DateTimeOffset.UnixEpoch, databases: Stowaway.Tests.Backups.TestDatabases.Support);
     }
 
     [Fact]

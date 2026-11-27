@@ -33,7 +33,7 @@ public sealed class DatabaseCredentialTests
             ["sh", "-c", "mysql -h 127.0.0.1 -uroot -pinitial-pw -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY 'changed-pw'; ALTER USER 'root'@'%' IDENTIFIED BY 'changed-pw';\""], ct);
         Assert.Equal(0, changed.ExitCode);
 
-        var probe = new DatabaseProbe(mysql.Runner);
+        var probe = new DatabaseProbe(mysql.Runner, TestDatabases.Providers());
         var automatic = await probe.TestAsync(mysql.Id, DatabaseKind.MySql, [], ct);
         Assert.False(automatic.Ok);
         Assert.Contains("Access denied", automatic.Error);
@@ -54,7 +54,7 @@ public sealed class DatabaseCredentialTests
             ct);
         await mysql.WaitAsync("secret-pw", ct);
 
-        var result = await new DatabaseProbe(mysql.Runner).TestAsync(mysql.Id, DatabaseKind.MySql, [], ct);
+        var result = await new DatabaseProbe(mysql.Runner, TestDatabases.Providers()).TestAsync(mysql.Id, DatabaseKind.MySql, [], ct);
         Assert.True(result.Ok, result.Error);
     }
 
@@ -81,7 +81,7 @@ public sealed class DatabaseCredentialTests
                 CreatedAt = DateTimeOffset.UnixEpoch, Database = DatabaseKind.MySql, Mounts = [],
             };
             var app = new AppInfo { Id = "container:" + mysql.Name, Name = mysql.Name, Kind = AppKind.Standalone, Containers = [container], Protection = ProtectionStatus.Unprotected };
-            var result = Assert.Single(await dumps.CreateAsync(mysql.Client, DatabaseDumps.For(app), runId, log.Add, ct));
+            var result = Assert.Single(await dumps.CreateAsync(mysql.Client, Stowaway.Core.Databases.ShellDatabases.DumpsFor(app, Stowaway.Core.Databases.ShellDatabases.All), runId, log.Add, ct));
             Assert.True(result.Error is null, result.Error + " | " + string.Join(" | ", log));
             Assert.True(result.Bytes > 1000, $"{result.Bytes} bytes");
             return true;
