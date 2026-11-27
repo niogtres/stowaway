@@ -26,7 +26,14 @@ Because the data is encrypted, you won't see your own files at the destination. 
 
 - **Folder:** Dropbox backups always go under `/Stowaway`. You can add a subfolder, for example `/Stowaway/server1`, to keep backups from several computers apart.
 - **More than one Dropbox destination:** when you add another one, choose **Same account as …** to reuse the sign-in you already have, and give it a different subfolder.
-- **Signing in from another computer** (remote access): after you allow access, Dropbox sends the browser to an address starting with `http://localhost:53682/`, which can't load there. Copy that whole address from the browser's address bar, paste it into the **Add destination** window and choose **Finish**.
+
+### Connecting Dropbox from another computer
+
+When you use Stowaway through remote access, Dropbox can't send your browser straight back to the Stowaway computer, so there's one extra step:
+
+1. Choose **Connect Dropbox**. Dropbox opens in a new tab. Sign in and choose **Allow**.
+2. The tab then shows an error such as *"localhost refused to connect"*. That's expected. Copy the whole address from that tab's address bar. It starts with `http://localhost:53682/`.
+3. Go back to the Stowaway tab, paste the address and choose **Finish**. Stowaway shows **Dropbox connected**. The address works only once and for a few minutes; if it fails, choose **Start again**.
 
 ## Editing a destination
 
