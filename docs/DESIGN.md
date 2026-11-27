@@ -264,7 +264,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Security events** (`ISecurityEvents`): sign-ins, failures, lockouts, recovery-code use and step-ups are logged (warnings reach the Event Log) and written to the audit log; new-address sign-ins, lockouts and recovery-code use are also sent to notification channels that report failures (`NotificationEvent.Security`).
   - **Audit log** (SQLite `AuditEntries`, 180 days): every API change (actor, client address, local/remote, method + path, status; never bodies) and the security events. `GET /api/audit`; Settings → Audit log.
   - **HSTS** on remote responses only (on localhost it would stick to every other local site).
-  - **nginx** guide: Authenticated Origin Pulls, `X-Forwarded-For $http_cf_connecting_ip`, WebSocket upgrade, `proxy_ssl_verify` against DockerBackup's certificate (`/api/remote/certificate?format=pem`). Cloudflare Access recommended as an independent first gate.
+  - **nginx** guide: Authenticated Origin Pulls, `X-Forwarded-For $http_cf_connecting_ip`, WebSocket upgrade, optional `proxy_ssl_verify` against DockerBackup's certificate (`/api/remote/certificate?format=pem`; off in the default example, as the hop is on the LAN). Cloudflare Access recommended as an independent first gate.
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 

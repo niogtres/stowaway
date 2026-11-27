@@ -190,7 +190,7 @@ browser ──https──▶ Cloudflare ──https (origin pull)──▶ nginx
 
 - **Names:** the public name, for example `backup.example.com`.
 - **Reverse proxy:** the LAN address of the nginx server. From then on, only nginx can connect (Windows Firewall and DockerBackup both enforce it). The visitor's address that nginx forwards is used for lockouts, rate limits, alerts and the audit log.
-- **Certificate:** *Issued by DockerBackup* is fine here, because only nginx sees it. Download it for nginx at `https://localhost:8484/api/remote/certificate?format=pem` and copy it to the nginx server.
+- **Certificate:** *Issued by DockerBackup* is fine here, because only nginx sees it.
 - **Save** and **Restart service**.
 
 **2. In nginx**, a server block like this (adjust names, paths and addresses):
@@ -213,12 +213,6 @@ server {
         proxy_pass https://192.168.1.20:8484;          # this computer
         proxy_http_version 1.1;
 
-        # Check that it's really DockerBackup on the other end.
-        proxy_ssl_trusted_certificate /etc/nginx/certs/dockerbackup-remote-access.pem;
-        proxy_ssl_verify on;
-        proxy_ssl_name backup.example.com;
-        proxy_ssl_server_name on;
-
         proxy_set_header Host              $host;
         # The visitor, as Cloudflare saw them. Safe because only Cloudflare gets past ssl_verify_client.
         proxy_set_header X-Forwarded-For   $http_cf_connecting_ip;
@@ -237,6 +231,8 @@ server {
 - Add `backup` as a **proxied** (orange cloud) DNS record pointing at your nginx, like your other sites. Use SSL mode **Full (strict)** and keep **Authenticated Origin Pulls** on.
 - **Strongly recommended:** put a **Cloudflare Access** application in front (Zero Trust → Access → Applications → Self-hosted, for `backup.example.com`), with a policy that only allows your own email address. Cloudflare then asks for a one-time code sent to your email before anything reaches nginx. That's a second, independent lock in front of DockerBackup's own sign-in, and it's free for small teams.
 
+*Optional, stricter:* nginx encrypts the hop to DockerBackup but doesn't check who answers. To make it check, download DockerBackup's certificate at `https://localhost:8484/api/remote/certificate?format=pem`, copy it to the nginx server and add `proxy_ssl_trusted_certificate <that file>; proxy_ssl_verify on; proxy_ssl_name backup.example.com;`. You then have to copy the certificate again whenever you change the names in DockerBackup.
+
 With remote access through a proxy, computers on your LAN also go through the proxy (open the public name). On this computer, `https://localhost:8484` keeps working with Windows sign-in.
 
 ## 14. Troubleshooting
@@ -248,7 +244,7 @@ With remote access through a proxy, computers on your LAN also go through the pr
 | **No access** | Your Windows account needs to be an administrator or in `DockerBackup Operators` ([section 3](#3-signing-in)). |
 | **A backup failed** | Open it in **Activity**: each step shows its log. Common causes: the destination is unreachable or full, a share password changed, or a database dump couldn't sign in (use *Stop & start* for that app). |
 | **"Repository is locked"** | DockerBackup clears locks left behind by its own interrupted runs automatically. A lock held by something else (for example restic run by hand) has to be removed by whoever created it. |
-| **Remote access doesn't connect** | Check **Settings → Remote access** for a message (for example a missing certificate), that the name you use is in the list, and that the network type is allowed through the firewall. Behind a proxy: check that the proxy's address is the one entered, and the nginx error log (a `502` usually means the certificate or `proxy_ssl_name` doesn't match). |
+| **Remote access doesn't connect** | Check **Settings → Remote access** for a message (for example a missing certificate), that the name you use is in the list, and that the network type is allowed through the firewall. Behind a proxy: check that the proxy's address is the one entered, and the nginx error log. |
 | **"Confirm with your authenticator" keeps coming back** | Each code works once. Wait for the app to show the next code. |
 | **Lost the authenticator phone** | Sign in with a recovery code, or on this computer choose **New authenticator** for the account. |
 
