@@ -54,16 +54,18 @@ public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationS
         }
 
         var destination = await RequireDestinationAsync(destinationId, ct);
-        var json = await repository.ReadTextAsync(destination, snapshotId, $"{BackupPlanner.MetadataDir}/app.json", ct);
+        var paths = await PathsAsync(destinationId, snapshotId, ct);
+        var json = await repository.ReadTextAsync(destination, snapshotId, $"{BackupPlanner.MetadataDirOf(paths)}/app.json", ct);
         var app = JsonSerializer.Deserialize<AppInfo>(json, MetadataJson) ?? throw new RestoreValidationException("This snapshot has no app description.");
         var sources = BackupPlanner.Layout(app).ToList();
-        var top = await repository.ListAsync(destination, snapshotId, BackupPlanner.DataRoot, ct);
-        if (top.Any(n => n.Path == DatabaseDumps.SnapshotDir))
+        var dumps = BackupPlanner.DumpsDirOf(paths);
+        var top = await repository.ListAsync(destination, snapshotId, BackupPlanner.DataRootOf(paths), ct);
+        if (top.Any(n => n.Path == dumps))
         {
-            sources.Add(new SnapshotSource(DatabaseDumps.SnapshotDir, DumpsKind, "_dumps", "Database dumps", "databases", "/", null));
+            sources.Add(new SnapshotSource(dumps, DumpsKind, "_dumps", "Database dumps", "databases", "/", null));
         }
 
-        sources.Add(new SnapshotSource(BackupPlanner.MetadataDir, DefinitionKind, "_stowaway", "App definition", "compose files and container settings", "/", null));
+        sources.Add(new SnapshotSource(BackupPlanner.MetadataDirOf(paths), DefinitionKind, "_stowaway", "App definition", "compose files and container settings", "/", null));
 
         var contents = new SnapshotContents(app, sources);
         _contents[key] = contents;
@@ -80,7 +82,7 @@ public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationS
         }
 
         var destination = await RequireDestinationAsync(destinationId, ct);
-        var dir = $"{BackupPlanner.MetadataDir}/containers";
+        var dir = $"{BackupPlanner.MetadataDirOf(await PathsAsync(destinationId, snapshotId, ct))}/containers";
         var files = await repository.ListAsync(destination, snapshotId, dir, ct);
         var definitions = new List<global::Docker.DotNet.Models.ContainerInspectResponse>();
         foreach (var file in files.Where(f => f.Type == "file" && f.Name.EndsWith(".json", StringComparison.Ordinal)))
@@ -99,7 +101,8 @@ public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationS
     public async Task<IReadOnlyList<SnapshotEntry>> BrowseAsync(Guid destinationId, string snapshotId, string path, CancellationToken ct)
     {
         var normalized = "/" + path.Replace('\\', '/').Trim('/');
-        if (!normalized.StartsWith(BackupPlanner.DataRoot + "/", StringComparison.Ordinal) || normalized.Split('/').Any(p => p is ".." or "."))
+        var roots = await PathsAsync(destinationId, snapshotId, ct) ?? [BackupPlanner.DataRoot];
+        if (!roots.Any(r => normalized == r || normalized.StartsWith(r + "/", StringComparison.Ordinal)) || normalized.Split('/').Any(p => p is ".." or "."))
         {
             throw new RestoreValidationException("That path isn't inside the snapshot's data.");
         }
@@ -122,6 +125,20 @@ public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationS
 
         _listings[key] = entries;
         return entries;
+    }
+
+    /// <summary>The paths restic recorded for the snapshot: <c>/data</c> (Linux engines) or host paths (Windows engines).</summary>
+    private async Task<IReadOnlyList<string>?> PathsAsync(Guid destinationId, string snapshotId, CancellationToken ct)
+    {
+        ResticSnapshot? Find() => destinationService.GetSnapshots(destinationId)?
+            .FirstOrDefault(s => s.Id == snapshotId || s.Id.StartsWith(snapshotId, StringComparison.Ordinal) || s.ShortId == snapshotId);
+
+        if (Find() is null)
+        {
+            await destinationService.RefreshStatusAsync(destinationId, ct);
+        }
+
+        return Find()?.Paths;
     }
 
     public static SnapshotInfo ToInfo(Guid destinationId, ResticSnapshot s)

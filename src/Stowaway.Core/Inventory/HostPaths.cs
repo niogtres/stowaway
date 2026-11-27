@@ -87,6 +87,11 @@ public static partial class HostPaths
             return WholeDrive;
         }
 
+        if (windows is not null && WindowsSystemFolder().IsMatch(windows))
+        {
+            return "System folder of the host (Windows): not data.";
+        }
+
         if (source.StartsWith(@"\\", StringComparison.Ordinal) || source.StartsWith("//", StringComparison.Ordinal))
         {
             return NetworkShare;
@@ -111,6 +116,9 @@ public static partial class HostPaths
     }
 
     public static bool IsDriveRoot(string windowsPath) => DriveRoot().IsMatch(windowsPath);
+
+    [GeneratedRegex(@"^[A-Za-z]:\\(Windows|Program Files|Program Files \(x86\))(\\|$)", RegexOptions.IgnoreCase)]
+    private static partial Regex WindowsSystemFolder();
 
     private static string NormalizeWindows(string path)
     {

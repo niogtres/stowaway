@@ -82,6 +82,7 @@ export interface AppInfo {
   dataBytes: number
   sizeIncomplete: boolean
   protection: ProtectionStatus
+  platform: 'linux' | 'windows'
 }
 
 export interface VolumeInfo {

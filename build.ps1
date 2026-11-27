@@ -76,6 +76,8 @@ try {
 }
 finally { Pop-Location }
 
+Invoke-Step 'bundled tools (restic, rclone for Windows engines)' { & (Join-Path $root 'tools\Get-BundledTools.ps1'); $global:LASTEXITCODE = 0 }
+
 if (-not $SkipTests) {
     Invoke-Step 'dotnet test' { dotnet test --configuration $Configuration }
 }

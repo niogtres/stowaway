@@ -264,7 +264,7 @@ public sealed class InventoryService(
                 new Dictionary<string, long>(_volumeSizes, StringComparer.Ordinal),
                 new Dictionary<string, long>(_pathSizes, StringComparer.OrdinalIgnoreCase));
             var now = time.GetUtcNow();
-            var candidate = InventoryBuilder.Build(_lastRaw, sizes, _version + 1, now, protection?.CreateResolver(now));
+            var candidate = InventoryBuilder.Build(_lastRaw, sizes, _version + 1, now, protection?.CreateResolver(now), Platforms.Of(engine.Current.OsType));
             var fingerprint = JsonSerializer.Serialize(candidate with { Version = 0, CapturedAt = default }, FingerprintJson);
             if (fingerprint == _fingerprint)
             {

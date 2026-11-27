@@ -71,7 +71,7 @@ public sealed class DrillService(
 
                 if (source.Kind == SnapshotCatalog.DumpsKind)
                 {
-                    var dumpFiles = (await catalog.BrowseAsync(request.DestinationId, request.SnapshotId, DatabaseDumps.SnapshotDir, ct))
+                    var dumpFiles = (await catalog.BrowseAsync(request.DestinationId, request.SnapshotId, source.SnapshotPath, ct))
                         .Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
                     await CheckDumpsAsync(client, contents.App, dumpFiles, volume, log, phase, failures, ct);
                 }

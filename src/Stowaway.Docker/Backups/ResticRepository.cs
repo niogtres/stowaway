@@ -172,9 +172,14 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         string host,
         Action<ResticStatus> onProgress,
         Action<string> onLog,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool useFsSnapshot = false)
     {
         var args = new List<string> { "backup", BackupPlanner.DataRoot, "--json", "--host", host, "--exclude-caches" };
+        if (useFsSnapshot)
+        {
+            args.Add("--use-fs-snapshot"); // Windows: read through a VSS snapshot, so files running containers hold open are captured
+        }
         foreach (var tag in plan.Tags)
         {
             args.Add("--tag");
@@ -234,7 +239,17 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
             return result;
         }
 
-        if (!await RemoveOwnStaleLocksAsync(destination, passwordOverride, ct))
+        if (runner.OnHost)
+        {
+            // Host-side restic records this computer's name in its locks. "unlock" without --remove-all removes only
+            // locks restic itself can prove stale (a process on this host that no longer runs, or a very old lock).
+            var unlock = await RunOnceAsync(destination, passwordOverride, ["unlock"], [], new Dictionary<string, byte[]>(), null, "unlock", ct);
+            if (unlock.ExitCode != 0)
+            {
+                return result;
+            }
+        }
+        else if (!await RemoveOwnStaleLocksAsync(destination, passwordOverride, ct))
         {
             return result;
         }
@@ -343,8 +358,26 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
             throw new ResticException(1, "That server name isn't valid.");
         }
 
-        var script = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ssh-keyscan -T 10 -p {port} {host} 2>/dev/null");
-        var result = await runner.RunAsync(new RunnerRequest([], [], new Dictionary<string, string>(), new Dictionary<string, byte[]>(), Network: true, "keyscan", script), null, ct);
+        RunnerResult result;
+        if (runner.OnHost)
+        {
+            // Windows ships OpenSSH's client (with ssh-keyscan) since Windows 10 1809.
+            var keyscan = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "OpenSSH", "ssh-keyscan.exe"))
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+            };
+            foreach (var arg in new[] { "-T", "10", "-p", port.ToString(System.Globalization.CultureInfo.InvariantCulture), host })
+            {
+                keyscan.ArgumentList.Add(arg);
+            }
+
+            result = await HostResticRunner.RunProcessAsync(keyscan, null, ct);
+        }
+        else
+        {
+            var script = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ssh-keyscan -T 10 -p {port} {host} 2>/dev/null");
+            result = await runner.RunAsync(new RunnerRequest([], [], new Dictionary<string, string>(), new Dictionary<string, byte[]>(), Network: true, "keyscan", script), null, ct);
+        }
         var keys = string.Join('\n', result.StdOut.Where(l => l.Length > 0 && !l.StartsWith('#')));
         return keys.Length > 0 ? keys : throw new ResticException(1, $"Couldn't reach an SSH server at {host}:{port}.");
     }
@@ -359,6 +392,17 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         }
 
         var smbPassword = destination.ProtectedSmbPassword is null ? null : secrets.Unprotect(destination.ProtectedSmbPassword);
+        if (runner.OnHost)
+        {
+            // Host-side restic reaches the share directly, through a connection made with the saved credentials.
+            var connection = SmbConnection.Open(destination.Path, destination.SmbUsername, smbPassword, destination.SmbDomain);
+            return new RepositoryTarget(new RunnerMount("bind", destination.Path, RepositoryPath, ReadOnly: false), () =>
+            {
+                connection.Dispose();
+                return Task.CompletedTask;
+            });
+        }
+
         var options = SmbMount.VolumeOptions(destination.Path, destination.SmbUsername, smbPassword, destination.SmbDomain);
         var name = $"stowaway-smb-{Guid.NewGuid():N}";
         var client = runner.CreateClient(TimeSpan.FromSeconds(60));

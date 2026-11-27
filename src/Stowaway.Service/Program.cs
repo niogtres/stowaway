@@ -150,6 +150,8 @@ builder.Services.AddStowawayData(Path.Combine(paths.Root, "stowaway.db"));
 builder.Services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
 builder.Services.AddSingleton<IBackupEvents, SignalRBackupEvents>();
 builder.Services.AddBackupEngine(builder.Configuration);
+// Windows-container engines: host-side restic works (cache, staging, secrets) in the protected data folder.
+builder.Services.PostConfigure<BackupOptions>(o => o.HostWorkDirectory ??= paths.Root);
 builder.Services.AddHttpClient("notifications", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<INotificationSender, EmailSender>();
 builder.Services.AddSingleton<INotificationSender, WebhookSender>();

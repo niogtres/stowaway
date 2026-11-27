@@ -4,6 +4,10 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- **Windows containers:** Docker engines running Windows containers are supported. restic and rclone for Windows ship with Stowaway and run on the computer itself; while containers run, backups read through a Windows volume shadow copy (VSS), so files a container holds open are captured. Volumes are backed up; files a container writes inside itself aren't (the app card says so).
+
 ### Changed
 
 - The sidebar no longer shows the signed-in user name (it can be an email address).

@@ -20,6 +20,8 @@
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
     <!-- Shipped next to the program (and so in the MSI), and shown on the About page. -->
     <None Include="..\..\LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- restic and rclone for Windows-container engines (tools\Get-BundledTools.ps1 downloads and verifies them). -->
+    <None Include="..\..\tools\bin\*.exe" Link="tools\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

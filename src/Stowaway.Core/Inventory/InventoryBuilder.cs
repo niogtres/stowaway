@@ -44,7 +44,8 @@ public static partial class InventoryBuilder
         SizeIndex sizes,
         long version,
         DateTimeOffset capturedAt,
-        Func<string, bool, ProtectionStatus>? protection = null)
+        Func<string, bool, ProtectionStatus>? protection = null,
+        string platform = Platforms.Linux)
     {
         protection ??= static (_, hasData) => hasData ? ProtectionStatus.Unprotected : ProtectionStatus.Stateless;
         raw = WithoutOwnResources(raw);
@@ -63,7 +64,7 @@ public static partial class InventoryBuilder
 
         var apps = containers
             .GroupBy(c => AppKey(c.Raw), StringComparer.Ordinal)
-            .Select(g => BuildApp(g.Key, g.Select(x => x.Raw).ToList(), g.Select(x => x.Info).ToList(), protection))
+            .Select(g => BuildApp(g.Key, g.Select(x => x.Raw).ToList(), g.Select(x => x.Info).ToList(), protection) with { Platform = platform })
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

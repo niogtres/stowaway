@@ -68,7 +68,10 @@ export function About() {
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-xs text-muted">restic and rclone run inside Docker containers on your computer and aren't part of the installer.</p>
+        <p className="mt-3 text-xs text-muted">
+          With Linux containers, restic and rclone run inside Docker containers on your computer. With Windows containers, the Windows builds of both come with the
+          installer.
+        </p>
       </Card>
 
       <TextPanel title="License" path="/api/about/license" />

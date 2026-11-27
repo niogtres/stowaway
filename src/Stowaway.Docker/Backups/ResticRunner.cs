@@ -20,6 +20,12 @@ public sealed class BackupOptions
 
     /// <summary>How long to wait for a container to stop gracefully before Docker kills it.</summary>
     public int StopTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>Windows-container engines: where restic.exe and rclone.exe are (shipped in the install folder).</summary>
+    public string ToolsDirectory { get; set; } = Path.Combine(AppContext.BaseDirectory, "tools");
+
+    /// <summary>Windows-container engines: working folder for host-side restic (cache, staging, secrets). Set by the service.</summary>
+    public string? HostWorkDirectory { get; set; }
 }
 
 /// <param name="Args">restic arguments.</param>
@@ -55,6 +61,30 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
     private readonly BackupOptions _options = options.Value;
     private readonly SemaphoreSlim _pullLock = new(1, 1);
     private string? _image;
+    private HostResticRunner? _host;
+
+    /// <summary>
+    /// True when the engine runs Windows containers: restic then runs on the host (Linux runner images can't run
+    /// there), and snapshots record host paths.
+    /// </summary>
+    public bool OnHost => Stowaway.Core.Inventory.Platforms.Of(engine.Current.OsType) == Stowaway.Core.Inventory.Platforms.Windows;
+
+    internal HostResticRunner Host => _host ??= new HostResticRunner(this, _options, logger);
+
+    /// <summary>Clears the host staging folder (metadata and dumps of the run in progress). No-op for Linux engines.</summary>
+    public void ClearHostStage()
+    {
+        if (OnHost)
+        {
+            Host.ClearStage();
+        }
+    }
+
+    /// <summary>Where restic.exe and rclone.exe are (Windows engines).</summary>
+    public string ToolsDirectory => _options.ToolsDirectory;
+
+    /// <summary>Where a run's staged files go on the host (Windows engines), e.g. SQL Server dumps.</summary>
+    public string HostStageDirectory => Host.StageDirectory;
 
     /// <summary>
     /// The runner image: the pinned restic image plus rclone (Dropbox) and socat (Dropbox sign-in), built
@@ -78,6 +108,11 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
 
     public async Task<RunnerResult> RunAsync(RunnerRequest request, Action<string, bool>? onLine, CancellationToken ct)
     {
+        if (OnHost)
+        {
+            return await Host.RunAsync(request, onLine, ct);
+        }
+
         using var client = CreateClient();
         await EnsureImageAsync(client, ct);
 
@@ -164,9 +199,9 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
 
     public async Task EnsureImageAsync(DockerClient client, CancellationToken ct)
     {
-        if (_image is not null)
+        if (_image is not null || OnHost)
         {
-            return;
+            return; // Windows engines don't use the Linux runner image
         }
 
         await _pullLock.WaitAsync(ct);

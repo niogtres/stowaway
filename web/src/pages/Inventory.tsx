@@ -4,7 +4,7 @@ import { useDeferredValue, useMemo, useState } from 'react'
 import emptyInventory from '@/assets/illustrations/empty-inventory.webp'
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
 import { AppBackupStatus, BackupNowDialog } from '@/components/backup'
-import { ContainerRow, MountRow, OutsideDataNote, ProtectionChip } from '@/components/inventory'
+import { ContainerRow, MountRow, OutsideDataNote, ProtectionChip, WindowsContainerNote } from '@/components/inventory'
 import { Badge, Card, Skeleton } from '@/components/ui'
 import { useInventory, useRefreshInventory, type AppInfo, type InventorySnapshot, type MountInfo, type VolumeInfo } from '@/lib/api'
 import { cn, formatBytes, formatNumber, shortVolumeName, timeAgo } from '@/lib/utils'
@@ -239,6 +239,8 @@ function AppCard({ app }: { app: AppInfo }) {
           <OutsideDataNote mounts={mounts} />
         </div>
       )}
+
+      {app.platform === 'windows' && <WindowsContainerNote />}
 
       <div className="mt-auto" />
       <AppBackupStatus app={app} onBackup={() => setBackingUp(true)} />

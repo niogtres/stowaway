@@ -83,6 +83,21 @@ public sealed record AppInfo
     /// <summary>At least one included mount hasn't been measured yet, so <see cref="DataBytes"/> is a lower bound.</summary>
     public bool SizeIncomplete { get; init; }
     public required ProtectionStatus Protection { get; init; }
+
+    /// <summary>
+    /// The engine's container platform: <c>linux</c> or <c>windows</c>. Stored with every snapshot (app.json),
+    /// because it decides where the data sits inside the snapshot (see <c>BackupPlanner.Layout</c>).
+    /// </summary>
+    public string Platform { get; init; } = Platforms.Linux;
+}
+
+public static class Platforms
+{
+    public const string Linux = "linux";
+    public const string Windows = "windows";
+
+    public static string Of(string? engineOsType) =>
+        string.Equals(engineOsType, Windows, StringComparison.OrdinalIgnoreCase) ? Windows : Linux;
 }
 
 public sealed record ContainerInfo
