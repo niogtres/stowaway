@@ -4,6 +4,9 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+- **Unowned volumes** no longer lists `dockerbackup-restic-cache`, Stowaway's own restic cache from before the project was renamed. The service removes it at startup.
+
 ## [0.11.1] - 2026-11-27
 
 ### Changed

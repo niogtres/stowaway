@@ -195,6 +195,17 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
             logger.LogWarning("Removing leftover runner container {Id}", c.ID[..12]);
             await TryAsync(() => client.Containers.RemoveContainerAsync(c.ID, new ContainerRemoveParameters { Force = true }, ct));
         }
+
+        // restic's cache from before the rename: only a cache, and Docker refuses (no force) if anything still uses it.
+        var legacy = await client.Volumes.ListAsync(new VolumesListParameters
+        {
+            Filters = new Dictionary<string, IDictionary<string, bool>> { ["name"] = new Dictionary<string, bool> { [Stowaway.Core.Inventory.InventoryBuilder.LegacyCacheVolume] = true } },
+        }, ct);
+        if (legacy.Volumes?.Any(v => v.Name == Stowaway.Core.Inventory.InventoryBuilder.LegacyCacheVolume) == true)
+        {
+            logger.LogInformation("Removing the old restic cache volume {Volume}", Stowaway.Core.Inventory.InventoryBuilder.LegacyCacheVolume);
+            await TryAsync(() => client.Volumes.RemoveAsync(Stowaway.Core.Inventory.InventoryBuilder.LegacyCacheVolume, force: false, ct));
+        }
     }
 
     public async Task EnsureImageAsync(DockerClient client, CancellationToken ct)
