@@ -4,6 +4,8 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-27
+
 ### Fixed
 - **Dropbox:** a new Dropbox destination with no folder now goes in a folder named `Stowaway` instead of the root of your Dropbox (the field only showed "Stowaway" as a hint). Existing destinations are unchanged. The field now explains that Dropbox shows the encrypted backup data (`data`, `index`, `keys`, `snapshots`), not your files.
 
@@ -71,7 +73,8 @@ Since the internal 0.7.x builds:
 - Dialogs with fields closed when clicking outside them, losing what was typed.
 - A database dump could hang the backup when Docker didn't pass on the end of the dump stream, and could fail with "No such exec instance" when Docker removed a finished command before its exit code was read.
 
-[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/niogtres/stowaway/releases/tag/v0.10.1
 [0.10.0]: https://github.com/niogtres/stowaway/releases/tag/v0.10.0
 [0.9.0]: https://github.com/niogtres/stowaway/releases/tag/v0.9.0
 [0.8.0]: https://github.com/niogtres/stowaway/releases/tag/v0.8.0
