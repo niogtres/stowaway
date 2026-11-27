@@ -157,7 +157,7 @@ The DockerBackup icon in the notification area shows the protection status at a 
 
 By default only this computer can open DockerBackup. To manage it from another computer on your network:
 
-1. **Add an account.** In **Settings → Remote access**, choose **Add account**, pick a user name and a password (at least 12 characters), and choose **Continue**.
+1. **Add an account.** In **Settings → Remote access**, choose **Add account**, pick a user name (your email address works) and a password (at least 8 characters, with upper and lower case letters and a digit or symbol), and choose **Continue**.
 2. **Connect an authenticator app.** Scan the QR code with an authenticator app (Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden…). **Save the recovery codes** somewhere safe, away from the phone; each one signs you in once if the phone is lost. Then enter the 6-digit code the app shows and choose **Confirm**.
 3. **Switch it on.** Tick **Allow access from other computers** and enter the names other computers use to reach this one (the computer name, its full DNS name, and/or its IP address; the suggestions below the box help). Only these names are accepted.
 4. **Pick a certificate:**

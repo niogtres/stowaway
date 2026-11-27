@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils'
 import { Button, Dialog, Field, TextInput } from './forms'
 import { Badge, Card, Skeleton, StatusDot } from './ui'
 
+const passwordRule = 'At least 8 characters, with upper and lower case letters and a digit or symbol.'
+
 const profiles: { id: FirewallProfile; label: string; hint: string }[] = [
   { id: 'domain', label: 'Domain', hint: 'Company networks' },
   { id: 'private', label: 'Private', hint: 'Home and trusted networks' },
@@ -392,12 +394,12 @@ function CreateAccountDialog({ open, onClose, onCreated }: { open: boolean; onCl
   return (
     <Dialog open={open} onClose={onClose} title="Add account" description="Next you'll connect an authenticator app (Microsoft Authenticator, Google Authenticator, 1Password, …).">
       <form onSubmit={submit} className="space-y-4">
-        <Field label="User name" hint="Letters, digits, dots, dashes or underscores.">
+        <Field label="User name" hint="An email address works, or letters, digits and . _ - @ +">
           <TextInput required autoFocus value={userName} onChange={(e) => setUserName(e.target.value)} autoComplete="off" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Password" hint="At least 12 characters.">
-            <TextInput required type="password" minLength={12} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          <Field label="Password" hint={passwordRule}>
+            <TextInput required type="password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
           </Field>
           <Field label="Repeat password">
             <TextInput required type="password" value={repeat} onChange={(e) => setRepeat(e.target.value)} autoComplete="new-password" />
@@ -551,8 +553,8 @@ function PasswordDialog({ account, onClose }: { account: RemoteAccount | null; o
     <Dialog open={account !== null} onClose={onClose} title={`New password for ${account?.userName ?? ''}`} description="Signs the account out everywhere and lifts a lockout.">
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Password" hint="At least 12 characters.">
-            <TextInput required type="password" minLength={12} autoFocus value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          <Field label="Password" hint={passwordRule}>
+            <TextInput required type="password" minLength={8} autoFocus value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
           </Field>
           <Field label="Repeat password">
             <TextInput required type="password" value={repeat} onChange={(e) => setRepeat(e.target.value)} autoComplete="new-password" />

@@ -117,7 +117,7 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
     /// <summary>A fresh source address per test, so the per-address sign-in rate limit doesn't couple tests.</summary>
     private static string NextIp() => $"192.0.2.{Interlocked.Increment(ref _nextIp)}";
 
-    private async Task<(RemoteAccount Account, byte[] Secret, IReadOnlyList<string> RecoveryCodes)> NewAccountAsync(string password = "a long enough password")
+    private async Task<(RemoteAccount Account, byte[] Secret, IReadOnlyList<string> RecoveryCodes)> NewAccountAsync(string password = "Good-pass1")
     {
         var service = factory.Services.GetRequiredService<AccountService>();
         var (account, setup) = await service.CreateAsync("user" + Guid.NewGuid().ToString("N")[..8], password, "test", _ct);
@@ -151,8 +151,8 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
         var client = factory.Remote(NextIp());
         var code = CurrentCode(secret);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(client, account.UserName, "wrong password!!", code)).StatusCode);
-        var ok = await SignInAsync(client, account.UserName, "a long enough password", code);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(client, account.UserName, "Wrong-pass9", code)).StatusCode);
+        var ok = await SignInAsync(client, account.UserName, "Good-pass1", code);
         Assert.Equal(HttpStatusCode.NoContent, ok.StatusCode);
         var cookie = Assert.Single(ok.Headers.GetValues("Set-Cookie"));
         Assert.StartsWith("__Host-DockerBackup=", cookie);
@@ -167,7 +167,7 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
 
         // Replaying the same code from another computer fails.
         var other = factory.Remote(NextIp());
-        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(other, account.UserName, "a long enough password", code)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(other, account.UserName, "Good-pass1", code)).StatusCode);
 
         await client.PostAsync("/api/auth/logout", null, _ct);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/system", _ct)).StatusCode);
@@ -178,19 +178,19 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
     {
         var (account, _, codes) = await NewAccountAsync();
         var client = factory.Remote(NextIp());
-        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(client, account.UserName, "a long enough password", codes[3])).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(factory.Remote(NextIp()), account.UserName, "a long enough password", codes[3])).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(client, account.UserName, "Good-pass1", codes[3])).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(factory.Remote(NextIp()), account.UserName, "Good-pass1", codes[3])).StatusCode);
     }
 
     [Fact]
     public async Task Unknown_users_and_unfinished_setups_fail_the_same_way()
     {
         var service = factory.Services.GetRequiredService<AccountService>();
-        var (pending, setup) = await service.CreateAsync("pending" + Guid.NewGuid().ToString("N")[..6], "a long enough password", "test", _ct);
+        var (pending, setup) = await service.CreateAsync("pending" + Guid.NewGuid().ToString("N")[..6], "Good-pass1", "test", _ct);
         var client = factory.Remote(NextIp());
 
-        var unknown = await SignInAsync(client, "nobody-here", "a long enough password", "123456");
-        var unconfirmed = await SignInAsync(client, pending.UserName, "a long enough password", CurrentCode(Base32.Decode(setup.Secret)));
+        var unknown = await SignInAsync(client, "nobody-here", "Good-pass1", "123456");
+        var unconfirmed = await SignInAsync(client, pending.UserName, "Good-pass1", CurrentCode(Base32.Decode(setup.Secret)));
         Assert.Equal(HttpStatusCode.Unauthorized, unknown.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, unconfirmed.StatusCode);
         var a = await unknown.Content.ReadFromJsonAsync<JsonElement>(_ct);
@@ -206,12 +206,12 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
         var attacker = factory.Remote(NextIp());
         for (var i = 0; i < AccountService.MaxFailedAttempts; i++)
         {
-            Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(attacker, account.UserName, "a long enough password", "000000")).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(attacker, account.UserName, "Good-pass1", "000000")).StatusCode);
         }
 
         var code = CurrentCode(secret);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(attacker, account.UserName, "a long enough password", code)).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(factory.Remote(NextIp()), account.UserName, "a long enough password", code)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(attacker, account.UserName, "Good-pass1", code)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(factory.Remote(NextIp()), account.UserName, "Good-pass1", code)).StatusCode);
     }
 
     [Fact]
@@ -220,10 +220,10 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
         var (account, secret, _) = await NewAccountAsync();
         for (var i = 0; i < AccountService.MaxAccountFailures; i++)
         {
-            await SignInAsync(factory.Remote(NextIp()), account.UserName, "a long enough password", "000000");
+            await SignInAsync(factory.Remote(NextIp()), account.UserName, "Good-pass1", "000000");
         }
 
-        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(factory.Remote(NextIp()), account.UserName, "a long enough password", CurrentCode(secret))).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SignInAsync(factory.Remote(NextIp()), account.UserName, "Good-pass1", CurrentCode(secret))).StatusCode);
         var stored = await factory.Services.GetRequiredService<IRemoteAccountStore>().GetAsync(account.Id, _ct);
         Assert.NotNull(stored!.LockedUntil);
     }
@@ -234,7 +234,7 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
         var (account, secret, _) = await NewAccountAsync();
         var client = factory.Remote(NextIp());
         var step = Totp.StepAt(DateTimeOffset.UtcNow);
-        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(client, account.UserName, "a long enough password", Totp.Code(secret, step))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(client, account.UserName, "Good-pass1", Totp.Code(secret, step))).StatusCode);
 
         // Changing plans (retention!), destinations, notifications or restoring needs a fresh code…
         var blocked = await client.PostAsJsonAsync("/api/plans", new { }, _ct);
@@ -261,7 +261,7 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
         var statuses = new List<HttpStatusCode>();
         for (var i = 0; i < 11; i++)
         {
-            statuses.Add((await SignInAsync(client, "nobody-" + i, "a long enough password", "123456")).StatusCode);
+            statuses.Add((await SignInAsync(client, "nobody-" + i, "Good-pass1", "123456")).StatusCode);
         }
 
         Assert.Equal(HttpStatusCode.TooManyRequests, statuses[^1]);
@@ -272,10 +272,10 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
     {
         var (account, secret, _) = await NewAccountAsync();
         var client = factory.Remote(NextIp());
-        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(client, account.UserName, "a long enough password", CurrentCode(secret))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(client, account.UserName, "Good-pass1", CurrentCode(secret))).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/system", _ct)).StatusCode);
 
-        await factory.Services.GetRequiredService<AccountService>().SetPasswordAsync(account.Id, "another long password", "test", _ct);
+        await factory.Services.GetRequiredService<AccountService>().SetPasswordAsync(account.Id, "Other-pass2", "test", _ct);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/system", _ct)).StatusCode);
     }
 
@@ -284,7 +284,7 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
     {
         var (account, secret, _) = await NewAccountAsync();
         var client = factory.Remote(NextIp());
-        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(client, account.UserName, "a long enough password", CurrentCode(secret))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SignInAsync(client, account.UserName, "Good-pass1", CurrentCode(secret))).StatusCode);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/remote", _ct)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/remote/accounts", _ct)).StatusCode);
@@ -379,13 +379,13 @@ public sealed class TrustedProxyTests(RemoteProxiedFactory factory) : IClassFixt
         var statuses = new List<HttpStatusCode>();
         for (var i = 0; i < 11; i++)
         {
-            statuses.Add((await first.PostAsJsonAsync("/api/auth/login", new { userName = "nobody", password = "a long enough password", code = "123456" }, _ct)).StatusCode);
+            statuses.Add((await first.PostAsJsonAsync("/api/auth/login", new { userName = "nobody", password = "Good-pass1", code = "123456" }, _ct)).StatusCode);
         }
 
         Assert.Equal(HttpStatusCode.TooManyRequests, statuses[^1]);
         // Another visitor behind the same proxy isn't affected.
         Assert.Equal(HttpStatusCode.Unauthorized,
-            (await ViaProxy("203.0.113.51").PostAsJsonAsync("/api/auth/login", new { userName = "nobody", password = "a long enough password", code = "123456" }, _ct)).StatusCode);
+            (await ViaProxy("203.0.113.51").PostAsJsonAsync("/api/auth/login", new { userName = "nobody", password = "Good-pass1", code = "123456" }, _ct)).StatusCode);
 
         var audit = factory.Services.GetRequiredService<IAuditStore>();
         for (var i = 0; i < 50 && !(await audit.ListRecentAsync(100, _ct)).Any(e => e.Address == "203.0.113.51"); i++)

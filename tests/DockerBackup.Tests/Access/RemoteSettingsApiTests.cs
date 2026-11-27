@@ -34,9 +34,9 @@ public sealed class RemoteSettingsApiTests(ServiceFactory factory) : IClassFixtu
         Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(new { enabled = true, hostNames = new[] { "localhost" } })).StatusCode);
 
         // Weak passwords are refused.
-        Assert.Equal(HttpStatusCode.BadRequest, (await _client.PostAsJsonAsync("/api/remote/accounts", new { userName = "alice", password = "short" }, _ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _client.PostAsJsonAsync("/api/remote/accounts", new { userName = "alice", password = "Short1" }, _ct)).StatusCode);
 
-        var created = await (await _client.PostAsJsonAsync("/api/remote/accounts", new { userName = "alice", password = "a long enough password" }, _ct))
+        var created = await (await _client.PostAsJsonAsync("/api/remote/accounts", new { userName = "alice", password = "Good-pass1" }, _ct))
             .Content.ReadFromJsonAsync<JsonElement>(_ct);
         var id = created.GetProperty("account").GetProperty("id").GetString();
         var setup = created.GetProperty("setup");
@@ -95,6 +95,16 @@ public sealed class RemoteSettingsApiTests(ServiceFactory factory) : IClassFixtu
 
         Assert.Contains(audit, e => e.GetProperty("action").GetString() == "PUT /api/remote" && e.GetProperty("status").GetInt32() == 200);
         Assert.Contains(audit, e => e.GetProperty("action").GetString() == $"DELETE /api/remote/accounts/{id}");
-        Assert.DoesNotContain("a long enough password", JsonSerializer.Serialize(audit));
+        Assert.DoesNotContain("Good-pass1", JsonSerializer.Serialize(audit));
+    }
+
+    [Fact]
+    public async Task Email_addresses_work_as_user_names()
+    {
+        var response = await _client.PostAsJsonAsync("/api/remote/accounts", new { userName = "someone+backup@example.com", password = "Good-pass1" }, _ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>(_ct);
+        Assert.Contains("someone%2Bbackup%40example.com?", created.GetProperty("setup").GetProperty("setupUri").GetString());
+        Assert.Equal(HttpStatusCode.BadRequest, (await _client.PostAsJsonAsync("/api/remote/accounts", new { userName = "has space@example.com", password = "Good-pass1" }, _ct)).StatusCode);
     }
 }

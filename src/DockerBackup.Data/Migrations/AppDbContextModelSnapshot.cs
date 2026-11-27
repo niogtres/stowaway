@@ -112,7 +112,7 @@ namespace DockerBackup.Data.Migrations
 
                     b.Property<string>("UserName")
                         .IsRequired()
-                        .HasMaxLength(64)
+                        .HasMaxLength(254)
                         .HasColumnType("TEXT")
                         .UseCollation("NOCASE");
 

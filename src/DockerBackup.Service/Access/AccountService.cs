@@ -33,7 +33,7 @@ public sealed partial class AccountService(IRemoteAccountStore store, ISecretPro
         var name = (userName ?? "").Trim();
         if (!UserNamePattern().IsMatch(name))
         {
-            throw new AccountException("Use 3 to 64 letters, digits, dots, dashes or underscores for the user name.");
+            throw new AccountException("Use 3 to 254 letters, digits or . _ - @ + for the user name (an email address works).");
         }
 
         if (PasswordHashing.Validate(password) is { } problem)
@@ -256,8 +256,8 @@ public sealed partial class AccountService(IRemoteAccountStore store, ISecretPro
     private byte[] SecretOf(RemoteAccount account) => Base32.Decode(protector.Unprotect(account.TotpSecretProtected));
 
     private static AuthenticatorSetup Setup(string userName, byte[] secret, IReadOnlyList<string> codes) =>
-        new(Totp.SetupUri(secret, Issuer, $"{userName}@{Environment.MachineName}"), Base32.Encode(secret), codes);
+        new(Totp.SetupUri(secret, Issuer, userName.Contains('@') ? userName : $"{userName}@{Environment.MachineName}"), Base32.Encode(secret), codes);
 
-    [GeneratedRegex(@"^[A-Za-z0-9._-]{3,64}$")]
+    [GeneratedRegex(@"^[A-Za-z0-9._@+-]{3,254}$")]
     private static partial Regex UserNamePattern();
 }

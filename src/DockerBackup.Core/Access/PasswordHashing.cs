@@ -6,7 +6,7 @@ namespace DockerBackup.Core.Access;
 /// <summary>PBKDF2-HMAC-SHA256 password hashes in the form <c>pbkdf2-sha256$iterations$salt$hash</c> (base64).</summary>
 public static class PasswordHashing
 {
-    public const int MinimumLength = 12;
+    public const int MinimumLength = 8;
     private const string Prefix = "pbkdf2-sha256";
     private const int Iterations = 600_000; // OWASP 2023 guidance for PBKDF2-HMAC-SHA256
     private const int SaltBytes = 16;
@@ -43,9 +43,18 @@ public static class PasswordHashing
         }
     }
 
-    /// <summary>Null when acceptable, otherwise a reason a person can act on.</summary>
+    /// <summary>The rule in words, for hints and error messages.</summary>
+    public const string Rule = "At least 8 characters, with upper and lower case letters and a digit or symbol.";
+
+    /// <summary>
+    /// Null when acceptable, otherwise a reason a person can act on. Kept moderate on purpose: every account also
+    /// needs an authenticator code, and sign-ins are rate limited and locked out after repeated failures.
+    /// </summary>
     public static string? Validate(string? password) =>
-        string.IsNullOrEmpty(password) || password.Length < MinimumLength
-            ? $"Use a password of at least {MinimumLength} characters."
-            : null;
+        password is { Length: >= MinimumLength }
+        && password.Any(char.IsUpper)
+        && password.Any(char.IsLower)
+        && password.Any(c => !char.IsLetter(c))
+            ? null
+            : $"Use a password with {char.ToLowerInvariant(Rule[0])}{Rule[1..]}";
 }

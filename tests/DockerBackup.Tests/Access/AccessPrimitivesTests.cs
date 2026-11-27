@@ -82,13 +82,17 @@ public sealed class PasswordAndRecoveryTests
         Assert.NotEqual(hash, PasswordHashing.Hash("correct horse battery")); // salted
     }
 
-    [Fact]
-    public void Short_passwords_are_refused()
-    {
-        Assert.NotNull(PasswordHashing.Validate("short"));
-        Assert.NotNull(PasswordHashing.Validate(null));
-        Assert.Null(PasswordHashing.Validate("twelve chars"));
-    }
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("Abc-12", false)]        // too short
+    [InlineData("abcdefg1", false)]      // no upper case
+    [InlineData("ABCDEFG1", false)]      // no lower case
+    [InlineData("Abcdefgh", false)]      // no digit or symbol
+    [InlineData("Abcdefg1", true)]
+    [InlineData("Abcdefg!", true)]
+    [InlineData("Ærlig talt 2", true)]
+    public void Passwords_need_8_characters_mixed_case_and_a_digit_or_symbol(string? password, bool ok) =>
+        Assert.Equal(ok, PasswordHashing.Validate(password) is null);
 
     [Fact]
     public void Recovery_codes_are_unique_and_match_their_hash_loosely()

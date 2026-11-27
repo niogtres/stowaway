@@ -79,7 +79,8 @@ export function Dialog({
       ref={ref}
       onClose={onClose}
       onClick={(e) => {
-        if (e.target === ref.current) onClose()
+        // A click on the backdrop closes simple dialogs, but never one with fields: typed input would be lost.
+        if (e.target === ref.current && !ref.current.querySelector('input, textarea, select')) onClose()
       }}
       className={cn(
         'm-auto w-[min(34rem,calc(100vw-2rem))] rounded-2xl border border-line bg-surface-strong p-0 text-fg shadow-2xl backdrop-blur-2xl backdrop:bg-black/50 backdrop:backdrop-blur-sm',

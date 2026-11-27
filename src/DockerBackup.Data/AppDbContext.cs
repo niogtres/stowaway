@@ -73,7 +73,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         model.Entity<RemoteAccount>(e =>
         {
             e.HasKey(a => a.Id);
-            e.Property(a => a.UserName).HasMaxLength(64).UseCollation("NOCASE");
+            e.Property(a => a.UserName).HasMaxLength(254).UseCollation("NOCASE");
             e.HasIndex(a => a.UserName).IsUnique();
             e.Property(a => a.PasswordHash).HasMaxLength(200);
             e.Property(a => a.SecurityStamp).HasMaxLength(64);
