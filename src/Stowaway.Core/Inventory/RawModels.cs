@@ -13,7 +13,8 @@ public sealed record RawContainer(
     string? Health,
     DateTimeOffset Created,
     IReadOnlyDictionary<string, string> Labels,
-    IReadOnlyList<RawMount> Mounts);
+    IReadOnlyList<RawMount> Mounts,
+    string? Command = null);
 
 /// <param name="Type">Engine mount type: volume, bind, tmpfs, npipe.</param>
 /// <param name="Name">Volume name for volume mounts.</param>

@@ -48,7 +48,8 @@ public sealed class DockerInventoryReader(Uri endpoint)
         Health: c.Health?.Status,
         Created: new DateTimeOffset(DateTime.SpecifyKind(c.Created, DateTimeKind.Utc)),
         Labels: Labels(c.Labels),
-        Mounts: (c.Mounts ?? []).Select(m => new RawMount(m.Type ?? "", m.Name, m.Source ?? "", m.Destination ?? "", m.RW)).ToList());
+        Mounts: (c.Mounts ?? []).Select(m => new RawMount(m.Type ?? "", m.Name, m.Source ?? "", m.Destination ?? "", m.RW)).ToList(),
+        Command: c.Command);
 
     private static IReadOnlyDictionary<string, string> Labels(IDictionary<string, string>? labels) =>
         labels is null ? new Dictionary<string, string>() : new Dictionary<string, string>(labels, StringComparer.Ordinal);

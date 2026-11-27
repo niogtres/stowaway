@@ -160,7 +160,7 @@ public static partial class InventoryBuilder
         CreatedAt = c.Created,
         ComposeService = c.Labels.GetValueOrDefault(ComposeServiceLabel),
         ComposeDependsOn = c.Labels.GetValueOrDefault(Backups.ComposeOrder.DependsOnLabel),
-        Database = DatabaseDetector.Detect(c.Image),
+        Database = DatabaseDetector.Detect(c.Image, c.Command),
         Mounts = c.Mounts.Select(m => MapMount(m, sizes)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
     };
 

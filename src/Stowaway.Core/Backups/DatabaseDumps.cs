@@ -28,7 +28,13 @@ public static class DatabaseDumps
     public static IReadOnlyList<ContainerInfo> Undumpable(AppInfo item) =>
         item.Containers.Where(c => c.State == "running" && c.Database is { } kind && !Supported(kind)).ToList();
 
-    internal static string Script(DatabaseKind kind) => kind switch
+    /// <summary>
+    /// The shell script that writes the dump to stdout. Line endings are normalised: the raw string literals take the
+    /// source file's line endings, and a Windows checkout (CRLF) would hand <c>sh</c> "then\r" and "fi\r".
+    /// </summary>
+    internal static string Script(DatabaseKind kind) => ScriptSource(kind).ReplaceLineEndings("\n");
+
+    private static string ScriptSource(DatabaseKind kind) => kind switch
     {
         DatabaseKind.PostgreSql =>
             """export PGPASSWORD="$POSTGRES_PASSWORD"; exec pg_dumpall -U "${POSTGRES_USER:-postgres}" --clean --if-exists""",
