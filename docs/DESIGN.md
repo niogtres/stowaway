@@ -286,7 +286,8 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Stopped container:** the archive API (`docker cp`; refused for running Hyper-V containers) copies the remembered files and any `.mdf/.ndf/.ldf` under `C:\databases` to `_dumps\<container>\files\C\…`, without starting the container. It does bump `sandbox.vhdx`'s modified time.
   - **Restore:** like Linux dumps, to a folder or volume only; the help explains `RESTORE … WITH MOVE` / `FOR ATTACH`.
   - **Drill** (`SqlServerDrill`): a container from the same image with `powershell -EncodedCommand` as entrypoint, which starts only the `MSSQL$*`/`MSSQLSERVER` service; the restored `_dumps` volume at `C:\stowaway-drill`; `RESTORE FILELISTONLY` → `RESTORE … WITH MOVE`, or `DBCC CHECKPRIMARYFILE(…, 3)` → `CREATE DATABASE … FOR ATTACH`; then `DBCC CHECKDB` and a table count.
-  - **Not covered by CI:** no SQL Server Windows image runs on the hosted runners; the end-to-end check runs on a real Business Central host (issue #4).
+  - **Not covered by CI:** no SQL Server Windows image runs on the hosted runners; the end-to-end check runs on a real Business Central host (issue #4, phase 9: `SqlServerWindowsTests` with `STOWAWAY_TEST_SQL_IMAGE`).
+  - **Archive streams:** Docker.DotNet's chunked response stream throws on a zero-byte read, which `TarReader` makes at the end of every entry; archives are read through `ZeroReadSafeStream`. Found on the real host in phase 9.
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 

@@ -122,4 +122,59 @@ public sealed class SqlServerDumpTests
         Assert.Equal(SqlServerDrill.StartScript, System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(encoded)));
         Assert.Contains("MSSQL$*", SqlServerDrill.StartScript, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Database_names_with_spaces_and_parentheses_stay_intact()
+    {
+        Assert.Equal(["My_Company__Test_.bak"], SqlServerDumps.BackupFileNames(["My Company (Test)"]));
+        Assert.StartsWith("BACKUP DATABASE [My Company (Test)] TO DISK", SqlServerDumps.BackupQuery("My Company (Test)", "My_Company__Test_.bak"), StringComparison.Ordinal);
+        var parsed = SqlServerDumps.ParseList("My Company (Test)|C:\\databases\\My Company (Test)_Data.mdf\r\n");
+        Assert.Equal("My Company (Test)", parsed[0].Name);
+        Assert.Equal(@"C:\databases\My Company (Test)_Data.mdf", parsed[0].Files[0]);
+    }
+
+    /// <summary>Docker.DotNet's chunked stream throws on a zero-byte read, which TarReader makes at the end of each entry.</summary>
+    private sealed class ThrowsOnEmptyRead(Stream inner) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => count == 0 ? throw new EndOfStreamException("The connection closed in the middle of a chunk.") : inner.Read(buffer, offset, Math.Min(count, 700));
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) =>
+            buffer.IsEmpty ? throw new EndOfStreamException("The connection closed in the middle of a chunk.") : inner.ReadAsync(buffer[..Math.Min(buffer.Length, 700)], ct);
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) => ReadAsync(buffer.AsMemory(offset, count), ct).AsTask();
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task Archives_from_docker_read_past_the_first_file()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var archive = new MemoryStream();
+        await using (var writer = new System.Formats.Tar.TarWriter(archive, leaveOpen: true))
+        {
+            foreach (var (name, size) in new[] { ("databases/a.mdf", 5000), ("databases/a_log.ldf", 3000) })
+            {
+                var entry = new System.Formats.Tar.PaxTarEntry(System.Formats.Tar.TarEntryType.RegularFile, name) { DataStream = new MemoryStream(new byte[size]) };
+                await writer.WriteEntryAsync(entry, ct);
+            }
+        }
+
+        archive.Position = 0;
+        var sizes = new List<long>();
+        await using var reader = new System.Formats.Tar.TarReader(new Stowaway.Docker.ZeroReadSafeStream(new ThrowsOnEmptyRead(archive)));
+        while (await reader.GetNextEntryAsync(copyData: false, ct) is { } entry)
+        {
+            var copy = new MemoryStream();
+            await entry.DataStream!.CopyToAsync(copy, ct);
+            sizes.Add(copy.Length);
+        }
+
+        Assert.Equal([5000L, 3000L], sizes);
+    }
 }
