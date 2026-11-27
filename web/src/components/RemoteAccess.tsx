@@ -122,7 +122,9 @@ function SettingsForm({ view, readyAccounts }: { view: RemoteAccessView; readyAc
     .split(/[\s,;]+/)
     .map((n) => n.trim())
     .filter(Boolean)
-  const suggestions = view.suggestedHostNames.filter((s) => !hostNames.some((h) => h.toLowerCase() === s.toLowerCase()))
+  const behindProxy = proxies.trim().length > 0
+  // This computer's own names only help without a proxy; behind one, people use the proxy's public name.
+  const suggestions = behindProxy ? [] : view.suggestedHostNames.filter((s) => !hostNames.some((h) => h.toLowerCase() === s.toLowerCase()))
   const noCertificates = view.certificates.length === 0
 
   const submit = (e: FormEvent) => {
@@ -150,7 +152,14 @@ function SettingsForm({ view, readyAccounts }: { view: RemoteAccessView; readyAc
           </span>
         </label>
 
-        <Field label="Names other computers use to reach this one" hint="Separate several with commas. Only these names are accepted, which also protects against DNS rebinding.">
+        <Field
+          label="Names people open in the browser"
+          hint={
+            behindProxy
+              ? 'Behind a reverse proxy: the public name, such as backup.example.com, not this computer’s name or address. Only these names are accepted.'
+              : 'Separate several with commas. Only these names are accepted, which also protects against DNS rebinding.'
+          }
+        >
           <TextInput value={names} onChange={(e) => setNames(e.target.value)} placeholder="backup-server, backup-server.home.lan, 192.168.1.20" className="font-mono" />
         </Field>
         {suggestions.length > 0 && (
