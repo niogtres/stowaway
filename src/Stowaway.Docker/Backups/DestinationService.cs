@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Stowaway.Core.Backups;
+using Stowaway.Core.Destinations;
 using Stowaway.Core.Restic;
 using Microsoft.Extensions.Logging;
 
@@ -15,32 +16,27 @@ public interface IBackupEvents
     void PlansChanged();
 }
 
+/// <summary>A new destination. <paramref name="Settings"/> and <paramref name="Secrets"/> hold the fields its type describes.</summary>
+/// <param name="SignInSession">A finished browser sign-in (types that use one, like Dropbox).</param>
+/// <param name="CredentialsFrom">Reuse the credentials of this destination of the same type; typed values still win.</param>
 public sealed record CreateDestinationRequest(
     string Name,
     DestinationKind Kind,
-    string Path,
-    string? SmbUsername,
-    string? SmbPassword,
-    string? SmbDomain,
-    string? ExistingRepositoryPassword,
     IReadOnlyDictionary<string, string>? Settings = null,
     IReadOnlyDictionary<string, string>? Secrets = null,
-    Guid? DropboxSession = null,
+    string? ExistingRepositoryPassword = null,
+    Guid? SignInSession = null,
     Guid? CredentialsFrom = null);
 
 /// <summary>
-/// Changes to a destination. Null means "keep". <paramref name="Settings"/> holds only the location settings being
+/// Changes to a destination. Null means "keep". <paramref name="Settings"/> holds only the location fields being
 /// changed; <paramref name="Secrets"/> only the credentials being replaced (empty values are ignored).
 /// </summary>
 public sealed record UpdateDestinationRequest(
     string? Name,
-    string? Path = null,
-    string? SmbUsername = null,
-    string? SmbPassword = null,
-    string? SmbDomain = null,
     IReadOnlyDictionary<string, string>? Settings = null,
     IReadOnlyDictionary<string, string>? Secrets = null,
-    Guid? DropboxSession = null);
+    Guid? SignInSession = null);
 
 public sealed record DestinationStatus(
     bool Reachable,
@@ -57,7 +53,7 @@ public sealed class DestinationService(
     ResticRepository repository,
     ISecretProtector secrets,
     IBackupEvents events,
-    DropboxAuthService dropbox,
+    Destinations.DestinationProviders providers,
     Stowaway.Core.Plans.IPlanStore plans,
     ILogger<DestinationService> logger)
 {
@@ -73,68 +69,50 @@ public sealed class DestinationService(
 
     public async Task<Destination> CreateAsync(CreateDestinationRequest request, CancellationToken ct)
     {
-        var name = request.Name.Trim();
-        if (name.Length is 0 or > 100)
-        {
-            throw new ValidationException("Give the destination a name (up to 100 characters).");
-        }
-
-        if ((await store.ListAsync(ct)).Any(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new ValidationException($"A destination named '{name}' already exists.");
-        }
-
-        var cloud = CloudRepositories.IsCloud(request.Kind);
-        var settings = (request.Settings ?? new Dictionary<string, string>()).ToDictionary(kv => kv.Key, kv => kv.Value.Trim());
-        var cloudSecrets = (request.Secrets ?? new Dictionary<string, string>()).ToDictionary(kv => kv.Key, kv => kv.Value);
+        var name = await ValidNameAsync(request.Name, null, ct);
+        var provider = Provider(request.Kind);
+        var values = Typed(provider, request.Settings, request.Secrets);
         string path;
-        if (cloud)
+        try
         {
             if (request.CredentialsFrom is { } sourceId)
             {
                 // Reuse the sign-in or keys of another destination of the same kind; typed values still win.
                 var source = await store.GetAsync(sourceId, ct);
-                if (source is null || source.Kind != request.Kind || source.ProtectedSecrets is null)
+                if (source is null || source.Kind != request.Kind)
                 {
                     throw new ValidationException("The destination to copy the connection from doesn't exist or isn't the same type.");
                 }
 
-                foreach (var (key, value) in ReadSecrets(source))
+                var sourceValues = Destinations.DestinationValues.Load(source, provider.Descriptor, secrets);
+                foreach (var field in provider.Descriptor.Fields.Where(f => f.Section == FieldSection.Credentials))
                 {
-                    if (string.IsNullOrEmpty(cloudSecrets.GetValueOrDefault(key)))
+                    if (string.IsNullOrEmpty(values.GetValueOrDefault(field.Key)) && sourceValues.TryGetValue(field.Key, out var value))
                     {
-                        cloudSecrets[key] = value;
+                        values[field.Key] = value;
                     }
                 }
             }
 
-            if (request.Kind == DestinationKind.Dropbox && request.DropboxSession is { } session)
+            if (request.SignInSession is { } session)
             {
-                cloudSecrets[DestinationKeys.Token] = dropbox.TakeToken(session) ?? throw new ValidationException("The Dropbox sign-in isn't complete. Connect again.");
-            }
-
-            try
-            {
-                CloudRepositories.ApplyDropboxFolder(request.Kind, settings);
-                path = CloudRepositories.Describe(request.Kind, settings, cloudSecrets);
-                if (request.Kind == DestinationKind.Sftp)
+                foreach (var (key, value) in provider.TakeSignIn(session))
                 {
-                    var port = int.TryParse(settings.GetValueOrDefault(DestinationKeys.Port), out var p) ? p : 22;
-                    settings[DestinationKeys.KnownHosts] = await repository.ScanHostKeysAsync(settings[DestinationKeys.Host], port, ct);
+                    values[key] = value;
                 }
             }
-            catch (DestinationValidationException ex)
-            {
-                throw new ValidationException(ex.Message);
-            }
-            catch (ResticException ex)
-            {
-                throw new ValidationException(ex.Message);
-            }
+
+            provider.Normalize(values, creating: true);
+            path = provider.Validate(values);
+            await provider.PrepareAsync(values, values.Keys.ToHashSet(StringComparer.Ordinal), creating: true, ct);
         }
-        else
+        catch (DestinationValidationException ex)
         {
-            path = ValidatePath(request.Kind, request.Path);
+            throw new ValidationException(ex.Message);
+        }
+        catch (ResticException ex)
+        {
+            throw new ValidationException(ex.Message);
         }
 
         var existingPassword = string.IsNullOrEmpty(request.ExistingRepositoryPassword) ? null : request.ExistingRepositoryPassword;
@@ -145,13 +123,9 @@ public sealed class DestinationService(
             Name = name,
             Kind = request.Kind,
             Path = path,
-            SmbUsername = request.Kind == DestinationKind.Smb ? NullIfEmpty(request.SmbUsername) : null,
-            SmbDomain = request.Kind == DestinationKind.Smb ? NullIfEmpty(request.SmbDomain) : null,
-            ProtectedSmbPassword = request.Kind == DestinationKind.Smb && !string.IsNullOrEmpty(request.SmbPassword) ? secrets.Protect(request.SmbPassword) : null,
             ProtectedRepositoryPassword = secrets.Protect(password),
-            Settings = cloud ? System.Text.Json.JsonSerializer.Serialize(settings) : null,
-            ProtectedSecrets = cloud ? secrets.Protect(System.Text.Json.JsonSerializer.Serialize(cloudSecrets)) : null,
         };
+        Destinations.DestinationValues.Store(destination, provider.Descriptor, values, secrets);
 
         try
         {
@@ -173,6 +147,16 @@ public sealed class DestinationService(
         events.DestinationsChanged();
         _ = RefreshStatusAsync(destination.Id, CancellationToken.None);
         return destination;
+    }
+
+    /// <summary>The descriptors of every destination type, for the web client's forms.</summary>
+    public IReadOnlyList<DestinationDescriptor> Types => providers.Descriptors;
+
+    /// <summary>The destination's values the browser may see (no secrets, nothing hidden).</summary>
+    public Dictionary<string, string> PublicValues(Destination destination)
+    {
+        var descriptor = Provider(destination.Kind).Descriptor;
+        return Destinations.DestinationValues.Public(Destinations.DestinationValues.Load(destination, descriptor, secrets), descriptor);
     }
 
     /// <summary>Verifies reachability and password, then refreshes snapshot count and size.</summary>
@@ -219,114 +203,59 @@ public sealed class DestinationService(
     public async Task<Destination> UpdateAsync(Guid id, UpdateDestinationRequest request, CancellationToken ct)
     {
         var current = await store.GetAsync(id, ct) ?? throw new KeyNotFoundException();
-        var all = await store.ListAsync(ct);
         var updated = Copy(current);
-
         if (request.Name is { } newName)
         {
-            var name = newName.Trim();
-            if (name.Length is 0 or > 100)
-            {
-                throw new ValidationException("Give the destination a name (up to 100 characters).");
-            }
-
-            if (all.Any(d => d.Id != id && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new ValidationException($"A destination named '{name}' already exists.");
-            }
-
-            updated.Name = name;
+            updated.Name = await ValidNameAsync(newName, id, ct);
         }
 
-        var connectionChanged = false;
-        if (CloudRepositories.IsCloud(current.Kind))
+        var provider = Provider(current.Kind);
+        var values = Destinations.DestinationValues.Load(current, provider.Descriptor, secrets);
+        var changed = new HashSet<string>(StringComparer.Ordinal);
+        try
         {
-            var settings = ReadSettings(current);
-            var cloudSecrets = ReadSecrets(current);
-            if (request.Settings is { Count: > 0 } changes)
+            // Location fields count as changed only when they differ from what's stored (after normalising, so
+            // re-sending the same folder is no change); credentials whenever a new value was typed.
+            var typed = Typed(provider, request.Settings, null);
+            provider.Normalize(typed, creating: false);
+            foreach (var (key, value) in typed.Where(kv => !string.Equals(values.GetValueOrDefault(kv.Key) ?? string.Empty, kv.Value, StringComparison.Ordinal)))
             {
-                foreach (var (key, value) in changes)
-                {
-                    if (key != DestinationKeys.KnownHosts)
-                    {
-                        settings[key] = value.Trim();
-                    }
-                }
-
-                connectionChanged = true;
+                values[key] = value;
+                changed.Add(key);
             }
 
-            foreach (var (key, value) in request.Secrets ?? new Dictionary<string, string>())
+            foreach (var (key, value) in Typed(provider, null, request.Secrets).Where(kv => kv.Value.Length > 0))
             {
-                if (!string.IsNullOrEmpty(value))
-                {
-                    cloudSecrets[key] = value;
-                    connectionChanged = true;
-                }
+                values[key] = value;
+                changed.Add(key);
             }
 
-            if (current.Kind == DestinationKind.Dropbox && request.DropboxSession is { } session)
+            if (request.SignInSession is { } session)
             {
-                cloudSecrets[DestinationKeys.Token] = dropbox.TakeToken(session) ?? throw new ValidationException("The Dropbox sign-in isn't complete. Connect again.");
-                connectionChanged = true;
-            }
-
-            try
-            {
-                if (request.Settings?.ContainsKey(DestinationKeys.Prefix) == true)
+                foreach (var (key, value) in provider.TakeSignIn(session))
                 {
-                    CloudRepositories.ApplyDropboxFolder(current.Kind, settings);
-                }
-
-                updated.Path = CloudRepositories.Describe(current.Kind, settings, cloudSecrets);
-                if (current.Kind == DestinationKind.Sftp && request.Settings is { } sftp && (sftp.ContainsKey(DestinationKeys.Host) || sftp.ContainsKey(DestinationKeys.Port)))
-                {
-                    var port = int.TryParse(settings.GetValueOrDefault(DestinationKeys.Port), out var p) ? p : 22;
-                    settings[DestinationKeys.KnownHosts] = await repository.ScanHostKeysAsync(settings[DestinationKeys.Host], port, ct);
+                    values[key] = value;
+                    changed.Add(key);
                 }
             }
-            catch (DestinationValidationException ex)
-            {
-                throw new ValidationException(ex.Message);
-            }
-            catch (ResticException ex)
-            {
-                throw new ValidationException(ex.Message);
-            }
 
-            updated.Settings = System.Text.Json.JsonSerializer.Serialize(settings);
-            updated.ProtectedSecrets = secrets.Protect(System.Text.Json.JsonSerializer.Serialize(cloudSecrets));
+            if (changed.Count > 0)
+            {
+                updated.Path = provider.Validate(values);
+                await provider.PrepareAsync(values, changed, creating: false, ct);
+                Destinations.DestinationValues.Store(updated, provider.Descriptor, values, secrets);
+            }
         }
-        else
+        catch (DestinationValidationException ex)
         {
-            if (request.Path is { } newPath)
-            {
-                updated.Path = ValidatePath(current.Kind, newPath);
-                connectionChanged |= !string.Equals(updated.Path, current.Path, StringComparison.OrdinalIgnoreCase);
-            }
-
-            if (current.Kind == DestinationKind.Smb)
-            {
-                if (request.SmbUsername is not null)
-                {
-                    updated.SmbUsername = NullIfEmpty(request.SmbUsername);
-                    connectionChanged = true;
-                }
-
-                if (request.SmbDomain is not null)
-                {
-                    updated.SmbDomain = NullIfEmpty(request.SmbDomain);
-                    connectionChanged = true;
-                }
-
-                if (!string.IsNullOrEmpty(request.SmbPassword))
-                {
-                    updated.ProtectedSmbPassword = secrets.Protect(request.SmbPassword);
-                    connectionChanged = true;
-                }
-            }
+            throw new ValidationException(ex.Message);
+        }
+        catch (ResticException ex)
+        {
+            throw new ValidationException(ex.Message);
         }
 
+        var connectionChanged = changed.Count > 0;
         if (connectionChanged)
         {
             string found;
@@ -358,19 +287,55 @@ public sealed class DestinationService(
         return updated;
     }
 
+    private async Task<string> ValidNameAsync(string requested, Guid? self, CancellationToken ct)
+    {
+        var name = requested.Trim();
+        if (name.Length is 0 or > 100)
+        {
+            throw new ValidationException("Give the destination a name (up to 100 characters).");
+        }
+
+        if ((await store.ListAsync(ct)).Any(d => d.Id != self && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ValidationException($"A destination named '{name}' already exists.");
+        }
+
+        return name;
+    }
+
+    private Destinations.IDestinationProvider Provider(DestinationKind kind)
+    {
+        try
+        {
+            return providers.Get(kind);
+        }
+        catch (DestinationValidationException ex)
+        {
+            throw new ValidationException(ex.Message);
+        }
+    }
+
+    /// <summary>What the user typed, limited to the type's visible fields; other values are trimmed, secrets kept as typed.</summary>
+    private static Dictionary<string, string> Typed(Destinations.IDestinationProvider provider, IReadOnlyDictionary<string, string>? settings, IReadOnlyDictionary<string, string>? typedSecrets)
+    {
+        var typed = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, value) in (settings ?? new Dictionary<string, string>()).Concat(typedSecrets ?? new Dictionary<string, string>()))
+        {
+            if (provider.Descriptor.Field(key) is { Hidden: false } field)
+            {
+                typed[key] = field.Secret ? value : value.Trim();
+            }
+        }
+
+        return typed;
+    }
+
     private static Destination Copy(Destination d) => new()
     {
         Id = d.Id, Name = d.Name, Kind = d.Kind, Path = d.Path, SmbUsername = d.SmbUsername, SmbDomain = d.SmbDomain,
         ProtectedSmbPassword = d.ProtectedSmbPassword, Settings = d.Settings, ProtectedSecrets = d.ProtectedSecrets,
         ProtectedRepositoryPassword = d.ProtectedRepositoryPassword, RepositoryId = d.RepositoryId, CreatedAt = d.CreatedAt,
     };
-
-    /// <summary>The non-secret settings of a cloud destination.</summary>
-    public static Dictionary<string, string> ReadSettings(Destination destination) =>
-        destination.Settings is null ? [] : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(destination.Settings) ?? [];
-
-    private Dictionary<string, string> ReadSecrets(Destination destination) =>
-        destination.ProtectedSecrets is null ? [] : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(secrets.Unprotect(destination.ProtectedSecrets)) ?? [];
 
     /// <summary>Forgets the destination. Backup data at the location is left untouched.</summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
@@ -394,34 +359,19 @@ public sealed class DestinationService(
         return deleted;
     }
 
+    /// <summary>The folder or share path rules of local and SMB destinations (see their providers).</summary>
     internal static string ValidatePath(DestinationKind kind, string path)
     {
-        var trimmed = path.Trim().TrimEnd('\\', '/');
-        if (kind == DestinationKind.Smb)
+        try
         {
-            if (SmbMount.ParseUnc(trimmed) is null)
-            {
-                throw new ValidationException(@"Enter a network path like \\server\share\folder.");
-            }
-
-            return trimmed.Replace('/', '\\');
+            return kind == DestinationKind.Smb ? Destinations.SmbProvider.SharePath(path) : Destinations.LocalFolderProvider.FolderPath(path);
         }
-
-        if (trimmed.Length < 3 || !char.IsAsciiLetter(trimmed[0]) || trimmed[1] != ':' || trimmed[2] is not ('\\' or '/'))
+        catch (DestinationValidationException ex)
         {
-            throw new ValidationException(@"Enter a full folder path like D:\Backups\docker.");
+            throw new ValidationException(ex.Message);
         }
-
-        var full = Path.GetFullPath(trimmed);
-        if (full.Length <= 3)
-        {
-            throw new ValidationException("Use a folder, not the root of a drive.");
-        }
-
-        return full;
     }
 
     private static string GeneratePassword() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

@@ -16,10 +16,23 @@ public sealed class CloudRepositoryTests
 {
     private static Dictionary<string, string> D(params (string Key, string Value)[] items) => items.ToDictionary(i => i.Key, i => i.Value);
 
+    private static Stowaway.Docker.Destinations.CloudProvider Cloud(DestinationKind kind) =>
+        (Stowaway.Docker.Destinations.CloudProvider)Stowaway.Docker.Destinations.DestinationProviders.BuiltIn(null!).Get(kind);
+
+    /// <summary>Settings and secrets as one set of values, the way providers see them.</summary>
+    private static Dictionary<string, string> V(Dictionary<string, string> settings, Dictionary<string, string> secrets) =>
+        settings.Concat(secrets).ToDictionary(kv => kv.Key, kv => kv.Value);
+
+    private static Stowaway.Core.Backups.RepositoryConnection Connect(DestinationKind kind, Dictionary<string, string> settings, Dictionary<string, string> secrets) =>
+        Cloud(kind).Connect(V(settings, secrets));
+
+    private static string Describe(DestinationKind kind, Dictionary<string, string> settings, Dictionary<string, string> secrets) =>
+        Cloud(kind).Validate(V(settings, secrets));
+
     [Fact]
     public void S3_uses_endpoint_bucket_prefix_and_aws_variables()
     {
-        var c = CloudRepositories.Connect(DestinationKind.S3,
+        var c = Connect(DestinationKind.S3,
             D(("endpoint", "https://s3.example.com/"), ("bucket", "backups"), ("prefix", "/host1/"), ("region", "eu-west-1")),
             D(("accessKeyId", "AKIA"), ("secretAccessKey", "s3cr3t")));
         Assert.Equal("s3:https://s3.example.com/backups/host1", c.Repository);
@@ -32,15 +45,15 @@ public sealed class CloudRepositoryTests
     [Fact]
     public void B2_azure_and_dropbox_connections()
     {
-        var b2 = CloudRepositories.Connect(DestinationKind.B2, D(("bucket", "bkt")), D(("accountId", "id"), ("accountKey", "key")));
+        var b2 = Connect(DestinationKind.B2, D(("bucket", "bkt")), D(("accountId", "id"), ("accountKey", "key")));
         Assert.Equal("b2:bkt:/", b2.Repository);
         Assert.Equal("key", b2.Environment["B2_ACCOUNT_KEY"]);
 
-        var azure = CloudRepositories.Connect(DestinationKind.Azure, D(("accountName", "acct"), ("bucket", "cont"), ("prefix", "docker")), D(("accountKey", "k")));
+        var azure = Connect(DestinationKind.Azure, D(("accountName", "acct"), ("bucket", "cont"), ("prefix", "docker")), D(("accountKey", "k")));
         Assert.Equal("azure:cont:/docker", azure.Repository);
         Assert.Equal("acct", azure.Environment["AZURE_ACCOUNT_NAME"]);
 
-        var dropbox = CloudRepositories.Connect(DestinationKind.Dropbox, D(("prefix", "Stowaway")), D(("token", "{\"access_token\":\"x\"}")));
+        var dropbox = Connect(DestinationKind.Dropbox, D(("prefix", "Stowaway")), D(("token", "{\"access_token\":\"x\"}")));
         Assert.Equal("rclone:dropbox:Stowaway", dropbox.Repository);
         Assert.Equal("dropbox", dropbox.Environment["RCLONE_CONFIG_DROPBOX_TYPE"]);
         Assert.Contains("access_token", dropbox.Environment["RCLONE_CONFIG_DROPBOX_TOKEN"]);
@@ -49,7 +62,7 @@ public sealed class CloudRepositoryTests
     [Fact]
     public void Sftp_pins_host_keys_and_uses_the_key_file()
     {
-        var c = CloudRepositories.Connect(DestinationKind.Sftp,
+        var c = Connect(DestinationKind.Sftp,
             D(("host", "backup.example.com"), ("port", "2222"), ("user", "bk"), ("path", "/srv/repo"), ("knownHosts", "backup.example.com ssh-ed25519 AAAA")),
             D(("privateKey", "-----BEGIN OPENSSH PRIVATE KEY-----\r\nabc\r\n-----END OPENSSH PRIVATE KEY-----")));
         Assert.Equal("sftp:bk@backup.example.com:/srv/repo", c.Repository);
@@ -71,16 +84,16 @@ public sealed class CloudRepositoryTests
         var settings = D(("endpoint", "https://s3.amazonaws.com"), ("bucket", "good-bucket"), ("host", "h"), ("user", "u"), ("path", "/p"), ("accountName", "acct"));
         settings[key] = value;
         var secrets = D(("accessKeyId", "a"), ("secretAccessKey", "b"), ("accountId", "c"), ("accountKey", "d"), ("privateKey", "-----BEGIN OPENSSH PRIVATE KEY-----"));
-        Assert.Throws<DestinationValidationException>(() => CloudRepositories.Describe(kind, settings, secrets));
+        Assert.Throws<DestinationValidationException>(() => Describe(kind, settings, secrets));
     }
 
     [Fact]
     public void Describe_requires_credentials_and_a_dropbox_token()
     {
-        Assert.Throws<DestinationValidationException>(() => CloudRepositories.Describe(DestinationKind.S3, D(("endpoint", "https://s3.amazonaws.com"), ("bucket", "good-bucket")), D()));
-        Assert.Throws<DestinationValidationException>(() => CloudRepositories.Describe(DestinationKind.Dropbox, D(), D()));
+        Assert.Throws<DestinationValidationException>(() => Describe(DestinationKind.S3, D(("endpoint", "https://s3.amazonaws.com"), ("bucket", "good-bucket")), D()));
+        Assert.Throws<DestinationValidationException>(() => Describe(DestinationKind.Dropbox, D(), D()));
         Assert.Equal("s3://good-bucket/x (s3.amazonaws.com)",
-            CloudRepositories.Describe(DestinationKind.S3, D(("endpoint", "https://s3.amazonaws.com"), ("bucket", "good-bucket"), ("prefix", "x")), D(("accessKeyId", "a"), ("secretAccessKey", "b"))));
+            Describe(DestinationKind.S3, D(("endpoint", "https://s3.amazonaws.com"), ("bucket", "good-bucket"), ("prefix", "x")), D(("accessKeyId", "a"), ("secretAccessKey", "b"))));
     }
 
     [Theory]
@@ -94,17 +107,22 @@ public sealed class CloudRepositoryTests
     public void Dropbox_destinations_always_live_under_the_stowaway_folder(string folder, string repository)
     {
         var settings = new Dictionary<string, string> { ["prefix"] = folder };
-        CloudRepositories.ApplyDropboxFolder(DestinationKind.Dropbox, settings);
-        Assert.Equal(repository, CloudRepositories.Connect(DestinationKind.Dropbox, settings, D(("token", "t"))).Repository);
+        Cloud(DestinationKind.Dropbox).Normalize(settings, creating: true);
+        Assert.Equal(repository, Connect(DestinationKind.Dropbox, settings, D(("token", "t"))).Repository);
     }
 
     [Fact]
     public void Dropbox_folder_rejects_parent_references_and_leaves_other_kinds_alone()
     {
-        Assert.Throws<DestinationValidationException>(() => CloudRepositories.DropboxFolder("../elsewhere"));
+        Assert.Throws<DestinationValidationException>(() => Stowaway.Docker.Destinations.DropboxProvider.Folder("../elsewhere"));
         var settings = new Dictionary<string, string>();
-        CloudRepositories.ApplyDropboxFolder(DestinationKind.S3, settings);
+        Cloud(DestinationKind.S3).Normalize(settings, creating: true);
         Assert.Empty(settings);
+
+        // Older Dropbox destinations keep their folder (even the root) until the folder itself is changed.
+        var untouched = new Dictionary<string, string> { ["token"] = "t" };
+        Cloud(DestinationKind.Dropbox).Normalize(untouched, creating: false);
+        Assert.False(untouched.ContainsKey("prefix"));
     }
 
     [Fact]

@@ -37,6 +37,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<SqlServerDumpService>();
         services.AddSingleton<Restore.SqlServerDrill>();
         services.AddDatabaseProviders();
+        services.AddDestinationProviders();
         services.AddSingleton<DatabaseProbe>();
         services.AddSingleton<DropboxAuthService>();
         services.AddSingleton<DestinationService>();
@@ -56,6 +57,20 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<PlanScheduler>();
         services.AddHostedService<MaintenanceScheduler>();
         services.AddHostedService<DrillScheduler>();
+        return services;
+    }
+
+    /// <summary>The destination providers (see <see cref="Destinations.IDestinationProvider"/>), one per destination type.</summary>
+    private static IServiceCollection AddDestinationProviders(this IServiceCollection services)
+    {
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.LocalFolderProvider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.SmbProvider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.S3Provider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.B2Provider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.AzureProvider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.SftpProvider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.DropboxProvider>();
+        services.AddSingleton<Destinations.DestinationProviders>();
         return services;
     }
 

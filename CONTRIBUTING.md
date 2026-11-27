@@ -44,6 +44,19 @@ For a database that can be dumped with its own command-line tools inside its Lin
 
 A database that needs more than shell commands (like SQL Server in Windows containers) gets its own `IDatabaseProvider`, registered in `AddDatabaseProviders`.
 
+## Adding a destination type
+
+Each destination type is a **destination provider** (`src/Stowaway.Docker/Destinations/`, `IDestinationProvider`). It describes its fields, checks them, and tells restic how to reach the repository. The web client draws the add and edit forms from the provider's descriptor (`GET /api/destination-types`), so a new type needs no form code.
+
+1. Add the type to `DestinationKind` (`src/Stowaway.Core/Backups/BackupModels.cs`).
+2. Write the provider. Cloud types derive from `CloudProvider` (see `S3Provider`). Implement:
+   - its descriptor: fields, which are secret, and which belong to the location or the credentials;
+   - `Validate`: checks the values and returns the location shown to the user;
+   - `Connect`: restic's repository string, environment and files.
+   Override `Normalize`, `PrepareAsync` or `TakeSignIn` if the type needs them (see `DropboxProvider` and `SftpProvider`).
+3. Register it in `AddDestinationProviders` and in `DestinationProviders.BuiltIn`. If the descriptor names a new icon, add it to `web/src/lib/destinations.ts`.
+4. Test `Validate` and `Connect` like `CloudRepositoryTests` does. `DestinationProviderTests` checks the descriptor and that the service registers the type.
+
 ## Before you open a pull request
 
 - **Tests:** `dotnet test`. The integration tests use the local Docker engine and create only throwaway containers and volumes (named `dbtest-*`); they never touch your own containers.

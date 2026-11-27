@@ -156,21 +156,45 @@ export interface Destination {
   repositoryId: string | null
   createdAt: string
   status: DestinationStatus | null
-  /** Non-secret settings of cloud destinations (bucket, folder, host…). */
-  settings: Record<string, string> | null
+  /** The destination's non-secret field values (folder, bucket, host…), keyed like its type's fields. */
+  settings: Record<string, string>
 }
 
+/** A field a destination type needs, as the server describes it (GET /api/destination-types). */
+export interface DestinationField {
+  key: string
+  label: string
+  type: 'text' | 'password' | 'multiline' | 'number' | 'dropboxFolder'
+  section: 'location' | 'credentials'
+  required: boolean
+  secret: boolean
+  hidden: boolean
+  placeholder: string | null
+  hint: string | null
+  default: string | null
+  mono: boolean
+  half: boolean
+}
+
+export interface DestinationType {
+  kind: DestinationKind
+  label: string
+  icon: string
+  namePlaceholder: string
+  fields: DestinationField[]
+  /** A browser sign-in instead of typed credentials ('dropbox'). */
+  signIn: string | null
+  notes: string | null
+}
+
+/** settings: the type's non-secret fields; secrets: its secret ones. */
 export interface CreateDestination {
   name: string
   kind: DestinationKind
-  path: string
-  smbUsername?: string
-  smbPassword?: string
-  smbDomain?: string
+  settings: Record<string, string>
+  secrets: Record<string, string>
   existingRepositoryPassword?: string
-  settings?: Record<string, string>
-  secrets?: Record<string, string>
-  dropboxSession?: string
+  signInSession?: string
   /** Reuse the credentials (e.g. the Dropbox sign-in) of this destination of the same type. */
   credentialsFrom?: string
 }
@@ -178,13 +202,9 @@ export interface CreateDestination {
 /** Only the fields being changed. A new location or credentials must open the same backups. */
 export interface UpdateDestination {
   name?: string
-  path?: string
-  smbUsername?: string
-  smbPassword?: string
-  smbDomain?: string
   settings?: Record<string, string>
   secrets?: Record<string, string>
-  dropboxSession?: string
+  signInSession?: string
 }
 
 export interface BackupRun {
@@ -645,6 +665,10 @@ export function useDestinations() {
     queryFn: () => getJson<Destination[]>('/api/destinations'),
     refetchInterval: 120_000,
   })
+}
+
+export function useDestinationTypes() {
+  return useQuery({ queryKey: ['destinationTypes'], queryFn: () => getJson<DestinationType[]>('/api/destination-types'), staleTime: Infinity })
 }
 
 export function useCreateDestination() {

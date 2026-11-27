@@ -149,7 +149,7 @@ internal sealed class HostResticRunner(ResticRunner runner, BackupOptions option
                 }
                 else
                 {
-                    args.Add(map.TranslateValue(arg, CloudRepositories.SecretsDir));
+                    args.Add(map.TranslateValue(arg, RepositoryConnection.SecretsDir));
                 }
             }
 
@@ -166,7 +166,7 @@ internal sealed class HostResticRunner(ResticRunner runner, BackupOptions option
             args.ForEach(start.ArgumentList.Add);
             foreach (var (key, value) in request.Environment)
             {
-                start.Environment[key] = map.TranslateValue(value, CloudRepositories.SecretsDir);
+                start.Environment[key] = map.TranslateValue(value, RepositoryConnection.SecretsDir);
             }
 
             // restic's cache in Stowaway's own data folder (not SYSTEM's profile); rclone and ssh found next to restic or in PATH.
