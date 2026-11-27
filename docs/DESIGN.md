@@ -1,6 +1,6 @@
 # DockerBackup — Design Proposal
 
-Status: **Draft v0.1 — for review** · Date: 2026-11-27
+Status: **v0.2 — accepted, decisions recorded in §10** · Date: 2026-11-27
 
 ## 1. Goal
 
@@ -182,11 +182,13 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 
-## 10. Open questions for the owner
+## 10. Decisions (2026-11-27)
 
-1. ~~Repo name~~: resolved. Renamed to `niogtres/docker_backup` (2026-11-27).
-2. **Product name and license**: working name "DockerBackup". Closed source, MIT, or AGPL?
-3. **Engine**: is restic acceptable as the storage engine (Apache-2.0, bundled)? Kopia is the alternative (built-in UI and server, which we don't need).
-4. **Scope**: should v1 include Windows-containers engines, or Linux containers only?
-5. **Remote access**: is localhost-only acceptable for the MVP?
-6. **Multi-host**: manage several Docker hosts from one UI (later), or strictly one host per install?
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Repo name | Renamed to `niogtres/docker_backup` (private). |
+| 2 | License | Closed source for now. No license file. |
+| 3 | Backup engine | **restic** (BSD-2-Clause, bundled). The service already owns scheduling, policy and UI, and restic is a minimal, scriptable engine with JSON output, `--stdin` support for DB dumps and a stable repo format. Kopia would duplicate our UI/server/policy layers. All engine calls go through an `IBackupEngine` abstraction so it can be swapped later. |
+| 4 | Container platforms | v1: Linux containers only. Windows-containers engine in phase 2. |
+| 5 | Remote access | Localhost only for the MVP. |
+| 6 | Multi-host | Planned for later. v1 manages one host, but the data model carries an `EngineEndpoint` id from day one so adding hosts later needs no migration. |
