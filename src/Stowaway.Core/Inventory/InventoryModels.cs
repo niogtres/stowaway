@@ -122,6 +122,9 @@ public sealed record ContainerInfo
     /// <summary>Raw <c>com.docker.compose.depends_on</c> label, used to order stop/start.</summary>
     public string? ComposeDependsOn { get; init; }
     public DatabaseKind? Database { get; init; }
+
+    /// <summary>Whether a registered database provider can back up <see cref="Database"/> consistently while it runs.</summary>
+    public bool DumpSupported { get; init; }
     public required IReadOnlyList<MountInfo> Mounts { get; init; }
 }
 

@@ -48,8 +48,10 @@ public static partial class InventoryBuilder
         long version,
         DateTimeOffset capturedAt,
         Func<string, bool, ProtectionStatus>? protection = null,
-        string platform = Platforms.Linux)
+        string platform = Platforms.Linux,
+        Databases.DatabaseSupport? databases = null)
     {
+        databases ??= Databases.DatabaseSupport.None;
         protection ??= static (_, hasData) => hasData ? ProtectionStatus.Unprotected : ProtectionStatus.Stateless;
         raw = WithoutOwnResources(raw);
         var externalVolumes = raw.Volumes
@@ -62,7 +64,7 @@ public static partial class InventoryBuilder
             .ToHashSet(StringComparer.Ordinal);
 
         var containers = raw.Containers
-            .Select(c => (Raw: c, Info: MapContainer(c, sizes, localOnlyImages, externalVolumes)))
+            .Select(c => (Raw: c, Info: MapContainer(c, sizes, localOnlyImages, externalVolumes, databases, platform)))
             .ToList();
 
         var apps = containers
@@ -187,6 +189,17 @@ public static partial class InventoryBuilder
 
     private static string MountIdentity(MountInfo m) => m.VolumeName is not null ? $"v:{m.VolumeName}" : $"p:{m.DisplaySource}";
 
+    private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes,
+        Databases.DatabaseSupport databases, string platform)
+    {
+        var database = DatabaseDetector.Detect(c.Image, c.Command);
+        return MapContainer(c, sizes, localOnlyImages, externalVolumes) with
+        {
+            Database = database,
+            DumpSupported = database is { } kind && databases.CanDump(kind, platform),
+        };
+    }
+
     private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes) => new()
     {
         Id = c.Id,
@@ -200,7 +213,6 @@ public static partial class InventoryBuilder
         CreatedAt = c.Created,
         ComposeService = c.Labels.GetValueOrDefault(ComposeServiceLabel),
         ComposeDependsOn = c.Labels.GetValueOrDefault(Backups.ComposeOrder.DependsOnLabel),
-        Database = DatabaseDetector.Detect(c.Image, c.Command),
         Mounts = c.Mounts.Select(m => MapMount(m, sizes, ProjectDir(c), externalVolumes)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
     };
 

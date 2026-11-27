@@ -125,22 +125,21 @@ public sealed class DrillAndRestoreRuleTests
     [InlineData(DatabaseKind.Redis, "keys")]
     public void Every_dumpable_database_has_a_drill_check(DatabaseKind kind, string label)
     {
-        var check = DrillChecks.For(kind, "app.dump");
-        Assert.NotNull(check);
+        var check = Stowaway.Core.Databases.ShellDatabases.For(kind, Stowaway.Core.Databases.ShellDatabases.All)!.DrillFor("app.dump");
         Assert.Equal(label, check.ProbeLabel);
         Assert.Contains("/drill/app.dump", string.Join(' ', (check.Load ?? check.CommandOverride)!));
-        Assert.True(DatabaseDumps.Supported(kind));
+        Assert.True(Stowaway.Tests.Backups.TestDatabases.Support.CanDump(kind, Platforms.Linux));
     }
 
     [Fact]
-    public void Undumpable_databases_have_no_drill_check() => Assert.Null(DrillChecks.For(DatabaseKind.Elasticsearch, "x"));
+    public void Undumpable_databases_have_no_drill_check() => Assert.Null(Stowaway.Core.Databases.ShellDatabases.For(DatabaseKind.Elasticsearch, Stowaway.Core.Databases.ShellDatabases.All));
 
     [Fact]
     public void Readiness_waits_for_the_real_server_not_the_init_one()
     {
         // During first start the official images run a temporary server that only listens on a socket.
-        Assert.Contains("127.0.0.1", string.Join(' ', DrillChecks.For(DatabaseKind.PostgreSql, "f")!.Ready));
-        Assert.Contains("127.0.0.1", string.Join(' ', DrillChecks.For(DatabaseKind.MySql, "f")!.Ready));
+        Assert.Contains("127.0.0.1", string.Join(' ', Stowaway.Core.Databases.PostgreSqlDatabase.Definition.DrillFor("f").Ready));
+        Assert.Contains("127.0.0.1", string.Join(' ', Stowaway.Core.Databases.MySqlDatabase.Definition.DrillFor("f").Ready));
     }
 
     [Fact]

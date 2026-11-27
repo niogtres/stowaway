@@ -53,7 +53,7 @@ function containerTone(c: ContainerInfo): 'ok' | 'warn' | 'danger' | 'muted' {
   return 'muted'
 }
 
-export function ContainerRow({ container, platform = 'linux' }: { container: ContainerInfo; platform?: 'linux' | 'windows' }) {
+export function ContainerRow({ container }: { container: ContainerInfo }) {
   const tone = containerTone(container)
   return (
     <div className="flex items-start gap-3 py-2">
@@ -78,7 +78,7 @@ export function ContainerRow({ container, platform = 'linux' }: { container: Con
             </span>
           )}
           {container.health === 'unhealthy' && <Badge tone="danger">Unhealthy</Badge>}
-          <DatabaseLoginButton container={container} platform={platform} />
+          <DatabaseLoginButton container={container} />
         </div>
         <div className="mt-0.5 truncate font-mono text-[11px] text-muted" title={container.image}>
           {container.image} · {container.statusText}

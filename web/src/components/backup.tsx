@@ -14,11 +14,10 @@ import {
   type BackupStrategy,
   type RunStatus,
 } from '@/lib/api'
-import { canDump } from '@/lib/destinations'
 import { cn, formatBytes, relativeTime } from '@/lib/utils'
 
 function defaultStrategy(app: AppInfo): BackupStrategy {
-  return app.containers.some((c) => c.database && c.state === 'running' && !canDump(c.database, app.platform)) ? 'stopStart' : 'live'
+  return app.containers.some((c) => c.database && c.state === 'running' && !c.dumpSupported) ? 'stopStart' : 'live'
 }
 
 export function BackupNowDialog({ app, open, onClose }: { app: AppInfo; open: boolean; onClose: () => void }) {
@@ -30,7 +29,7 @@ export function BackupNowDialog({ app, open, onClose }: { app: AppInfo; open: bo
   const selected = destinationId ?? usable[0]?.id ?? null
   const running = app.containers.filter((c) => c.state === 'running')
   const hasDatabase = app.containers.some((c) => c.database)
-  const undumpable = app.containers.some((c) => c.database && !canDump(c.database, app.platform))
+  const undumpable = app.containers.some((c) => c.database && !c.dumpSupported)
 
   const close = () => {
     start.reset()

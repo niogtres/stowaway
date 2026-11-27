@@ -38,7 +38,8 @@ public sealed class InventoryService(
     IOptions<InventoryOptions> options,
     TimeProvider time,
     ILogger<InventoryService> logger,
-    IProtectionSource? protection = null) : BackgroundService, IInventoryProvider
+    IProtectionSource? protection = null,
+    Stowaway.Core.Databases.DatabaseSupport? databases = null) : BackgroundService, IInventoryProvider
 {
     private static readonly JsonSerializerOptions FingerprintJson = new() { WriteIndented = false };
 
@@ -264,7 +265,7 @@ public sealed class InventoryService(
                 new Dictionary<string, long>(_volumeSizes, StringComparer.Ordinal),
                 new Dictionary<string, long>(_pathSizes, StringComparer.OrdinalIgnoreCase));
             var now = time.GetUtcNow();
-            var candidate = InventoryBuilder.Build(_lastRaw, sizes, _version + 1, now, protection?.CreateResolver(now), Platforms.Of(engine.Current.OsType));
+            var candidate = InventoryBuilder.Build(_lastRaw, sizes, _version + 1, now, protection?.CreateResolver(now), Platforms.Of(engine.Current.OsType), databases);
             var fingerprint = JsonSerializer.Serialize(candidate with { Version = 0, CapturedAt = default }, FingerprintJson);
             if (fingerprint == _fingerprint)
             {

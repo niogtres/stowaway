@@ -1,15 +1,14 @@
 import { Check, KeyRound, LoaderCircle, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { databaseLabels, useDatabaseCredentialActions, useDatabaseCredentials, type ContainerInfo } from '@/lib/api'
-import { canDump } from '@/lib/destinations'
 import { cn } from '@/lib/utils'
 import { Button, Dialog, Field, TextInput } from './forms'
 
 /** Button on a database container: shows whether the dump logs in automatically or with saved credentials. */
-export function DatabaseLoginButton({ container, platform }: { container: ContainerInfo; platform: 'linux' | 'windows' }) {
+export function DatabaseLoginButton({ container }: { container: ContainerInfo }) {
   const credentials = useDatabaseCredentials()
   const [open, setOpen] = useState(false)
-  if (!container.database || !canDump(container.database, platform)) return null
+  if (!container.database || !container.dumpSupported) return null
   const saved = credentials.data?.find((c) => c.containerName === container.name)
 
   return (

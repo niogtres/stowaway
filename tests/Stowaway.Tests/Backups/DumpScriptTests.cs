@@ -12,7 +12,7 @@ public sealed class DumpScriptTests
     [InlineData(DatabaseKind.MongoDb)]
     [InlineData(DatabaseKind.Redis)]
     public void Dump_scripts_have_unix_line_endings_whatever_the_checkout(DatabaseKind kind) =>
-        Assert.DoesNotContain('\r', DatabaseDumps.Script(kind));
+        Assert.DoesNotContain('\r', Stowaway.Core.Databases.ShellDatabases.For(kind, Stowaway.Core.Databases.ShellDatabases.All)!.DumpScript);
 
     [Fact]
     public void Commands_report_their_own_exit_code_on_stderr()

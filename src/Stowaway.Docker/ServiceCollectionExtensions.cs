@@ -36,6 +36,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<DumpService>();
         services.AddSingleton<SqlServerDumpService>();
         services.AddSingleton<Restore.SqlServerDrill>();
+        services.AddDatabaseProviders();
         services.AddSingleton<DatabaseProbe>();
         services.AddSingleton<DropboxAuthService>();
         services.AddSingleton<DestinationService>();
@@ -55,6 +56,24 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<PlanScheduler>();
         services.AddHostedService<MaintenanceScheduler>();
         services.AddHostedService<DrillScheduler>();
+        return services;
+    }
+
+    /// <summary>
+    /// The database providers (see <see cref="Databases.IDatabaseProvider"/>). A database dumped through <c>sh</c> on
+    /// Linux only needs its <see cref="Stowaway.Core.Databases.ShellDatabase"/> definition registered here.
+    /// </summary>
+    private static IServiceCollection AddDatabaseProviders(this IServiceCollection services)
+    {
+        foreach (var definition in Stowaway.Core.Databases.ShellDatabases.All)
+        {
+            services.AddSingleton(definition);
+        }
+
+        services.AddSingleton<Databases.IDatabaseProvider, Databases.ShellDatabaseProvider>();
+        services.AddSingleton<Databases.IDatabaseProvider, Databases.SqlServerProvider>();
+        services.AddSingleton<Databases.DatabaseProviders>();
+        services.AddSingleton(sp => sp.GetRequiredService<Databases.DatabaseProviders>().Support);
         return services;
     }
 }

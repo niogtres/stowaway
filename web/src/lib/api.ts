@@ -69,6 +69,8 @@ export interface ContainerInfo {
   createdAt: string
   composeService: string | null
   database: DatabaseKind | null
+  /** Whether Stowaway can back up this database consistently while it runs (decided by the server's database providers). */
+  dumpSupported: boolean
   mounts: MountInfo[]
 }
 

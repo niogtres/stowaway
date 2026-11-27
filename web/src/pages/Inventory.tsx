@@ -227,7 +227,7 @@ function AppCard({ app }: { app: AppInfo }) {
 
       <div className="divide-y divide-line">
         {app.containers.map((c) => (
-          <ContainerRow key={c.id} container={c} platform={app.platform} />
+          <ContainerRow key={c.id} container={c} />
         ))}
       </div>
 
