@@ -86,20 +86,24 @@ public sealed class CloudRepositoryTests
     [Theory]
     [InlineData("", "rclone:dropbox:Stowaway")]
     [InlineData("  ", "rclone:dropbox:Stowaway")]
-    [InlineData("Backups/docker", "rclone:dropbox:Backups/docker")]
-    [InlineData("/", "rclone:dropbox:")] // the root only when asked for explicitly
-    public void New_dropbox_destinations_get_a_folder_unless_one_is_given(string folder, string repository)
+    [InlineData("/", "rclone:dropbox:Stowaway")]
+    [InlineData("server1", "rclone:dropbox:Stowaway/server1")]
+    [InlineData("/home/docker/", "rclone:dropbox:Stowaway/home/docker")]
+    [InlineData(@"home\docker", "rclone:dropbox:Stowaway/home/docker")]
+    [InlineData("Stowaway/server1", "rclone:dropbox:Stowaway/server1")]
+    public void Dropbox_destinations_always_live_under_the_stowaway_folder(string folder, string repository)
     {
         var settings = new Dictionary<string, string> { ["prefix"] = folder };
-        CloudRepositories.ApplyCreationDefaults(DestinationKind.Dropbox, settings);
+        CloudRepositories.ApplyDropboxFolder(DestinationKind.Dropbox, settings);
         Assert.Equal(repository, CloudRepositories.Connect(DestinationKind.Dropbox, settings, D(("token", "t"))).Repository);
     }
 
     [Fact]
-    public void Creation_defaults_leave_other_destinations_alone()
+    public void Dropbox_folder_rejects_parent_references_and_leaves_other_kinds_alone()
     {
+        Assert.Throws<DestinationValidationException>(() => CloudRepositories.DropboxFolder("../elsewhere"));
         var settings = new Dictionary<string, string>();
-        CloudRepositories.ApplyCreationDefaults(DestinationKind.S3, settings);
+        CloudRepositories.ApplyDropboxFolder(DestinationKind.S3, settings);
         Assert.Empty(settings);
     }
 

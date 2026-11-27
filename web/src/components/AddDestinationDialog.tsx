@@ -1,8 +1,9 @@
-import { Check, ExternalLink, ShieldCheck, TriangleAlert } from 'lucide-react'
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { ShieldCheck, TriangleAlert } from 'lucide-react'
+import { useState, type FormEvent, type ReactNode } from 'react'
+import { DropboxConnect, DropboxFolderInput, type DropboxSignIn } from '@/components/DropboxConnect'
 import { Button, Dialog, Field, TextInput } from '@/components/forms'
 import { destinationKinds } from '@/lib/destinations'
-import { pollDropbox, startDropbox, useCreateDestination, type DestinationKind } from '@/lib/api'
+import { useCreateDestination, useDestinations, type DestinationKind } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 type Values = Record<string, string>
@@ -15,34 +16,13 @@ export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
   const [kind, setKind] = useState<DestinationKind>('local')
   const [v, setV] = useState<Values>({ endpoint: 'https://s3.amazonaws.com', port: '22' })
   const [connectExisting, setConnectExisting] = useState(false)
-  const [dropbox, setDropbox] = useState<{ id: string; state: 'pending' | 'ready' | 'failed'; error: string | null } | null>(null)
-  const [dropboxStarting, setDropboxStarting] = useState(false)
+  const [dropbox, setDropbox] = useState<DropboxSignIn | null>(null)
+  const existingDropbox = (useDestinations().data ?? []).filter((d) => d.kind === 'dropbox')
+  // '' = connect another account; otherwise reuse the sign-in of that destination.
+  const [dropboxFrom, setDropboxFrom] = useState<string | null>(null)
+  const reuseFrom = dropboxFrom ?? existingDropbox[0]?.id ?? ''
   const set = (key: string) => (e: { target: { value: string } }) => setV((x) => ({ ...x, [key]: e.target.value }))
   const val = (key: string) => v[key] ?? ''
-
-  // Poll the Dropbox sign-in until the browser flow completes.
-  useEffect(() => {
-    if (!dropbox || dropbox.state !== 'pending') return
-    const timer = setInterval(() => {
-      pollDropbox(dropbox.id)
-        .then((s) => setDropbox({ id: s.id, state: s.state, error: s.error }))
-        .catch(() => setDropbox((d) => (d ? { ...d, state: 'failed', error: 'The sign-in session expired.' } : d)))
-    }, 1500)
-    return () => clearInterval(timer)
-  }, [dropbox])
-
-  const connectDropbox = async () => {
-    setDropboxStarting(true)
-    try {
-      const session = await startDropbox()
-      setDropbox({ id: session.id, state: session.state, error: session.error })
-      if (session.authUrl) window.open(session.authUrl, '_blank', 'noopener')
-    } catch (e) {
-      setDropbox({ id: '', state: 'failed', error: (e as Error).message })
-    } finally {
-      setDropboxStarting(false)
-    }
-  }
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -81,13 +61,14 @@ export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
         existingRepositoryPassword: connectExisting ? val('existing') : undefined,
         settings,
         secrets,
-        dropboxSession: kind === 'dropbox' ? dropbox?.id : undefined,
+        dropboxSession: kind === 'dropbox' && !reuseFrom ? dropbox?.id : undefined,
+        credentialsFrom: kind === 'dropbox' && reuseFrom ? reuseFrom : undefined,
       },
       { onSuccess: onClose },
     )
   }
 
-  const ready = kind !== 'dropbox' || dropbox?.state === 'ready'
+  const ready = kind !== 'dropbox' || !!reuseFrom || dropbox?.state === 'ready'
 
   return (
     <Dialog open onClose={onClose} title="Add destination" description="Where should backups be stored?" className="w-[min(42rem,calc(100vw-2rem))]">
@@ -228,33 +209,28 @@ export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
 
         {kind === 'dropbox' && (
           <>
-            <div className="rounded-xl border border-line p-4">
-              {dropbox?.state === 'ready' ? (
-                <p className="flex items-center gap-2 text-sm text-ok">
-                  <Check className="size-4" /> Dropbox connected.
-                </p>
-              ) : dropbox?.state === 'pending' ? (
-                <p className="text-sm">
-                  Finish signing in on the Dropbox page that just opened. This page updates by itself.{' '}
-                  <button type="button" onClick={connectDropbox} className="text-accent hover:underline">
-                    Open it again
-                  </button>
-                </p>
-              ) : (
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-muted">Sign in to Dropbox and allow access. Stowaway only keeps the access it is given.</p>
-                  <Button variant="primary" onClick={connectDropbox} disabled={dropboxStarting}>
-                    <ExternalLink className="size-4" /> {dropboxStarting ? 'Starting…' : 'Connect Dropbox'}
-                  </Button>
-                </div>
-              )}
-              {dropbox?.state === 'failed' && <p className="mt-2 text-sm text-danger">{dropbox.error}</p>}
-            </div>
+            {existingDropbox.length > 0 && (
+              <Field label="Dropbox account" hint="Reuse the account of a Dropbox destination you already have, or connect another one.">
+                <select
+                  value={reuseFrom}
+                  onChange={(e) => setDropboxFrom(e.target.value)}
+                  className="w-full rounded-xl border border-line bg-surface-strong px-3 py-2 text-sm outline-none focus:border-accent"
+                >
+                  {existingDropbox.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      Same account as {d.name} ({d.path})
+                    </option>
+                  ))}
+                  <option value="">Connect another Dropbox account</option>
+                </select>
+              </Field>
+            )}
+            {!reuseFrom && <DropboxConnect value={dropbox} onChange={setDropbox} />}
             <Field
               label="Folder in Dropbox"
-              hint="Left empty, backups go in a folder named Stowaway. They're encrypted, so in Dropbox you see restic's folders (data, index, keys, snapshots), not your files. Restore them with Stowaway."
+              hint="Backups always go under /Stowaway. Use a subfolder per computer or purpose. In Dropbox you'll see restic's encrypted folders (data, index, keys, snapshots), not your files: restore with Stowaway."
             >
-              <TextInput value={val('prefix')} onChange={set('prefix')} className="font-mono" placeholder="Stowaway" />
+              <DropboxFolderInput value={val('prefix')} onChange={(x) => setV((o) => ({ ...o, prefix: x }))} />
             </Field>
           </>
         )}

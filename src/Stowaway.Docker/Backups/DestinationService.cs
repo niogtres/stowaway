@@ -25,6 +25,21 @@ public sealed record CreateDestinationRequest(
     string? ExistingRepositoryPassword,
     IReadOnlyDictionary<string, string>? Settings = null,
     IReadOnlyDictionary<string, string>? Secrets = null,
+    Guid? DropboxSession = null,
+    Guid? CredentialsFrom = null);
+
+/// <summary>
+/// Changes to a destination. Null means "keep". <paramref name="Settings"/> holds only the location settings being
+/// changed; <paramref name="Secrets"/> only the credentials being replaced (empty values are ignored).
+/// </summary>
+public sealed record UpdateDestinationRequest(
+    string? Name,
+    string? Path = null,
+    string? SmbUsername = null,
+    string? SmbPassword = null,
+    string? SmbDomain = null,
+    IReadOnlyDictionary<string, string>? Settings = null,
+    IReadOnlyDictionary<string, string>? Secrets = null,
     Guid? DropboxSession = null);
 
 public sealed record DestinationStatus(
@@ -43,6 +58,7 @@ public sealed class DestinationService(
     ISecretProtector secrets,
     IBackupEvents events,
     DropboxAuthService dropbox,
+    Stowaway.Core.Plans.IPlanStore plans,
     ILogger<DestinationService> logger)
 {
     private readonly ConcurrentDictionary<Guid, DestinationStatus> _status = new();
@@ -74,14 +90,32 @@ public sealed class DestinationService(
         string path;
         if (cloud)
         {
+            if (request.CredentialsFrom is { } sourceId)
+            {
+                // Reuse the sign-in or keys of another destination of the same kind; typed values still win.
+                var source = await store.GetAsync(sourceId, ct);
+                if (source is null || source.Kind != request.Kind || source.ProtectedSecrets is null)
+                {
+                    throw new ValidationException("The destination to copy the connection from doesn't exist or isn't the same type.");
+                }
+
+                foreach (var (key, value) in ReadSecrets(source))
+                {
+                    if (string.IsNullOrEmpty(cloudSecrets.GetValueOrDefault(key)))
+                    {
+                        cloudSecrets[key] = value;
+                    }
+                }
+            }
+
             if (request.Kind == DestinationKind.Dropbox && request.DropboxSession is { } session)
             {
                 cloudSecrets[DestinationKeys.Token] = dropbox.TakeToken(session) ?? throw new ValidationException("The Dropbox sign-in isn't complete. Connect again.");
             }
 
-            CloudRepositories.ApplyCreationDefaults(request.Kind, settings);
             try
             {
+                CloudRepositories.ApplyDropboxFolder(request.Kind, settings);
                 path = CloudRepositories.Describe(request.Kind, settings, cloudSecrets);
                 if (request.Kind == DestinationKind.Sftp)
                 {
@@ -177,9 +211,178 @@ public sealed class DestinationService(
         return secrets.Unprotect(destination.ProtectedRepositoryPassword);
     }
 
+    /// <summary>
+    /// Renames a destination, changes its credentials, or follows its repository to a new location (for example a
+    /// folder moved in Dropbox). A new location or new credentials are only accepted when they open the same
+    /// repository, so a destination can never be pointed at different backups by an edit.
+    /// </summary>
+    public async Task<Destination> UpdateAsync(Guid id, UpdateDestinationRequest request, CancellationToken ct)
+    {
+        var current = await store.GetAsync(id, ct) ?? throw new KeyNotFoundException();
+        var all = await store.ListAsync(ct);
+        var updated = Copy(current);
+
+        if (request.Name is { } newName)
+        {
+            var name = newName.Trim();
+            if (name.Length is 0 or > 100)
+            {
+                throw new ValidationException("Give the destination a name (up to 100 characters).");
+            }
+
+            if (all.Any(d => d.Id != id && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ValidationException($"A destination named '{name}' already exists.");
+            }
+
+            updated.Name = name;
+        }
+
+        var connectionChanged = false;
+        if (CloudRepositories.IsCloud(current.Kind))
+        {
+            var settings = ReadSettings(current);
+            var cloudSecrets = ReadSecrets(current);
+            if (request.Settings is { Count: > 0 } changes)
+            {
+                foreach (var (key, value) in changes)
+                {
+                    if (key != DestinationKeys.KnownHosts)
+                    {
+                        settings[key] = value.Trim();
+                    }
+                }
+
+                connectionChanged = true;
+            }
+
+            foreach (var (key, value) in request.Secrets ?? new Dictionary<string, string>())
+            {
+                if (!string.IsNullOrEmpty(value))
+                {
+                    cloudSecrets[key] = value;
+                    connectionChanged = true;
+                }
+            }
+
+            if (current.Kind == DestinationKind.Dropbox && request.DropboxSession is { } session)
+            {
+                cloudSecrets[DestinationKeys.Token] = dropbox.TakeToken(session) ?? throw new ValidationException("The Dropbox sign-in isn't complete. Connect again.");
+                connectionChanged = true;
+            }
+
+            try
+            {
+                if (request.Settings?.ContainsKey(DestinationKeys.Prefix) == true)
+                {
+                    CloudRepositories.ApplyDropboxFolder(current.Kind, settings);
+                }
+
+                updated.Path = CloudRepositories.Describe(current.Kind, settings, cloudSecrets);
+                if (current.Kind == DestinationKind.Sftp && request.Settings is { } sftp && (sftp.ContainsKey(DestinationKeys.Host) || sftp.ContainsKey(DestinationKeys.Port)))
+                {
+                    var port = int.TryParse(settings.GetValueOrDefault(DestinationKeys.Port), out var p) ? p : 22;
+                    settings[DestinationKeys.KnownHosts] = await repository.ScanHostKeysAsync(settings[DestinationKeys.Host], port, ct);
+                }
+            }
+            catch (DestinationValidationException ex)
+            {
+                throw new ValidationException(ex.Message);
+            }
+            catch (ResticException ex)
+            {
+                throw new ValidationException(ex.Message);
+            }
+
+            updated.Settings = System.Text.Json.JsonSerializer.Serialize(settings);
+            updated.ProtectedSecrets = secrets.Protect(System.Text.Json.JsonSerializer.Serialize(cloudSecrets));
+        }
+        else
+        {
+            if (request.Path is { } newPath)
+            {
+                updated.Path = ValidatePath(current.Kind, newPath);
+                connectionChanged |= !string.Equals(updated.Path, current.Path, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (current.Kind == DestinationKind.Smb)
+            {
+                if (request.SmbUsername is not null)
+                {
+                    updated.SmbUsername = NullIfEmpty(request.SmbUsername);
+                    connectionChanged = true;
+                }
+
+                if (request.SmbDomain is not null)
+                {
+                    updated.SmbDomain = NullIfEmpty(request.SmbDomain);
+                    connectionChanged = true;
+                }
+
+                if (!string.IsNullOrEmpty(request.SmbPassword))
+                {
+                    updated.ProtectedSmbPassword = secrets.Protect(request.SmbPassword);
+                    connectionChanged = true;
+                }
+            }
+        }
+
+        if (connectionChanged)
+        {
+            string found;
+            try
+            {
+                found = await repository.GetRepositoryIdAsync(updated, null, ct);
+            }
+            catch (ResticException ex)
+            {
+                throw new ValidationException($"Couldn't open this destination's backups at {updated.Path}: {ex.Message}");
+            }
+
+            if (current.RepositoryId is not null && found != current.RepositoryId)
+            {
+                throw new ValidationException($"{updated.Path} holds different backups than this destination. Add it as a new destination instead.");
+            }
+
+            updated.RepositoryId ??= found;
+        }
+
+        await store.UpdateAsync(updated, ct);
+        logger.LogInformation("Destination {Name} updated ({Kind} {Path})", updated.Name, updated.Kind, updated.Path);
+        events.DestinationsChanged();
+        if (connectionChanged)
+        {
+            _ = RefreshStatusAsync(id, CancellationToken.None);
+        }
+
+        return updated;
+    }
+
+    private static Destination Copy(Destination d) => new()
+    {
+        Id = d.Id, Name = d.Name, Kind = d.Kind, Path = d.Path, SmbUsername = d.SmbUsername, SmbDomain = d.SmbDomain,
+        ProtectedSmbPassword = d.ProtectedSmbPassword, Settings = d.Settings, ProtectedSecrets = d.ProtectedSecrets,
+        ProtectedRepositoryPassword = d.ProtectedRepositoryPassword, RepositoryId = d.RepositoryId, CreatedAt = d.CreatedAt,
+    };
+
+    /// <summary>The non-secret settings of a cloud destination.</summary>
+    public static Dictionary<string, string> ReadSettings(Destination destination) =>
+        destination.Settings is null ? [] : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(destination.Settings) ?? [];
+
+    private Dictionary<string, string> ReadSecrets(Destination destination) =>
+        destination.ProtectedSecrets is null ? [] : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(secrets.Unprotect(destination.ProtectedSecrets)) ?? [];
+
     /// <summary>Forgets the destination. Backup data at the location is left untouched.</summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
     {
+        var usedBy = (await plans.ListAsync(ct)).Where(p => p.DestinationId == id).Select(p => p.Name).ToList();
+        if (usedBy.Count > 0)
+        {
+            throw new ValidationException(usedBy.Count == 1
+                ? $"The plan '{usedBy[0]}' backs up to this destination. Point it at another destination or delete it first."
+                : $"These plans back up to this destination: {string.Join(", ", usedBy.Select(n => $"'{n}'"))}. Point them at another destination or delete them first.");
+        }
+
         var deleted = await store.DeleteAsync(id, ct);
         if (deleted)
         {

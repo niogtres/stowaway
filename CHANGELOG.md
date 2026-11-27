@@ -4,6 +4,17 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+- **Edit destinations:** rename a destination, replace its password or keys, reconnect Dropbox, or follow backups you have moved to another folder. A new location is only saved if it holds the same backups.
+- **Dropbox:** a new Dropbox destination can reuse the sign-in of one you already have, with a different folder.
+- **Dropbox from another computer:** signing in through remote access now works. Paste the address the browser ends on and Stowaway finishes the sign-in.
+
+### Changed
+- **Dropbox:** backups always go under `/Stowaway`. The folder field is now an optional subfolder of it. Existing destinations keep their folder until you change their location.
+
+### Fixed
+- **Removing a destination** that a backup plan uses showed "An error occurred while processing your request". It now names the plans to change first.
+
 ## [0.10.1] - 2026-11-27
 
 ### Fixed

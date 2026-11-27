@@ -118,7 +118,7 @@ public sealed partial class DropboxAuthService(ResticRunner runner, ILogger<Drop
         }
     }
 
-    private static async Task<DropboxAuthStatus> WaitForUrlAsync(Session session, CancellationToken ct)
+    private async Task<DropboxAuthStatus> WaitForUrlAsync(Session session, CancellationToken ct)
     {
         // Wait for rclone to print its sign-in URL.
         for (var i = 0; i < 100 && session.AuthUrl is null && session.State == DropboxAuthState.Pending; i++)
@@ -126,9 +126,120 @@ public sealed partial class DropboxAuthService(ResticRunner runner, ILogger<Drop
             await Task.Delay(200, ct);
         }
 
-        return session.AuthUrl is null && session.State == DropboxAuthState.Pending
-            ? throw new ValidationException("rclone didn't start the Dropbox sign-in. Is port 53682 already in use?")
-            : session.Status;
+        if (session.AuthUrl is null && session.State == DropboxAuthState.Pending)
+        {
+            throw new ValidationException("rclone didn't start the Dropbox sign-in. Is port 53682 already in use?");
+        }
+
+        if (session.AuthUrl is { } local)
+        {
+            // rclone's link points at its own listener on this computer, which only redirects to Dropbox. Follow that
+            // redirect here so a browser on another computer (remote access) can open the sign-in page too.
+            session.AuthUrl = await ResolveDropboxUrlAsync(local, ct) ?? local;
+        }
+
+        return session.Status;
+    }
+
+    private async Task<string?> ResolveDropboxUrlAsync(string localUrl, CancellationToken ct)
+    {
+        using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false }) { Timeout = TimeSpan.FromSeconds(5) };
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            try
+            {
+                using var response = await http.GetAsync(localUrl, ct);
+                if (response.Headers.Location is { IsAbsoluteUri: true } location && IsDropboxAuthorizeUrl(location))
+                {
+                    return location.AbsoluteUri;
+                }
+
+                return null;
+            }
+            catch (HttpRequestException)
+            {
+                await Task.Delay(300, ct); // the listener may not be up yet
+            }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+            {
+                break;
+            }
+        }
+
+        logger.LogInformation("Couldn't resolve the Dropbox sign-in link; using rclone's local link");
+        return null;
+    }
+
+    internal static bool IsDropboxAuthorizeUrl(Uri url) =>
+        url.Scheme == Uri.UriSchemeHttps && (url.Host == "www.dropbox.com" || url.Host == "dropbox.com") && url.AbsolutePath.StartsWith("/oauth2/authorize", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Finishes a sign-in whose browser couldn't reach this computer: the user pastes the address Dropbox sent the
+    /// browser to (http://localhost:53682/?state=…&amp;code=…) and it is passed to rclone's listener from here.
+    /// Only the OAuth parameters are forwarded, and only to the local listener.
+    /// </summary>
+    public async Task<DropboxAuthStatus> CompleteAsync(Guid id, string pastedUrl, CancellationToken ct)
+    {
+        if (!_sessions.TryGetValue(id, out var session))
+        {
+            throw new KeyNotFoundException();
+        }
+
+        if (session.State != DropboxAuthState.Pending)
+        {
+            return session.Status;
+        }
+
+        var query = CallbackQuery(pastedUrl)
+            ?? throw new ValidationException("That isn't the address Dropbox sent you to. Copy the whole address from the page that couldn't load; it starts with http://localhost:53682/ and contains code=.");
+
+        using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false }) { Timeout = TimeSpan.FromSeconds(30) };
+        HttpResponseMessage response;
+        try
+        {
+            response = await http.GetAsync($"http://127.0.0.1:{CallbackPort}/?{query}", ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new ValidationException($"The sign-in on this computer has ended ({ex.Message}). Start again with Connect Dropbox.");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new ValidationException("Dropbox didn't accept that address. It may belong to an older sign-in: start again with Connect Dropbox.");
+            }
+        }
+
+        for (var i = 0; i < 50 && session.State == DropboxAuthState.Pending; i++)
+        {
+            await Task.Delay(200, ct);
+        }
+
+        return session.Status;
+    }
+
+    /// <summary>The OAuth parameters of a pasted callback address, re-encoded, or null if it isn't one.</summary>
+    internal static string? CallbackQuery(string pastedUrl)
+    {
+        if (!Uri.TryCreate(pastedUrl.Trim(), UriKind.Absolute, out var url)
+            || url.Scheme != Uri.UriSchemeHttp
+            || url.Host is not ("localhost" or "127.0.0.1")
+            || url.Port != CallbackPort)
+        {
+            return null;
+        }
+
+        var values = System.Web.HttpUtility.ParseQueryString(url.Query);
+        if (string.IsNullOrEmpty(values["state"]) || string.IsNullOrEmpty(values["code"]) && string.IsNullOrEmpty(values["error"]))
+        {
+            return null;
+        }
+
+        return string.Join('&', new[] { "state", "code", "error", "error_description" }
+            .Where(k => !string.IsNullOrEmpty(values[k]))
+            .Select(k => $"{k}={Uri.EscapeDataString(values[k]!)}"));
     }
 
     private static void OnLine(Session session, string line, ref bool capture)
