@@ -137,10 +137,16 @@ namespace DockerBackup.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ProtectedSecrets")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ProtectedSmbPassword")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RepositoryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Settings")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SmbDomain")

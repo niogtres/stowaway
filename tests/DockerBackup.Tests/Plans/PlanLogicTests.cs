@@ -174,10 +174,10 @@ public sealed class RetentionAndItemTests
     }
 
     [Fact]
-    public void Auto_strategy_stops_apps_running_a_database()
+    public void Auto_strategy_dumps_supported_databases_instead_of_stopping()
     {
-        var shop = BackupItems.Resolve(Inventory(), "compose:shop")!;
-        Assert.Equal(BackupStrategy.StopStart, BackupItems.StrategyFor(shop, PlanStrategy.Auto));
+        var shop = BackupItems.Resolve(Inventory(), "compose:shop")!; // runs postgres, which can be dumped live
+        Assert.Equal(BackupStrategy.Live, BackupItems.StrategyFor(shop, PlanStrategy.Auto));
         Assert.Equal(BackupStrategy.Live, BackupItems.StrategyFor(shop, PlanStrategy.Live));
         Assert.Equal(BackupStrategy.Live, BackupItems.StrategyFor(BackupItems.Resolve(Inventory(), "volume:old-data")!, PlanStrategy.Auto));
     }

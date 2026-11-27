@@ -207,6 +207,23 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Safety:** in-place restores stop every running container that uses the data (from any app) and always restart them. They first take a **safety snapshot** (tag `safety`; retention never touches it), which is the undo point.
   - **Preview and confirmation:** the impact is shown before anything changes, and an in-place restore requires typing the app's name.
   - **Execution:** restores run in the same queue as backups, so they never race a backup on the same repository.
+- **M5a (done):** database dumps and cloud destinations.
+  - **Runner image:** `dockerbackup/runner:<hash>`, built locally on first use as `FROM restic/restic:<pin>` plus `rclone` and `socat` from Alpine. No registry publishing is needed. If the build fails, it falls back to the plain restic image (everything works except Dropbox).
+  - **Secrets in runners:** all restic and cloud variables are written to `/run/dockerbackup/env` inside the container before it starts, then sourced by an `sh` entrypoint wrapper. Nothing secret is in the container config, so nothing shows in `docker inspect`.
+  - **Dumps:**
+    - **Engines:** Postgres (`pg_dumpall`), MySQL/MariaDB (`mysqldump`/`mariadb-dump`, all databases, single transaction), MongoDB (`mongodump --archive`) and Redis (`redis-cli --rdb -`). Credentials come from the official images' environment variables.
+    - **How it runs:** inside the database's own container via `exec`. Its stdout streams through the service into a "sink" runner (`cat > /dumps/<name>`) on a temporary volume. That volume is backed up at `/data/_dumps` and removed afterwards.
+    - **Failures:** a failed dump fails the run (so you're notified), but the files are still copied live.
+    - **Automatic strategy:** "Automatic" now means live copy plus dumps, and only stops apps running a database that can't be dumped.
+  - **Cloud destinations:**
+    - **S3/compatible:** `s3:<endpoint>/<bucket>/<prefix>` with `AWS_*` variables.
+    - **B2:** `b2:` with `B2_ACCOUNT_*`.
+    - **Azure:** `azure:` with `AZURE_ACCOUNT_*`.
+    - **SFTP:** key auth. Host keys are pinned at setup with `ssh-keyscan` and checked with `StrictHostKeyChecking=yes`, so a changed server identity is refused.
+    - **Dropbox:** via rclone (`rclone:dropbox:` with an `RCLONE_CONFIG_DROPBOX_*` env-defined remote).
+    - **Network:** cloud runners have network access; local and SMB runners stay offline.
+  - **Dropbox sign-in:** `rclone authorize dropbox` runs in a runner. Its loopback listener is bridged by socat to the host's `127.0.0.1:53682`, which is the redirect URI registered for rclone's Dropbox app. The token goes straight from the session to destination creation and never reaches the UI.
+- **M5b (next):** recreate a whole app from a snapshot (data plus container definitions), and scheduled restore drills that load dumps into throwaway database containers.
 - **M5 (planned) Dropbox:** restic has no native Dropbox backend, but it supports rclone (`-r rclone:<remote>:<path>`). The plan:
   - Ship a runner image that bundles rclone next to restic.
   - Add a "Connect Dropbox" OAuth flow in the UI. Its token is stored DPAPI-protected and passed to rclone as an environment-based remote config (`RCLONE_CONFIG_DROPBOX_TYPE=dropbox`, `RCLONE_CONFIG_DROPBOX_TOKEN=…`), never written to disk.

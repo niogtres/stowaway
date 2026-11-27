@@ -38,6 +38,7 @@ public sealed class BackupService(
     ResticRepository repository,
     DestinationService destinationService,
     SnapshotCatalog catalog,
+    DumpService dumps,
     IBackupEvents events,
     IEnumerable<IRunObserver> observers,
     IOptions<BackupOptions> options,
@@ -285,6 +286,8 @@ public sealed class BackupService(
         Stopwatch? downtime = null;
         DockerClient? client = null;
         Destination? destination = null;
+        var dumpVolume = false;
+        var dumpErrors = new List<string>();
         try
         {
             var item = (inventory.Current is { } snapshot ? BackupItems.Resolve(snapshot, run.AppId) : null)
@@ -306,6 +309,22 @@ public sealed class BackupService(
             var files = await BuildMetadataAsync(client, item, run, log, ct);
             Report(run.Id, "preparing", null, 0, 0, 0, 0);
             await SaveAsync(run, log);
+
+            // Live copies of a running database aren't reliably restorable: dump it with its own tools first.
+            if (run.Strategy == BackupStrategy.Live && DatabaseDumps.For(item) is { Count: > 0 } dumpCommands)
+            {
+                Report(run.Id, "dumping databases", null, 0, 0, 0, 0);
+                dumpVolume = true;
+                var results = await dumps.CreateAsync(client, dumpCommands, run.Id, log.Add, ct);
+                dumpErrors.AddRange(results.Where(r => r.Error is not null).Select(r => $"{r.Dump.Container.Name}: {r.Error}"));
+                plan = plan with { SourceMounts = [.. plan.SourceMounts, new RunnerMount("volume", DumpService.VolumeName(run.Id), DatabaseDumps.SnapshotDir, ReadOnly: true)] };
+                await SaveAsync(run, log);
+            }
+
+            foreach (var db in DatabaseDumps.Undumpable(item).Where(_ => run.Strategy == BackupStrategy.Live))
+            {
+                log.Add($"Warning: {db.Name} runs {db.Database} which can't be dumped; its files are copied live and may not restore cleanly. Use Stop & start for this app.");
+            }
 
             if (plan.StopOrder.Count > 0)
             {
@@ -341,6 +360,12 @@ public sealed class BackupService(
             run.BytesProcessed = summary.TotalBytesProcessed;
             run.BytesAdded = summary.DataAdded;
             run.Status = RunStatus.Succeeded;
+            if (dumpErrors.Count > 0)
+            {
+                // The snapshot exists, but without a usable dump the database part may not restore cleanly.
+                run.Status = RunStatus.Failed;
+                run.Error = $"Database dump failed ({string.Join("; ", dumpErrors)}). The files were still copied live.";
+            }
             log.Add(string.Create(CultureInfo.InvariantCulture,
                 $"Snapshot {summary.SnapshotId[..8]}: {summary.TotalFilesProcessed} files, {summary.TotalBytesProcessed:N0} bytes processed, {summary.DataAdded:N0} bytes new"));
         }
@@ -379,6 +404,11 @@ public sealed class BackupService(
 
                 run.DowntimeSeconds = Math.Round(downtime!.Elapsed.TotalSeconds, 1);
                 log.Add(string.Create(CultureInfo.InvariantCulture, $"Downtime: {run.DowntimeSeconds:0.#}s"));
+            }
+
+            if (dumpVolume && client is not null)
+            {
+                await dumps.RemoveAsync(client, run.Id);
             }
 
             client?.Dispose();

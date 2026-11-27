@@ -1,4 +1,4 @@
-import { ChevronRight, File, Folder, FolderOpen, HardDrive, Layers, RotateCcw, Search, ShieldCheck } from 'lucide-react'
+import { ChevronRight, Database, File, Folder, FolderOpen, HardDrive, Layers, RotateCcw, Search, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import emptySnapshots from '@/assets/illustrations/empty-snapshots.webp'
 import { RestoreDialog, type RestoreScope } from '@/components/RestoreDialog'
@@ -165,7 +165,11 @@ function SnapshotDetail({ snapshot, appName }: { snapshot: SnapshotInfo; appName
             </p>
           )}
         </div>
-        <Button variant="primary" disabled={sources.length === 0} onClick={() => setRestore({ sources, subPath: null, label: `everything in ${appName}` })}>
+        <Button
+          variant="primary"
+          disabled={sources.length === 0}
+          onClick={() => setRestore({ sources: sources.filter((x) => x.kind !== 'dumps'), subPath: null, label: `everything in ${appName}` })}
+        >
           <RotateCcw className="size-4" /> Restore everything
         </Button>
       </header>
@@ -178,13 +182,13 @@ function SnapshotDetail({ snapshot, appName }: { snapshot: SnapshotInfo; appName
         <ul className="divide-y divide-line rounded-xl border border-line">
           {sources.map((s) => (
             <li key={s.snapshotPath} className="flex items-center gap-3 px-4 py-3">
-              {s.kind === 'volume' ? <Layers className="size-4 shrink-0 text-accent" /> : <FolderOpen className="size-4 shrink-0 text-accent" />}
+              {s.kind === 'volume' ? <Layers className="size-4 shrink-0 text-accent" /> : s.kind === 'dumps' ? <Database className="size-4 shrink-0 text-accent" /> : <FolderOpen className="size-4 shrink-0 text-accent" />}
               <div className="min-w-0 flex-1">
                 <div className="truncate font-mono text-sm" title={s.displaySource}>
                   {s.displaySource}
                 </div>
                 <div className="text-xs text-muted">
-                  {s.containerName} → {s.destination}
+                  {s.kind === 'dumps' ? 'Consistent dumps taken while the databases ran' : `${s.containerName} → ${s.destination}`}
                   {s.sizeBytes !== null && ` · ${formatBytes(s.sizeBytes)}`}
                 </div>
               </div>

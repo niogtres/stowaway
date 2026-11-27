@@ -22,7 +22,10 @@ public sealed record CreateDestinationRequest(
     string? SmbUsername,
     string? SmbPassword,
     string? SmbDomain,
-    string? ExistingRepositoryPassword);
+    string? ExistingRepositoryPassword,
+    IReadOnlyDictionary<string, string>? Settings = null,
+    IReadOnlyDictionary<string, string>? Secrets = null,
+    Guid? DropboxSession = null);
 
 public sealed record DestinationStatus(
     bool Reachable,
@@ -39,6 +42,7 @@ public sealed class DestinationService(
     ResticRepository repository,
     ISecretProtector secrets,
     IBackupEvents events,
+    DropboxAuthService dropbox,
     ILogger<DestinationService> logger)
 {
     private readonly ConcurrentDictionary<Guid, DestinationStatus> _status = new();
@@ -64,7 +68,40 @@ public sealed class DestinationService(
             throw new ValidationException($"A destination named '{name}' already exists.");
         }
 
-        var path = ValidatePath(request.Kind, request.Path);
+        var cloud = CloudRepositories.IsCloud(request.Kind);
+        var settings = (request.Settings ?? new Dictionary<string, string>()).ToDictionary(kv => kv.Key, kv => kv.Value.Trim());
+        var cloudSecrets = (request.Secrets ?? new Dictionary<string, string>()).ToDictionary(kv => kv.Key, kv => kv.Value);
+        string path;
+        if (cloud)
+        {
+            if (request.Kind == DestinationKind.Dropbox && request.DropboxSession is { } session)
+            {
+                cloudSecrets[DestinationKeys.Token] = dropbox.TakeToken(session) ?? throw new ValidationException("The Dropbox sign-in isn't complete. Connect again.");
+            }
+
+            try
+            {
+                path = CloudRepositories.Describe(request.Kind, settings, cloudSecrets);
+                if (request.Kind == DestinationKind.Sftp)
+                {
+                    var port = int.TryParse(settings.GetValueOrDefault(DestinationKeys.Port), out var p) ? p : 22;
+                    settings[DestinationKeys.KnownHosts] = await repository.ScanHostKeysAsync(settings[DestinationKeys.Host], port, ct);
+                }
+            }
+            catch (DestinationValidationException ex)
+            {
+                throw new ValidationException(ex.Message);
+            }
+            catch (ResticException ex)
+            {
+                throw new ValidationException(ex.Message);
+            }
+        }
+        else
+        {
+            path = ValidatePath(request.Kind, request.Path);
+        }
+
         var existingPassword = string.IsNullOrEmpty(request.ExistingRepositoryPassword) ? null : request.ExistingRepositoryPassword;
         var password = existingPassword ?? GeneratePassword();
 
@@ -77,6 +114,8 @@ public sealed class DestinationService(
             SmbDomain = request.Kind == DestinationKind.Smb ? NullIfEmpty(request.SmbDomain) : null,
             ProtectedSmbPassword = request.Kind == DestinationKind.Smb && !string.IsNullOrEmpty(request.SmbPassword) ? secrets.Protect(request.SmbPassword) : null,
             ProtectedRepositoryPassword = secrets.Protect(password),
+            Settings = cloud ? System.Text.Json.JsonSerializer.Serialize(settings) : null,
+            ProtectedSecrets = cloud ? secrets.Protect(System.Text.Json.JsonSerializer.Serialize(cloudSecrets)) : null,
         };
 
         try

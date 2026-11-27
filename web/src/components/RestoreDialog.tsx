@@ -22,7 +22,8 @@ const stamp = (iso: string) => {
 export function RestoreDialog({ snapshot, appName, scope, onClose }: { snapshot: SnapshotInfo; appName: string; scope: RestoreScope; onClose: () => void }) {
   const start = useStartRestore()
   const single = scope.sources.length === 1 ? scope.sources[0] : null
-  const [target, setTarget] = useState<RestoreTarget>(scope.subPath ? 'hostFolder' : 'inPlace')
+  const dumpsOnly = scope.sources.every((s) => s.kind === 'dumps')
+  const [target, setTarget] = useState<RestoreTarget>(scope.subPath || dumpsOnly ? 'hostFolder' : 'inPlace')
   const [volumeName, setVolumeName] = useState(`${single?.kind === 'volume' ? single.source : appName.replace(/[^a-zA-Z0-9_.-]/g, '-')}-restored-${stamp(snapshot.time)}`)
   const [hostFolder, setHostFolder] = useState(`C:\\DockerBackup-restores\\${appName.replace(/[^a-zA-Z0-9_.-]/g, '-')}-${stamp(snapshot.time)}`)
   const [safety, setSafety] = useState(true)
@@ -94,8 +95,10 @@ export function RestoreDialog({ snapshot, appName, scope, onClose }: { snapshot:
                 type="button"
                 role="radio"
                 aria-checked={target === o.id}
+                disabled={dumpsOnly && o.id === 'inPlace'}
+                title={dumpsOnly && o.id === 'inPlace' ? 'Load dumps into the database by hand after restoring them to a folder or volume' : undefined}
                 onClick={() => setTarget(o.id)}
-                className={cn('rounded-xl border p-3 text-left transition', target === o.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-muted')}
+                className={cn('rounded-xl border p-3 text-left transition disabled:opacity-40', target === o.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-muted')}
               >
                 <span className="flex items-center gap-2 text-sm font-medium">
                   <o.icon className={cn('size-4', target === o.id ? 'text-accent' : 'text-muted')} /> {o.title}

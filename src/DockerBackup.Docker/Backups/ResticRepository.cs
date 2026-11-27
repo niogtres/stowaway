@@ -227,8 +227,49 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
             ["RESTIC_PASSWORD_FILE"] = PasswordFile,
         };
 
+        if (CloudRepositories.IsCloud(destination.Kind))
+        {
+            var connection = CloudRepositories.Connect(destination.Kind, SettingsOf(destination), SecretsOf(destination));
+            env["RESTIC_REPOSITORY"] = connection.Repository;
+            foreach (var (key, value) in connection.Environment)
+            {
+                env[key] = value;
+            }
+
+            foreach (var (path, content) in connection.Files)
+            {
+                files[path] = content;
+            }
+
+            return await runner.RunAsync(new RunnerRequest([.. connection.ExtraArgs, .. args], extraMounts, env, files, Network: true, purpose), onLine, ct);
+        }
+
         await using var target = await OpenTargetAsync(destination, ct);
         return await runner.RunAsync(new RunnerRequest(args, [target.Mount, .. extraMounts], env, files, Network: false, purpose), onLine, ct);
+    }
+
+    public static IReadOnlyDictionary<string, string> SettingsOf(Destination destination) =>
+        string.IsNullOrEmpty(destination.Settings)
+            ? new Dictionary<string, string>()
+            : JsonSerializer.Deserialize<Dictionary<string, string>>(destination.Settings) ?? [];
+
+    private IReadOnlyDictionary<string, string> SecretsOf(Destination destination) =>
+        string.IsNullOrEmpty(destination.ProtectedSecrets)
+            ? new Dictionary<string, string>()
+            : JsonSerializer.Deserialize<Dictionary<string, string>>(secrets.Unprotect(destination.ProtectedSecrets)) ?? [];
+
+    /// <summary>Records the SFTP server's host keys (trust on first use); later connections check them strictly.</summary>
+    public async Task<string> ScanHostKeysAsync(string host, int port, CancellationToken ct)
+    {
+        if (host.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or ':' or '[' or ']')))
+        {
+            throw new ResticException(1, "That server name isn't valid.");
+        }
+
+        var script = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ssh-keyscan -T 10 -p {port} {host} 2>/dev/null");
+        var result = await runner.RunAsync(new RunnerRequest([], [], new Dictionary<string, string>(), new Dictionary<string, byte[]>(), Network: true, "keyscan", script), null, ct);
+        var keys = string.Join('\n', result.StdOut.Where(l => l.Length > 0 && !l.StartsWith('#')));
+        return keys.Length > 0 ? keys : throw new ResticException(1, $"Couldn't reach an SSH server at {host}:{port}.");
     }
 
     /// <summary>Mounts the destination at /repo: a bind for local folders, a short-lived CIFS volume for SMB.</summary>
@@ -283,6 +324,11 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         var message = fromJson
             ?? result.StdErr.Where(l => l.Trim().Length > 0).TakeLast(3).DefaultIfEmpty(ResticExitCodes.Describe((int)result.ExitCode)).Aggregate((a, b) => a + " " + b);
         message = message.Replace("Fatal: ", string.Empty, StringComparison.Ordinal).Trim();
+        if (message.Contains("unable to start the sftp session", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Couldn't open an SFTP session: the server rejected the SSH key, or its identity (host key) no longer matches the one recorded when the destination was added.";
+        }
+
         return result.ExitCode is ResticExitCodes.WrongPassword or ResticExitCodes.RepositoryDoesNotExist or ResticExitCodes.RepositoryLocked
             ? ResticExitCodes.Describe((int)result.ExitCode)
             : message;

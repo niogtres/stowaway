@@ -27,12 +27,14 @@ import {
   type ScheduleChoice,
   type ScheduleKind,
 } from '@/lib/schedule'
+import { dumpableDatabases } from '@/lib/destinations'
 import { cn, formatBytes } from '@/lib/utils'
 
 const steps = ['What', 'How', 'Where', 'When & keep'] as const
 
 const hasData = (app: AppInfo) => app.containers.some((c) => c.mounts.some((m) => m.included))
 const runsDatabase = (app: AppInfo) => app.containers.some((c) => c.database && c.state === 'running')
+const runsUndumpableDatabase = (app: AppInfo) => app.containers.some((c) => c.database && c.state === 'running' && !dumpableDatabases.has(c.database))
 
 function initialInput(plan: Plan | undefined, destinationId: string | undefined): PlanInput {
   if (plan) {
@@ -77,7 +79,8 @@ export function PlanWizard({ open, onClose, plan }: { open: boolean; onClose: ()
   const dataApps = apps.filter(hasData)
   const covered = dataApps.filter((a) => (input.selection === 'allApps' ? !input.excludedAppIds.includes(a.id) : input.appIds.includes(a.id)))
   const coveredBytes = covered.reduce((s, a) => s + a.dataBytes, 0) + (input.includeOrphanedVolumes ? orphans.reduce((s, v) => s + (v.sizeBytes ?? 0), 0) : 0)
-  const stopping = covered.filter((a) => input.strategy === 'stopStart' || (input.strategy === 'auto' && runsDatabase(a)))
+  const stopping = covered.filter((a) => input.strategy === 'stopStart' || (input.strategy === 'auto' && runsUndumpableDatabase(a)))
+  const dumped = input.strategy === 'stopStart' ? [] : covered.filter(runsDatabase).filter((a) => !stopping.includes(a))
   // Defaults to the first destination once destinations have loaded.
   const destinationId = input.destinationId || destinations.data?.[0]?.id || ''
   const destination = destinations.data?.find((d) => d.id === destinationId)
@@ -158,14 +161,27 @@ export function PlanWizard({ open, onClose, plan }: { open: boolean; onClose: ()
             <div className="grid grid-cols-3 gap-2">
               {(
                 [
-                  { id: 'auto', icon: Sparkles, title: 'Automatic', badge: 'Recommended', text: 'Stops apps that run a database; copies the rest live.' },
-                  { id: 'live', icon: Zap, title: 'Live', text: 'Never stops anything. Databases may not restore cleanly.' },
+                  { id: 'auto', icon: Sparkles, title: 'Automatic', badge: 'Recommended', text: 'Dumps databases while they run; only stops an app if its database can’t be dumped.' },
+                  { id: 'live', icon: Zap, title: 'Live', text: 'Never stops anything. Supported databases are still dumped.' },
                   { id: 'stopStart', icon: PauseCircle, title: 'Stop & start', text: 'Stops every app briefly for a fully consistent copy.' },
                 ] as { id: PlanStrategy; icon: typeof Zap; title: string; badge?: string; text: string }[]
               ).map((o) => (
                 <Choice key={o.id} active={input.strategy === o.id} onClick={() => update({ strategy: o.id })} icon={o.icon} title={o.title} badge={o.badge} text={o.text} />
               ))}
             </div>
+            {dumped.length > 0 && (
+              <div className="rounded-xl border border-line p-3 text-sm">
+                <span className="font-medium">Databases dumped with their own tools, no downtime:</span>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {dumped.map((a) => (
+                    <Badge key={a.id} tone="accent">
+                      <Database className="size-3" />
+                      {a.name}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="rounded-xl border border-line p-3 text-sm">
               {stopping.length === 0 ? (
                 <span className="text-muted">No app will be stopped.</span>

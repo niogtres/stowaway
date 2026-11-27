@@ -1,18 +1,18 @@
 import { motion } from 'motion/react'
-import { Copy, Eye, FolderClosed, HardDrive, KeyRound, Network, Plus, RefreshCw, ShieldCheck, Trash2, TriangleAlert, Wrench } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { Button, Dialog, Field, TextInput } from '@/components/forms'
+import { Copy, Eye, HardDrive, KeyRound, Plus, RefreshCw, Trash2, TriangleAlert, Wrench } from 'lucide-react'
+import { createElement, useState } from 'react'
+import { AddDestinationDialog } from '@/components/AddDestinationDialog'
+import { Button, Dialog } from '@/components/forms'
 import { Badge, Card, Skeleton, Stat, StatusDot } from '@/components/ui'
 import {
   revealRecoveryKey,
   useCheckDestination,
-  useCreateDestination,
   useDeleteDestination,
   useDestinations,
   useRunMaintenance,
   type Destination,
-  type DestinationKind,
 } from '@/lib/api'
+import { kindIcon, kindLabel } from '@/lib/destinations'
 import { cn, formatBytes, relativeTime } from '@/lib/utils'
 
 export function Destinations() {
@@ -55,7 +55,7 @@ export function Destinations() {
         </div>
       )}
 
-      <AddDestinationDialog open={adding} onClose={() => setAdding(false)} />
+      {adding && <AddDestinationDialog onClose={() => setAdding(false)} />}
     </div>
   )
 }
@@ -67,19 +67,18 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
   const [showKey, setShowKey] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const status = d.status
-  const Icon = d.kind === 'smb' ? Network : FolderClosed
 
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
           <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft">
-            <Icon className="size-5 text-accent" />
+            {createElement(kindIcon(d.kind), { className: "size-5 text-accent" })}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold tracking-tight">{d.name}</h3>
-              <Badge>{d.kind === 'smb' ? 'Network share' : 'Local folder'}</Badge>
+              <Badge>{kindLabel(d.kind)}</Badge>
             </div>
             <div className="mt-0.5 truncate font-mono text-xs text-muted">{d.path}</div>
           </div>
@@ -200,122 +199,6 @@ function RecoveryKeyDialog({ destination, open, onClose }: { destination: Destin
         )}
         {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       </div>
-    </Dialog>
-  )
-}
-
-function AddDestinationDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const create = useCreateDestination()
-  const [kind, setKind] = useState<DestinationKind>('local')
-  const [connectExisting, setConnectExisting] = useState(false)
-  const [form, setForm] = useState({ name: '', path: '', smbUsername: '', smbPassword: '', smbDomain: '', existingRepositoryPassword: '' })
-  const set = (field: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [field]: e.target.value }))
-
-  const close = () => {
-    create.reset()
-    setForm({ name: '', path: '', smbUsername: '', smbPassword: '', smbDomain: '', existingRepositoryPassword: '' })
-    setConnectExisting(false)
-    onClose()
-  }
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
-    create.mutate(
-      {
-        name: form.name,
-        kind,
-        path: form.path,
-        smbUsername: kind === 'smb' ? form.smbUsername : undefined,
-        smbPassword: kind === 'smb' ? form.smbPassword : undefined,
-        smbDomain: kind === 'smb' ? form.smbDomain : undefined,
-        existingRepositoryPassword: connectExisting ? form.existingRepositoryPassword : undefined,
-      },
-      { onSuccess: close },
-    )
-  }
-
-  return (
-    <Dialog open={open} onClose={close} title="Add destination" description="Where should backups be stored?">
-      <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Destination type">
-          {(
-            [
-              { id: 'local', icon: FolderClosed, title: 'Local folder', text: 'Another disk or a USB drive' },
-              { id: 'smb', icon: Network, title: 'Network share', text: 'A NAS or another PC (SMB)' },
-            ] as const
-          ).map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              role="radio"
-              aria-checked={kind === option.id}
-              onClick={() => setKind(option.id)}
-              className={cn(
-                'flex items-start gap-3 rounded-xl border p-3 text-left transition',
-                kind === option.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-muted',
-              )}
-            >
-              <option.icon className={cn('mt-0.5 size-4', kind === option.id ? 'text-accent' : 'text-muted')} />
-              <span>
-                <span className="block text-sm font-medium">{option.title}</span>
-                <span className="block text-xs text-muted">{option.text}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <Field label="Name">
-          <TextInput required value={form.name} onChange={set('name')} placeholder={kind === 'smb' ? 'NAS' : 'Backup disk'} autoFocus />
-        </Field>
-        <Field
-          label={kind === 'smb' ? 'Share path' : 'Folder'}
-          hint={kind === 'smb' ? 'For example \\\\nas\\backups\\docker' : 'For example D:\\Backups\\docker. It will be created if needed.'}
-        >
-          <TextInput required value={form.path} onChange={set('path')} className="font-mono" placeholder={kind === 'smb' ? '\\\\nas\\backups\\docker' : 'D:\\Backups\\docker'} />
-        </Field>
-
-        {kind === 'smb' && (
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Username" hint="Leave empty for guest access">
-              <TextInput value={form.smbUsername} onChange={set('smbUsername')} autoComplete="off" />
-            </Field>
-            <Field label="Password">
-              <TextInput type="password" value={form.smbPassword} onChange={set('smbPassword')} autoComplete="new-password" />
-            </Field>
-            <Field label="Domain (optional)">
-              <TextInput value={form.smbDomain} onChange={set('smbDomain')} autoComplete="off" />
-            </Field>
-          </div>
-        )}
-
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={connectExisting} onChange={(e) => setConnectExisting(e.target.checked)} className="accent-[var(--accent)]" />
-          This location already has DockerBackup backups (connect with its recovery key)
-        </label>
-        {connectExisting && (
-          <Field label="Recovery key">
-            <TextInput required type="password" value={form.existingRepositoryPassword} onChange={set('existingRepositoryPassword')} className="font-mono" />
-          </Field>
-        )}
-
-        {create.error && (
-          <div className="flex items-start gap-2 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {create.error.message}
-          </div>
-        )}
-
-        <div className="flex items-center justify-between gap-3 pt-2">
-          <span className="flex items-center gap-1.5 text-xs text-muted">
-            <ShieldCheck className="size-3.5" /> Encrypted with a key only this computer holds
-          </span>
-          <div className="flex gap-2">
-            <Button onClick={close}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={create.isPending}>
-              {create.isPending ? 'Setting up…' : connectExisting ? 'Connect' : 'Create'}
-            </Button>
-          </div>
-        </div>
-      </form>
     </Dialog>
   )
 }

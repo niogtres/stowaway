@@ -22,16 +22,20 @@ public sealed class BackupOptions
     public int StopTimeoutSeconds { get; set; } = 60;
 }
 
-/// <param name="Args">restic arguments (the image's entrypoint is restic).</param>
+/// <param name="Args">restic arguments.</param>
+/// <param name="Environment">Variables for restic. Written to a file inside the container (sourced by the
+/// entrypoint) so secrets never show up in the container's configuration.</param>
 /// <param name="Files">Files to place in the container before it starts, keyed by absolute path.</param>
 /// <param name="Network">False runs the container without any network (local and SMB destinations).</param>
+/// <param name="Script">Runs this shell script instead of restic (e.g. ssh-keyscan).</param>
 public sealed record RunnerRequest(
     IReadOnlyList<string> Args,
     IReadOnlyList<RunnerMount> Mounts,
     IReadOnlyDictionary<string, string> Environment,
     IReadOnlyDictionary<string, byte[]> Files,
     bool Network = false,
-    string Purpose = "restic");
+    string Purpose = "restic",
+    string? Script = null);
 
 public sealed record RunnerResult(long ExitCode, IReadOnlyList<string> StdOut, IReadOnlyList<string> StdErr)
 {
@@ -42,10 +46,28 @@ public sealed record RunnerResult(long ExitCode, IReadOnlyList<string> StdOut, I
 public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOptions> options, ILogger<ResticRunner> logger)
 {
     public const string RunnerLabel = "dockerbackup.runner";
+    public const string EnvFile = CloudRepositories.SecretsDir + "/env";
+
+    // Sources the env file (secrets) and hands over to restic with the remaining arguments.
+    private const string ResticWrapper = "set -a; [ -f " + EnvFile + " ] && . " + EnvFile + "; set +a; exec restic \"$@\"";
+
     private readonly BackupOptions _options = options.Value;
     private readonly SemaphoreSlim _pullLock = new(1, 1);
+    private string? _image;
 
-    public string Image => _options.ResticImage;
+    /// <summary>
+    /// The runner image: the pinned restic image plus rclone (Dropbox) and socat (Dropbox sign-in), built
+    /// locally on first use. Falls back to the plain restic image if the build fails (e.g. offline).
+    /// </summary>
+    public string Image => _image ?? _options.ResticImage;
+
+    public string RunnerDockerfile => $"FROM {_options.ResticImage}\nRUN apk add --no-cache rclone socat\nLABEL {RunnerLabel}.image=true\n";
+
+    public string RunnerImageTag =>
+        "dockerbackup/runner:" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(RunnerDockerfile)))[..12];
+
+    /// <summary>True when the extended runner image (with rclone) is available.</summary>
+    public bool HasRclone => _image == RunnerImageTag;
 
     public DockerClient CreateClient(TimeSpan? timeout = null) =>
         new DockerClientBuilder()
@@ -66,8 +88,9 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
         var created = await client.Containers.CreateContainerAsync(new CreateContainerParameters
         {
             Image = Image,
-            Cmd = request.Args.ToList(),
-            Env = request.Environment.Select(kv => $"{kv.Key}={kv.Value}").Append("RESTIC_CACHE_DIR=/cache").ToList(),
+            Entrypoint = ["sh"],
+            Cmd = request.Script is { } script ? ["-c", script] : ["-c", ResticWrapper, "restic", .. request.Args],
+            Env = ["RESTIC_CACHE_DIR=/cache"],
             Labels = new Dictionary<string, string> { [RunnerLabel] = "true", ["dockerbackup.purpose"] = request.Purpose },
             HostConfig = new HostConfig
             {
@@ -80,9 +103,15 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
         var id = created.ID;
         try
         {
-            if (request.Files.Count > 0)
+            var files = new Dictionary<string, byte[]>(request.Files);
+            if (request.Environment.Count > 0)
             {
-                using var tar = BuildTar(request.Files);
+                files[EnvFile] = Encoding.UTF8.GetBytes(EnvFileContent(request.Environment));
+            }
+
+            if (files.Count > 0)
+            {
+                using var tar = BuildTar(files);
                 await client.Containers.ExtractArchiveToContainerAsync(id, new CopyToContainerParameters { Path = "/" }, tar, ct);
             }
 
@@ -130,28 +159,97 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
         }
     }
 
-    private async Task EnsureImageAsync(DockerClient client, CancellationToken ct)
+    public async Task EnsureImageAsync(DockerClient client, CancellationToken ct)
     {
+        if (_image is not null)
+        {
+            return;
+        }
+
         await _pullLock.WaitAsync(ct);
         try
         {
-            try
+            if (_image is not null)
             {
-                await client.Images.InspectImageAsync(Image, ct);
                 return;
             }
-            catch (DockerImageNotFoundException)
+
+            if (await ExistsAsync(client, RunnerImageTag, ct))
             {
+                _image = RunnerImageTag;
+                return;
             }
 
-            var (repository, tag) = SplitImage(Image);
-            logger.LogInformation("Pulling {Image}", Image);
-            await client.Images.CreateImageAsync(new ImagesCreateParameters { FromImage = repository, Tag = tag }, null, new Progress<JSONMessage>(), ct);
+            if (!await ExistsAsync(client, _options.ResticImage, ct))
+            {
+                var (repository, tag) = SplitImage(_options.ResticImage);
+                logger.LogInformation("Pulling {Image}", _options.ResticImage);
+                await client.Images.CreateImageAsync(new ImagesCreateParameters { FromImage = repository, Tag = tag }, null, new Progress<JSONMessage>(), ct);
+            }
+
+            try
+            {
+                logger.LogInformation("Building runner image {Image}", RunnerImageTag);
+                using var context = BuildTar(new Dictionary<string, byte[]> { ["Dockerfile"] = Encoding.UTF8.GetBytes(RunnerDockerfile) });
+                await client.Images.BuildImageFromDockerfileAsync(
+                    new ImageBuildParameters { Tags = [RunnerImageTag], Remove = true, ForceRemove = true },
+                    context, null, null, new Progress<JSONMessage>(m =>
+                    {
+                        if (m.Error?.Message is { Length: > 0 } error)
+                        {
+                            logger.LogWarning("Runner image build: {Error}", error);
+                        }
+                    }), ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Building the runner image failed");
+            }
+
+            if (await ExistsAsync(client, RunnerImageTag, ct))
+            {
+                _image = RunnerImageTag;
+            }
+            else
+            {
+                logger.LogWarning("Using {Image} without rclone: Dropbox destinations won't work until the runner image can be built", _options.ResticImage);
+                _image = _options.ResticImage;
+            }
         }
         finally
         {
             _pullLock.Release();
         }
+    }
+
+    private static async Task<bool> ExistsAsync(DockerClient client, string image, CancellationToken ct)
+    {
+        try
+        {
+            await client.Images.InspectImageAsync(image, ct);
+            return true;
+        }
+        catch (DockerImageNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Shell-safe <c>KEY='value'</c> lines for the entrypoint to source.</summary>
+    internal static string EnvFileContent(IReadOnlyDictionary<string, string> environment)
+    {
+        var sb = new StringBuilder();
+        foreach (var (key, value) in environment)
+        {
+            if (!key.All(c => char.IsAsciiLetterOrDigit(c) || c == '_') || key.Length == 0 || char.IsAsciiDigit(key[0]))
+            {
+                throw new ArgumentException($"Invalid environment variable name '{key}'.");
+            }
+
+            sb.Append(key).Append("='").Append(value.Replace("'", "'\\''")).Append("'\n");
+        }
+
+        return sb.ToString();
     }
 
     internal static (string Repository, string Tag) SplitImage(string image)
@@ -194,7 +292,7 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
         return stream;
     }
 
-    private static async Task ReadLinesAsync(MultiplexedStream stream, Action<string, bool> onLine, CancellationToken ct)
+    internal static async Task ReadLinesAsync(MultiplexedStream stream, Action<string, bool> onLine, CancellationToken ct)
     {
         var buffer = new byte[64 * 1024];
         var pending = new Dictionary<bool, StringBuilder> { [false] = new(), [true] = new() };

@@ -128,7 +128,7 @@ export interface InventoryResponse {
 
 // ---- Backups -------------------------------------------------------------
 
-export type DestinationKind = 'local' | 'smb'
+export type DestinationKind = 'local' | 'smb' | 's3' | 'b2' | 'azure' | 'sftp' | 'dropbox'
 export type BackupStrategy = 'live' | 'stopStart'
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type RunKind = 'backup' | 'maintenance' | 'restore'
@@ -162,6 +162,9 @@ export interface CreateDestination {
   smbPassword?: string
   smbDomain?: string
   existingRepositoryPassword?: string
+  settings?: Record<string, string>
+  secrets?: Record<string, string>
+  dropboxSession?: string
 }
 
 export interface BackupRun {
@@ -306,7 +309,7 @@ export interface SnapshotInfo {
 
 export interface SnapshotSource {
   snapshotPath: string
-  kind: 'volume' | 'bind'
+  kind: 'volume' | 'bind' | 'dumps'
   source: string
   displaySource: string
   containerName: string
@@ -457,6 +460,16 @@ export function useDeleteDestination() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.destinations }),
   })
 }
+
+export interface DropboxSession {
+  id: string
+  state: 'pending' | 'ready' | 'failed'
+  authUrl: string | null
+  error: string | null
+}
+
+export const startDropbox = () => request<DropboxSession>('POST', '/api/dropbox/connect')
+export const pollDropbox = (id: string) => request<DropboxSession>('GET', `/api/dropbox/connect/${id}`)
 
 export const revealRecoveryKey = (id: string) =>
   request<{ recoveryKey: string }>('POST', `/api/destinations/${id}/recovery-key`).then((r) => r.recoveryKey)

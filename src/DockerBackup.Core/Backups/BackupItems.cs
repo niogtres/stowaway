@@ -43,14 +43,15 @@ public static class BackupItems
 
     public static bool HasData(AppInfo app) => app.Containers.SelectMany(c => c.Mounts).Any(m => m.Included);
 
-    /// <summary>Strategy for an item under a plan: Auto stops apps that run a database.</summary>
+    /// <summary>
+    /// Strategy for an item under a plan. Auto copies live and dumps running databases; it only stops the app
+    /// when it runs a database that can't be dumped.
+    /// </summary>
     public static Backups.BackupStrategy StrategyFor(AppInfo app, PlanStrategy strategy) => strategy switch
     {
         PlanStrategy.Live => Backups.BackupStrategy.Live,
         PlanStrategy.StopStart => Backups.BackupStrategy.StopStart,
-        _ => app.Containers.Any(c => c.Database is not null && c.State == "running")
-            ? Backups.BackupStrategy.StopStart
-            : Backups.BackupStrategy.Live,
+        _ => DatabaseDumps.Undumpable(app).Count > 0 ? Backups.BackupStrategy.StopStart : Backups.BackupStrategy.Live,
     };
 
     private static AppInfo VolumeAsApp(VolumeInfo volume)

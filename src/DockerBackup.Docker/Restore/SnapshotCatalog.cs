@@ -14,6 +14,7 @@ public sealed record SnapshotContents(AppInfo App, IReadOnlyList<SnapshotSource>
 public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationService destinationService, ResticRepository repository)
 {
     public const string SafetyTag = "safety";
+    public const string DumpsKind = "dumps";
     private const int MaxCachedListings = 500;
     private static readonly JsonSerializerOptions MetadataJson = new() { PropertyNameCaseInsensitive = true };
 
@@ -53,7 +54,14 @@ public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationS
         var destination = await RequireDestinationAsync(destinationId, ct);
         var json = await repository.ReadTextAsync(destination, snapshotId, $"{BackupPlanner.MetadataDir}/app.json", ct);
         var app = JsonSerializer.Deserialize<AppInfo>(json, MetadataJson) ?? throw new RestoreValidationException("This snapshot has no app description.");
-        var contents = new SnapshotContents(app, BackupPlanner.Layout(app));
+        var sources = BackupPlanner.Layout(app).ToList();
+        var top = await repository.ListAsync(destination, snapshotId, BackupPlanner.DataRoot, ct);
+        if (top.Any(n => n.Path == DatabaseDumps.SnapshotDir))
+        {
+            sources.Add(new SnapshotSource(DatabaseDumps.SnapshotDir, DumpsKind, "_dumps", "Database dumps", "databases", "/", null));
+        }
+
+        var contents = new SnapshotContents(app, sources);
         _contents[key] = contents;
         return contents;
     }

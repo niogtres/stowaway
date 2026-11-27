@@ -33,6 +33,8 @@ public static class ServiceCollectionExtensions
         services.Configure<BackupOptions>(configuration.GetSection(BackupOptions.SectionName));
         services.AddSingleton<ResticRunner>();
         services.AddSingleton<ResticRepository>();
+        services.AddSingleton<DumpService>();
+        services.AddSingleton<DropboxAuthService>();
         services.AddSingleton<DestinationService>();
         services.AddSingleton<Restore.SnapshotCatalog>();
         services.AddSingleton<Restore.RestoreService>();

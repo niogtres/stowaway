@@ -34,6 +34,11 @@ public static partial class RestorePlanner
             .Distinct()
             .ToList();
 
+        if (request.Target == RestoreTarget.InPlace && selected.Any(s => s.Kind == "dumps"))
+        {
+            throw new RestoreValidationException("Database dumps can't be restored in place. Restore them to a folder or a volume, then load them into the database.");
+        }
+
         var include = NormalizeSubPath(request.SubPath);
         if (include is not null && selected.Count != 1)
         {

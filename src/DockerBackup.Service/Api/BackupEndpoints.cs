@@ -17,11 +17,14 @@ public sealed record DestinationResponse(
 public sealed record CreateDestinationBody(
     string Name,
     DestinationKind Kind,
-    string Path,
+    string? Path,
     string? SmbUsername,
     string? SmbPassword,
     string? SmbDomain,
-    string? ExistingRepositoryPassword);
+    string? ExistingRepositoryPassword,
+    Dictionary<string, string>? Settings,
+    Dictionary<string, string>? Secrets,
+    Guid? DropboxSession);
 
 public sealed record StartBackupBody(string AppId, Guid DestinationId, BackupStrategy Strategy);
 
@@ -41,7 +44,8 @@ public static class BackupEndpoints
             try
             {
                 var created = await service.CreateAsync(new CreateDestinationRequest(
-                    body.Name ?? string.Empty, body.Kind, body.Path ?? string.Empty, body.SmbUsername, body.SmbPassword, body.SmbDomain, body.ExistingRepositoryPassword), ct);
+                    body.Name ?? string.Empty, body.Kind, body.Path ?? string.Empty, body.SmbUsername, body.SmbPassword, body.SmbDomain, body.ExistingRepositoryPassword,
+                    body.Settings, body.Secrets, body.DropboxSession), ct);
                 return Results.Created($"/api/destinations/{created.Id}", ToResponse(created, null));
             }
             catch (ValidationException ex)
@@ -49,6 +53,21 @@ public static class BackupEndpoints
                 return Problem(ex.Message);
             }
         });
+
+        api.MapPost("/dropbox/connect", async (DropboxAuthService dropbox, CancellationToken ct) =>
+        {
+            try
+            {
+                return Results.Ok(await dropbox.StartAsync(ct));
+            }
+            catch (ValidationException ex)
+            {
+                return Problem(ex.Message);
+            }
+        });
+
+        api.MapGet("/dropbox/connect/{id:guid}", (Guid id, DropboxAuthService dropbox) =>
+            dropbox.Get(id) is { } status ? Results.Ok(status) : Results.NotFound());
 
         destinations.MapPost("/{id:guid}/check", async (Guid id, DestinationService service, CancellationToken ct) =>
         {

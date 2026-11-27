@@ -14,10 +14,11 @@ import {
   type BackupStrategy,
   type RunStatus,
 } from '@/lib/api'
+import { dumpableDatabases } from '@/lib/destinations'
 import { cn, formatBytes, relativeTime } from '@/lib/utils'
 
 function defaultStrategy(app: AppInfo): BackupStrategy {
-  return app.containers.some((c) => c.database && c.state === 'running') ? 'stopStart' : 'live'
+  return app.containers.some((c) => c.database && c.state === 'running' && !dumpableDatabases.has(c.database)) ? 'stopStart' : 'live'
 }
 
 export function BackupNowDialog({ app, open, onClose }: { app: AppInfo; open: boolean; onClose: () => void }) {
@@ -29,6 +30,7 @@ export function BackupNowDialog({ app, open, onClose }: { app: AppInfo; open: bo
   const selected = destinationId ?? usable[0]?.id ?? null
   const running = app.containers.filter((c) => c.state === 'running')
   const hasDatabase = app.containers.some((c) => c.database)
+  const undumpable = app.containers.some((c) => c.database && !dumpableDatabases.has(c.database))
 
   const close = () => {
     start.reset()
@@ -105,11 +107,11 @@ export function BackupNowDialog({ app, open, onClose }: { app: AppInfo; open: bo
                 text={`Stops ${running.length} running container${running.length === 1 ? '' : 's'} briefly for a consistent copy.`}
               />
             </div>
-            {hasDatabase && strategy === 'live' && (
-              <p className="mt-2 text-xs text-warn">
-                This app runs a database. A live copy of database files may not restore cleanly. Stop &amp; start is safer until
-                dump-based backups arrive.
-              </p>
+            {hasDatabase && strategy === 'live' && !undumpable && (
+              <p className="mt-2 text-xs text-muted">The database is dumped with its own tools while it runs, so the backup restores cleanly.</p>
+            )}
+            {undumpable && strategy === 'live' && (
+              <p className="mt-2 text-xs text-warn">This app runs a database that can't be dumped. A live copy may not restore cleanly; Stop &amp; start is safer.</p>
             )}
           </fieldset>
 

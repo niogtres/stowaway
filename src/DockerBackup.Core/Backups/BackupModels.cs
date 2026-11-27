@@ -7,6 +7,21 @@ public enum DestinationKind
 
     /// <summary>A Windows/SMB share, e.g. <c>\\nas\backups\docker</c>, mounted through a CIFS volume.</summary>
     Smb,
+
+    /// <summary>Amazon S3 or any S3-compatible service (MinIO, Wasabi, Cloudflare R2, ...).</summary>
+    S3,
+
+    /// <summary>Backblaze B2.</summary>
+    B2,
+
+    /// <summary>Azure Blob Storage.</summary>
+    Azure,
+
+    /// <summary>An SFTP server, authenticated with an SSH key.</summary>
+    Sftp,
+
+    /// <summary>Dropbox, through rclone.</summary>
+    Dropbox,
 }
 
 /// <summary>Where backups go: one restic repository. Persisted; secrets are stored DPAPI-protected.</summary>
@@ -23,6 +38,12 @@ public sealed class Destination
 
     /// <summary>DPAPI-protected SMB password, if any.</summary>
     public string? ProtectedSmbPassword { get; set; }
+
+    /// <summary>Non-secret settings for cloud destinations (JSON object; see <see cref="DestinationKeys"/>).</summary>
+    public string? Settings { get; set; }
+
+    /// <summary>DPAPI-protected JSON object of cloud credentials (keys, tokens).</summary>
+    public string? ProtectedSecrets { get; set; }
 
     /// <summary>DPAPI-protected restic repository password. Losing it makes the backups unreadable.</summary>
     public required string ProtectedRepositoryPassword { get; set; }
