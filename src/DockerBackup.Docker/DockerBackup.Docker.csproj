@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\DockerBackup.Core\DockerBackup.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Docker.DotNet.Enhanced" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

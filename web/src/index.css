@@ -1,0 +1,83 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens. Light is the base; .dark overrides. One accent colour, three status colours. */
+:root {
+  --bg: oklch(0.985 0.004 250);
+  --surface: oklch(1 0 0 / 0.72);
+  --surface-strong: oklch(1 0 0 / 0.92);
+  --line: oklch(0.2 0.02 250 / 0.09);
+  --fg: oklch(0.22 0.02 255);
+  --muted: oklch(0.5 0.02 255);
+  --accent: oklch(0.6 0.13 210);
+  --accent-soft: oklch(0.6 0.13 210 / 0.12);
+  --ok: oklch(0.62 0.15 155);
+  --warn: oklch(0.72 0.15 75);
+  --danger: oklch(0.6 0.2 20);
+  --glow-1: oklch(0.85 0.1 200 / 0.45);
+  --glow-2: oklch(0.85 0.1 290 / 0.35);
+}
+
+.dark {
+  --bg: oklch(0.16 0.02 260);
+  --surface: oklch(0.23 0.02 260 / 0.55);
+  --surface-strong: oklch(0.25 0.02 260 / 0.85);
+  --line: oklch(1 0 0 / 0.08);
+  --fg: oklch(0.96 0.01 250);
+  --muted: oklch(0.7 0.02 255);
+  --accent: oklch(0.82 0.13 195);
+  --accent-soft: oklch(0.82 0.13 195 / 0.14);
+  --ok: oklch(0.78 0.16 155);
+  --warn: oklch(0.82 0.15 80);
+  --danger: oklch(0.7 0.19 20);
+  --glow-1: oklch(0.55 0.14 200 / 0.28);
+  --glow-2: oklch(0.5 0.16 290 / 0.22);
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}
+
+/* Soft aurora behind the glass surfaces. */
+.aurora {
+  background:
+    radial-gradient(60rem 40rem at 10% -10%, var(--glow-1), transparent 60%),
+    radial-gradient(50rem 36rem at 95% 0%, var(--glow-2), transparent 60%);
+}
+
+.glass {
+  @apply bg-surface border border-line backdrop-blur-xl;
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.04) inset,
+    0 10px 30px -12px oklch(0 0 0 / 0.25);
+}

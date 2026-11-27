@@ -1,0 +1,3 @@
+<Project>
+  <!-- Deliberately does not import the root props (TargetFramework, analyzers do not apply to WiX). -->
+</Project>

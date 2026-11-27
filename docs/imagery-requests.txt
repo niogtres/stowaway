@@ -1,0 +1,82 @@
+DOCKERBACKUP: IMAGERY REQUESTS
+================================
+Drop finished files into:  assets/brand/   (create it; keep the file names below)
+Claude converts formats (ICO, BMP, favicon sizes) from your masters, so you only need to supply the PNG/SVG masters.
+
+GLOBAL ART DIRECTION (applies to every image)
+- Mood: "calm confidence": a premium, modern infrastructure tool. Think Linear / Vercel / Raycast polish, not cartoonish.
+- Palette (dark UI is primary):
+    background navy-ink   #0F1420   (surfaces slightly lighter: #1A2030)
+    accent gradient       #5EEAD4 (teal) -> #38BDF8 (sky blue), left-top to right-bottom
+    secondary glow        #8B7CF6 (soft violet), used sparingly as ambient light only
+    status                green #34D399 · amber #FBBF24 · rose #FB7185
+    neutral line/stroke   white at 8-12% opacity
+- Style: flat geometric shapes with soft gradients and subtle inner glow; clean vector edges; no photorealism, no 3D clay, no glossy skeuomorphism.
+- NO TEXT in any image (we render text in the UI).
+- DO NOT use the Docker whale, Docker logo, Moby, shipping-container photos, or anything resembling Docker Inc. branding (trademark).
+  Abstract stacked "layers/blocks" and shields are fine.
+- Transparent backgrounds unless stated otherwise.
+
+-----------------------------------------------------------------
+1) APP ICON / LOGO MARK          PRIORITY: HIGH (needed for M0/M1)
+-----------------------------------------------------------------
+Files:     logo-mark.svg  (preferred)  AND/OR  logo-mark-1024.png (1024x1024, transparent)
+           logo-mark-mono.svg  (single-colour white version, same shape)
+Used for:  .exe icon, MSI/Add-Remove Programs icon, browser favicon, sidebar logo, tray icon (later).
+Prompt:
+  "A minimalist app icon for a backup and restore tool for container infrastructure. A rounded shield
+   silhouette with a smooth teal-to-sky-blue gradient (#5EEAD4 to #38BDF8). Inside the shield, three
+   horizontal rounded bars stacked vertically like data layers, in deep navy #0F1420, with the top bar
+   showing a small circular-arrow notch suggesting restore/time. Flat vector, geometric, perfectly
+   symmetrical, crisp edges, subtle soft inner highlight on the shield's top edge only. Centered with
+   ~8% padding, transparent background, no text, no whale, no ship."
+Hard requirements: must stay recognisable at 16x16 px. Keep the inner details bold (no hairlines).
+                   Test by shrinking: the shield and 3 bars must still read.
+
+-----------------------------------------------------------------
+2) EMPTY-STATE ILLUSTRATIONS (set of 4)     PRIORITY: MEDIUM (M1-M4)
+-----------------------------------------------------------------
+Files:     empty-inventory.png, empty-plans.png, empty-snapshots.png, engine-offline.png
+Size:      1200x900 PNG, transparent background, subject centered, ~15% padding.
+Must look good on BOTH dark (#0F1420) and light (#F7F8FB) backgrounds: avoid pure black or pure white
+edges; use mid-tone navy/slate shapes plus the accent gradient.
+Shared style prompt (prefix every one with this):
+  "Isometric minimal vector illustration, soft gradients, teal-to-sky-blue accent (#5EEAD4 to #38BDF8)
+   with a faint violet ambient glow (#8B7CF6), slate-navy secondary shapes, gentle long soft shadows,
+   lots of negative space, no text, no logos, no people, transparent background, consistent line
+   weight, premium SaaS product illustration style."
+  a) empty-inventory.png: "...a few translucent stacked cube blocks floating above a faint grid
+     floor, one block glowing with a soft scanning beam passing over it (discovering)."
+  b) empty-plans.png: "...a calendar tile and a circular clock dial merging into a shield shape,
+     with dotted orbit lines suggesting a recurring schedule."
+  c) empty-snapshots.png: "...a horizontal timeline ribbon with three small stacked-layer
+     'snapshots' resting on it like frames, the most recent one glowing."
+  d) engine-offline.png: "...a stack of blocks with a softly unplugged cable/connector beside it,
+     amber (#FBBF24) accent on the connector instead of teal; calm, not alarming."
+
+-----------------------------------------------------------------
+3) INSTALLER ARTWORK                         PRIORITY: LOW (M6)
+-----------------------------------------------------------------
+Files:     installer-dialog.png  exactly 493x312 px, OPAQUE (no transparency)
+           installer-banner.png  exactly 493x58  px, OPAQUE
+Note:      Windows Installer draws its own text on the RIGHT ~60% of the dialog image and the
+           LEFT ~80% of the banner, so keep those areas plain.
+Prompt (dialog):
+  "Wide installer side panel artwork, 493x312. Left 164 px: deep navy (#0F1420) panel with the
+   shield-and-layers logo mark centered and a soft teal/violet aurora glow behind it. Remaining right
+   area: very light, almost white (#F7F8FB), completely plain. No text."
+Prompt (banner):
+  "Thin installer header banner, 493x58, almost white (#F7F8FB) background, plain on the left 80%;
+   on the far right a small shield-and-layers logo mark (~40 px tall) with a faint teal glow. No text."
+
+-----------------------------------------------------------------
+4) README / SOCIAL PREVIEW                   PRIORITY: LOW
+-----------------------------------------------------------------
+File:      social-preview.png  1280x640 PNG, opaque
+Prompt:
+  "Hero banner on deep navy (#0F1420) with soft teal (#5EEAD4) and violet (#8B7CF6) aurora light
+   blooming from the top corners. Left third: the shield-and-layers logo mark, large, with subtle glow.
+   Right two-thirds: an abstract, slightly tilted glassmorphism dashboard card floating in space,
+   showing a large circular progress ring (≈92%, green-teal) and a row of small rounded status bars,
+   with no readable text. Clean, premium, minimal. Leave the bottom-left area calm for an overlaid
+   title."

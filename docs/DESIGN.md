@@ -136,7 +136,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 
 - Kestrel binds to **localhost only** by default over HTTPS (a per-install self-signed certificate is added to LocalMachine\Root by the installer). Remote access is opt-in: bind address + your own certificate.
 - **Auth:** Windows Negotiate (members of local `Administrators` or a `DockerBackup Operators` group), plus optional local accounts with TOTP for remote use.
-- Repository passwords and cloud keys are encrypted with **DPAPI (LocalMachine)** in SQLite. An export of the repo key is offered at setup: *lose it and backups are unrecoverable*.
+- Repository passwords and cloud keys are encrypted with **DPAPI in the service account's (LocalSystem's) user scope** in SQLite. *LocalMachine* scope is deliberately not used: any local user could decrypt it. An export of the repo key is offered at setup: *lose it and backups are unrecoverable*.
 - The service runs as **LocalSystem** (it needs access to the Docker pipe). Every API call is audit-logged.
 - The runner container gets read-only mounts for backup and no network except to the backend.
 
@@ -149,6 +149,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 | DB credential discovery fails | Fall back to stop/copy/start and raise an "app-aware dump unavailable" warning with a credential override form. |
 | Windows-containers engine | v1 targets Linux containers (the vast majority). The Windows engine path is phase 2 (§3.2 fallback). |
 | restic repo lock left behind by a crash | Automatic `unlock` of stale locks older than N hours, owned by our host. |
+| **"Docker" is a trademark of Docker, Inc.** Their brand guidelines restrict its use in product names and logos | Fine while private. Choose a distinct product name before any public release ("for Docker" phrasing is the usual safe form). Artwork must never use the whale or Docker logos. |
 
 ## 8. Repository layout
 
