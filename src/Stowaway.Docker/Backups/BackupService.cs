@@ -330,12 +330,13 @@ public sealed class BackupService(
             }
 
             client = runner.CreateClient(TimeSpan.FromMinutes(5));
+            runner.ClearHostStage(); // Windows engines: start from an empty staging folder
             var files = await BuildMetadataAsync(client, item, run, log, ct);
             Report(run.Id, "preparing", null, 0, 0, 0, 0);
             await SaveAsync(run, log);
 
             // Live copies of a running database aren't reliably restorable: dump it with its own tools first.
-            if (run.Strategy == BackupStrategy.Live && DatabaseDumps.For(item) is { Count: > 0 } dumpCommands)
+            if (run.Strategy == BackupStrategy.Live && item.Platform == Platforms.Linux && DatabaseDumps.For(item) is { Count: > 0 } dumpCommands)
             {
                 Report(run.Id, "dumping databases", null, 0, 0, 0, 0);
                 dumpVolume = true;
@@ -345,7 +346,7 @@ public sealed class BackupService(
                 await SaveAsync(run, log);
             }
 
-            foreach (var db in DatabaseDumps.Undumpable(item).Where(_ => run.Strategy == BackupStrategy.Live))
+            foreach (var db in DatabaseDumps.Undumpable(item).Where(_ => run.Strategy == BackupStrategy.Live && item.Platform == Platforms.Linux))
             {
                 log.Add($"Warning: {db.Name} runs {db.Database} which can't be dumped; its files are copied live and may not restore cleanly. Use Stop & start for this app.");
             }
@@ -366,6 +367,14 @@ public sealed class BackupService(
                 await SaveAsync(run, log);
             }
 
+            // Windows engines: files a running container holds open exclusively can only be read through a VSS snapshot,
+            // and without one restic may even keep an older copy and report success. Stopped containers hold no locks.
+            var useFsSnapshot = runner.OnHost && plan.StopOrder.Count == 0 && item.Containers.Any(c => c.State is "running" or "restarting");
+            if (useFsSnapshot)
+            {
+                log.Add("Reading through a Windows volume shadow copy (VSS), because containers are running");
+            }
+
             var lastReport = Stopwatch.StartNew();
             var summary = await repository.BackupAsync(destination, plan, files, Environment.MachineName,
                 status =>
@@ -377,7 +386,8 @@ public sealed class BackupService(
                     }
                 },
                 log.Add,
-                ct);
+                ct,
+                useFsSnapshot);
 
             run.SnapshotId = summary.SnapshotId;
             run.FilesProcessed = summary.TotalFilesProcessed;
@@ -436,6 +446,7 @@ public sealed class BackupService(
                 await dumps.RemoveAsync(client, run.Id);
             }
 
+            TryClearHostStage();
             client?.Dispose();
         }
 
@@ -661,10 +672,18 @@ public sealed class BackupService(
             [BackupPlanner.ProductTag, BackupPlanner.AppTagPrefix + contents.App.Id, SnapshotCatalog.SafetyTag, BackupPlanner.RunTagPrefix + run.Id.ToString("N")],
             [], [], []);
         var files = new Dictionary<string, byte[]> { [$"{BackupPlanner.MetadataDir}/app.json"] = JsonSerializer.SerializeToUtf8Bytes(contents.App, MetadataJson) };
-        var summary = await repository.BackupAsync(destination, plan, files, Environment.MachineName,
-            status => Report(run.Id, "safety snapshot", status.PercentDone * 100, status.BytesDone, status.TotalBytes, status.FilesDone, status.TotalFiles),
-            log.Add, ct);
-        log.Add($"Safety snapshot {summary.SnapshotId[..8]} saved");
+        runner.ClearHostStage();
+        try
+        {
+            var summary = await repository.BackupAsync(destination, plan, files, Environment.MachineName,
+                status => Report(run.Id, "safety snapshot", status.PercentDone * 100, status.BytesDone, status.TotalBytes, status.FilesDone, status.TotalFiles),
+                log.Add, ct);
+            log.Add($"Safety snapshot {summary.SnapshotId[..8]} saved");
+        }
+        finally
+        {
+            TryClearHostStage();
+        }
     }
 
     private async Task ExecuteMaintenanceAsync(BackupRun run, RunLog log, CancellationToken ct)
@@ -803,6 +822,18 @@ public sealed class BackupService(
             {
                 return new StringBuilder().AppendJoin('\n', _lines).ToString();
             }
+        }
+    }
+
+    private void TryClearHostStage()
+    {
+        try
+        {
+            runner.ClearHostStage();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Could not clear the staging folder");
         }
     }
 

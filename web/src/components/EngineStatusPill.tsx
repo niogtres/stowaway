@@ -12,7 +12,9 @@ export function EngineStatusPill() {
   } else if (data) {
     const engine = data.engine
     tone = engine.reachable ? 'ok' : 'warn'
-    label = engine.reachable ? `${engine.operatingSystem ?? 'Docker'} ${engine.serverVersion ?? ''}`.trim() : 'Docker engine unavailable'
+    label = engine.reachable
+      ? `${engine.operatingSystem ?? 'Docker'} ${engine.serverVersion ?? ''}`.trim() + (engine.osType === 'windows' ? ' · Windows containers' : '')
+      : 'Docker engine unavailable'
   }
 
   return (

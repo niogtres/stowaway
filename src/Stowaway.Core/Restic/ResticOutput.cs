@@ -34,8 +34,19 @@ public sealed record ResticSnapshot(
     [property: JsonPropertyName("time")] DateTimeOffset Time,
     [property: JsonPropertyName("hostname")] string? Hostname,
     [property: JsonPropertyName("tags")] IReadOnlyList<string>? Tags,
-    [property: JsonPropertyName("paths")] IReadOnlyList<string>? Paths,
-    [property: JsonPropertyName("summary")] ResticSnapshotSummary? Summary = null);
+    IReadOnlyList<string>? Paths,
+    [property: JsonPropertyName("summary")] ResticSnapshotSummary? Summary = null)
+{
+    /// <summary>
+    /// The backed-up paths, in the form paths inside the snapshot use. restic for Windows records the native form
+    /// (<c>C:\ProgramData\…</c>) here but <c>/C/ProgramData/…</c> in the tree, so native paths are converted.
+    /// </summary>
+    [JsonPropertyName("paths")]
+    public IReadOnlyList<string>? Paths { get; init; } = Paths?.Select(TreePath).ToList();
+
+    private static string TreePath(string path) =>
+        path.Length >= 2 && path[1] == ':' && char.IsAsciiLetter(path[0]) ? Backups.BackupPlanner.WindowsResticPath(path) : path;
+}
 
 public sealed record ResticSnapshotSummary(
     [property: JsonPropertyName("total_bytes_processed")] long TotalBytesProcessed,

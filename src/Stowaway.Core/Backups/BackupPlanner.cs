@@ -37,6 +37,12 @@ public static class BackupPlanner
     /// <summary>Where app metadata (container definitions, compose files) is placed inside the runner.</summary>
     public const string MetadataDir = "/data/_stowaway";
 
+    /// <summary>
+    /// On Windows engines restic runs on the host and records host paths. Metadata and dumps are staged in a folder
+    /// with this name (in Stowaway's data directory); snapshots are recognised by it (see <see cref="DataRootOf"/>).
+    /// </summary>
+    public const string StageFolderName = "stowaway-stage";
+
     public const string AppTagPrefix = "app=";
     public const string RunTagPrefix = "run=";
     public const string ProductTag = "stowaway";
@@ -61,7 +67,11 @@ public static class BackupPlanner
                     continue; // same data mounted by several containers: back it up once
                 }
 
-                var target = UniqueTarget(TargetPath(container.Name, mount.Destination), seenTargets);
+                // Linux: restic runs in a container with each source mounted at /data/<container>/<path>.
+                // Windows: restic runs on the host and records the source's own host path.
+                var target = app.Platform == Platforms.Windows
+                    ? WindowsResticPath(mount.Kind == MountKind.Volume ? mount.Source : mount.DisplaySource)
+                    : UniqueTarget(TargetPath(container.Name, mount.Destination), seenTargets);
                 sources.Add(new SnapshotSource(
                     target,
                     mount.Kind == MountKind.Volume ? "volume" : "bind",
@@ -97,6 +107,32 @@ public static class BackupPlanner
 
         return new RunnerPlan(mounts, Tags(app.Id, runId), stopOrder, restartOrder, notes);
     }
+
+    /// <summary>
+    /// Where metadata (<c>_stowaway</c>) and dumps (<c>_dumps</c>) sit in a snapshot: under <c>/data</c> for Linux
+    /// engines, under the staged folder's host path for Windows engines. Found from the snapshot's recorded paths.
+    /// </summary>
+    public static string DataRootOf(IReadOnlyList<string>? snapshotPaths) =>
+        snapshotPaths?.FirstOrDefault(p => p.EndsWith("/" + StageFolderName, StringComparison.Ordinal)) ?? DataRoot;
+
+    public static string MetadataDirOf(IReadOnlyList<string>? snapshotPaths) => DataRootOf(snapshotPaths) + "/_stowaway";
+
+    public static string DumpsDirOf(IReadOnlyList<string>? snapshotPaths) => DataRootOf(snapshotPaths) + "/_dumps";
+
+    /// <summary>How restic on Windows records a path: <c>C:\a\b</c> → <c>/C/a/b</c>.</summary>
+    public static string WindowsResticPath(string windowsPath)
+    {
+        var path = windowsPath.Replace('/', '\\').TrimEnd('\\');
+        return path.Length >= 2 && path[1] == ':'
+            ? "/" + char.ToUpperInvariant(path[0]) + path[2..].Replace('\\', '/')
+            : path.Replace('\\', '/');
+    }
+
+    /// <summary>The reverse of <see cref="WindowsResticPath"/>, or null when the path isn't one (<c>/C/a</c> → <c>C:\a</c>).</summary>
+    public static string? FromWindowsResticPath(string resticPath) =>
+        resticPath.Length >= 2 && resticPath[0] == '/' && char.IsAsciiLetter(resticPath[1]) && (resticPath.Length == 2 || resticPath[2] == '/')
+            ? char.ToUpperInvariant(resticPath[1]) + ":" + (resticPath.Length == 2 ? "\\" : resticPath[2..].Replace('/', '\\'))
+            : null;
 
     public static IReadOnlyList<string> Tags(string appId, Guid runId) =>
         [ProductTag, AppTagPrefix + TagSafe(appId), RunTagPrefix + runId.ToString("N")];

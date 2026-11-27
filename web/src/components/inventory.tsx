@@ -119,6 +119,16 @@ export function MountRow({ mount, sharedBy = 1 }: { mount: MountInfo; sharedBy?:
  * Says plainly which mapped-in data isn't backed up: Stowaway backs up an app (its volumes, database dumps and
  * its compose project folder), not host folders, drives or shares that happen to be mapped into it.
  */
+/** Windows containers keep files they write inside the container; only volumes (and SQL Server databases) are backed up. */
+export function WindowsContainerNote() {
+  return (
+    <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-muted">
+      <Info className="mt-px size-3 shrink-0" />
+      <span>Windows containers: volumes are backed up, but files written inside the container itself aren't. Keep data in a volume.</span>
+    </p>
+  )
+}
+
 export function OutsideDataNote({ mounts }: { mounts: MountInfo[] }) {
   const outside = mounts.filter((m) => !m.included && (m.kind === 'bind' || m.kind === 'volume'))
   if (outside.length === 0) return null

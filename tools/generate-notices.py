@@ -114,11 +114,20 @@ def main():
         "Stowaway is Copyright (c) 2026 Thomas Kraft and released under the MIT License (see LICENSE.txt).",
         "It includes the third-party software listed below, under the licenses shown.",
         "",
-        "Used at runtime but not distributed with Stowaway: restic (BSD-2-Clause, https://github.com/restic/restic)",
-        "and rclone (MIT, https://github.com/rclone/rclone), run from the restic/restic image and a runner image built",
-        "from it on your computer; Alpine Linux packages in that image are under their own licenses.",
+        "Linux-container engines: restic and rclone run from the restic/restic image and a runner image built from it",
+        "on your computer (not distributed with Stowaway); Alpine Linux packages in that image have their own licenses.",
+        "Windows-container engines: the restic and rclone programs below are included in the installer.",
         "",
     ]
+
+    licenses = ROOT / "tools" / "licenses"
+    parts += ["", "=" * 78, "Bundled programs (Windows-container engines)", "=" * 78, ""]
+    for name, version, url, lic, file in [
+        ("restic", "0.19.1", "https://github.com/restic/restic", "BSD-2-Clause", "restic-LICENSE.txt"),
+        ("rclone", "1.76.0", "https://github.com/rclone/rclone", "MIT", "rclone-COPYING.txt"),
+    ]:
+        parts += ["-" * 78, f"{name} {version}", f"License: {lic}", f"Source: {url}", "",
+                  (licenses / file).read_text(encoding="utf-8").strip(), ""]
 
     parts += ["", "-" * 78, ".NET runtime, ASP.NET Core and Windows Desktop (self-contained)", "-" * 78, "",
               "License: MIT. Copyright (c) .NET Foundation and Contributors.",

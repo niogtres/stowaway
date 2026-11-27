@@ -32,6 +32,11 @@ public sealed partial class DropboxAuthService(ResticRunner runner, ILogger<Drop
             await old.Cancel.CancelAsync(); // only one sign-in can own the callback port
         }
 
+        if (runner.OnHost)
+        {
+            return await StartOnHostAsync(ct);
+        }
+
         using var client = runner.CreateClient(TimeSpan.FromMinutes(5));
         await runner.EnsureImageAsync(client, ct);
         if (!runner.HasRclone)
@@ -62,6 +67,59 @@ public sealed partial class DropboxAuthService(ResticRunner runner, ILogger<Drop
         await client.Containers.StartContainerAsync(created.ID, new ContainerStartParameters(), ct);
         _ = WatchAsync(session);
 
+        return await WaitForUrlAsync(session, ct);
+    }
+
+    /// <summary>Windows-container engines: rclone.exe runs on the host and listens on 127.0.0.1:53682 itself.</summary>
+    private async Task<DropboxAuthStatus> StartOnHostAsync(CancellationToken ct)
+    {
+        var rclone = Path.Combine(runner.ToolsDirectory, "rclone.exe");
+        if (!File.Exists(rclone))
+        {
+            throw new ValidationException($"rclone.exe is missing from {runner.ToolsDirectory}. Reinstall Stowaway.");
+        }
+
+        var start = new System.Diagnostics.ProcessStartInfo(rclone)
+        {
+            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+        };
+        foreach (var arg in new[] { "authorize", "dropbox", "--auth-no-open-browser" })
+        {
+            start.ArgumentList.Add(arg);
+        }
+
+        var session = new Session(Guid.NewGuid(), containerId: "");
+        _sessions[session.Id] = session;
+        _ = WatchHostAsync(session, start);
+        return await WaitForUrlAsync(session, ct);
+    }
+
+    private async Task WatchHostAsync(Session session, System.Diagnostics.ProcessStartInfo start)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(session.Cancel.Token);
+        timeout.CancelAfter(SessionTimeout);
+        var capture = false;
+        try
+        {
+            await HostResticRunner.RunProcessAsync(start, (line, _) => OnLine(session, line, ref capture), timeout.Token);
+            if (session.State != DropboxAuthState.Ready)
+            {
+                session.Fail("Dropbox sign-in ended without a token.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            session.Fail(session.Cancel.IsCancellationRequested ? "Replaced by a newer sign-in." : "The sign-in timed out.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Dropbox sign-in failed");
+            session.Fail(ex.Message);
+        }
+    }
+
+    private static async Task<DropboxAuthStatus> WaitForUrlAsync(Session session, CancellationToken ct)
+    {
         // Wait for rclone to print its sign-in URL.
         for (var i = 0; i < 100 && session.AuthUrl is null && session.State == DropboxAuthState.Pending; i++)
         {
@@ -71,6 +129,24 @@ public sealed partial class DropboxAuthService(ResticRunner runner, ILogger<Drop
         return session.AuthUrl is null && session.State == DropboxAuthState.Pending
             ? throw new ValidationException("rclone didn't start the Dropbox sign-in. Is port 53682 already in use?")
             : session.Status;
+    }
+
+    private static void OnLine(Session session, string line, ref bool capture)
+    {
+        if (session.AuthUrl is null && AuthUrl().Match(line) is { Success: true } url)
+        {
+            session.AuthUrl = url.Value;
+        }
+        else if (line.Contains("Paste the following", StringComparison.Ordinal))
+        {
+            capture = true;
+        }
+        else if (capture && line.TrimStart().StartsWith('{'))
+        {
+            session.Token = line.Trim();
+            session.State = DropboxAuthState.Ready;
+            capture = false;
+        }
     }
 
     public DropboxAuthStatus? Get(Guid id) => _sessions.TryGetValue(id, out var s) ? s.Status : null;
@@ -89,23 +165,7 @@ public sealed partial class DropboxAuthService(ResticRunner runner, ILogger<Drop
             var capture = false;
             using var logs = await client.Containers.GetContainerLogsAsync(session.ContainerId,
                 new ContainerLogsParameters { Follow = true, ShowStdout = true, ShowStderr = true }, timeout.Token);
-            await ResticRunner.ReadLinesAsync(logs, (line, _) =>
-            {
-                if (session.AuthUrl is null && AuthUrl().Match(line) is { Success: true } url)
-                {
-                    session.AuthUrl = url.Value;
-                }
-                else if (line.Contains("Paste the following", StringComparison.Ordinal))
-                {
-                    capture = true;
-                }
-                else if (capture && line.TrimStart().StartsWith('{'))
-                {
-                    session.Token = line.Trim();
-                    session.State = DropboxAuthState.Ready;
-                    capture = false;
-                }
-            }, timeout.Token);
+            await ResticRunner.ReadLinesAsync(logs, (line, _) => OnLine(session, line, ref capture), timeout.Token);
 
             if (session.State != DropboxAuthState.Ready)
             {
