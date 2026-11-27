@@ -36,7 +36,7 @@ See [Requirements](#requirements) for what it runs on. The [user guide](docs/USE
   - **Docker Desktop** (the default; this is what Stowaway is tested with, on Windows 11).
   - **Docker Engine inside WSL 2**, for example on Windows Server where Docker Desktop isn't supported. Point Stowaway at it with the system environment variable `Stowaway__Docker__Endpoint` (or `DOCKER_HOST`), for example `tcp://localhost:2375`, and restart the service. Should work; not tested yet.
   - Other Docker-compatible engines (Rancher Desktop, Podman) may work; untested.
-- **Or a Docker engine running Windows containers** (Docker Engine on Windows 10/11 or Windows Server). Volumes are backed up with restic running on the host, through a VSS snapshot when containers are running. Files a Windows container writes inside itself aren't backed up; SQL Server databases are (coming with the next milestone).
+- **Or a Docker engine running Windows containers** (Docker Engine on Windows 10/11 or Windows Server). Volumes are backed up with restic running on the host, through a VSS snapshot when containers are running. SQL Server databases inside Windows containers (Business Central, for example) are backed up with SQL Server's own BACKUP DATABASE while they run, or copied out while they're stopped; other files a Windows container writes inside itself aren't backed up.
 - **Not supported:** running Stowaway on Linux or macOS. It backs up Linux and Windows *containers*, but the computer running Stowaway must be Windows.
 
 ## Documentation

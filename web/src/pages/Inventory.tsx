@@ -227,7 +227,7 @@ function AppCard({ app }: { app: AppInfo }) {
 
       <div className="divide-y divide-line">
         {app.containers.map((c) => (
-          <ContainerRow key={c.id} container={c} />
+          <ContainerRow key={c.id} container={c} platform={app.platform} />
         ))}
       </div>
 
@@ -240,7 +240,7 @@ function AppCard({ app }: { app: AppInfo }) {
         </div>
       )}
 
-      {app.platform === 'windows' && <WindowsContainerNote />}
+      {app.platform === 'windows' && <WindowsContainerNote sqlServer={app.containers.some((c) => c.database === 'sqlServer')} />}
 
       <div className="mt-auto" />
       <AppBackupStatus app={app} onBackup={() => setBackingUp(true)} />

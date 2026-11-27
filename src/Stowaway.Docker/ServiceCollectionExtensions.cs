@@ -34,6 +34,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ResticRunner>();
         services.AddSingleton<ResticRepository>();
         services.AddSingleton<DumpService>();
+        services.AddSingleton<SqlServerDumpService>();
+        services.AddSingleton<Restore.SqlServerDrill>();
         services.AddSingleton<DatabaseProbe>();
         services.AddSingleton<DropboxAuthService>();
         services.AddSingleton<DestinationService>();

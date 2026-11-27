@@ -27,14 +27,14 @@ import {
   type ScheduleChoice,
   type ScheduleKind,
 } from '@/lib/schedule'
-import { dumpableDatabases } from '@/lib/destinations'
+import { canDump } from '@/lib/destinations'
 import { cn, formatBytes } from '@/lib/utils'
 
 const steps = ['What', 'How', 'Where', 'When & keep'] as const
 
 const hasData = (app: AppInfo) => app.containers.some((c) => c.mounts.some((m) => m.included))
 const runsDatabase = (app: AppInfo) => app.containers.some((c) => c.database && c.state === 'running')
-const runsUndumpableDatabase = (app: AppInfo) => app.containers.some((c) => c.database && c.state === 'running' && !dumpableDatabases.has(c.database))
+const runsUndumpableDatabase = (app: AppInfo) => app.containers.some((c) => c.database && c.state === 'running' && !canDump(c.database, app.platform))
 
 function initialInput(plan: Plan | undefined, destinationId: string | undefined): PlanInput {
   if (plan) {

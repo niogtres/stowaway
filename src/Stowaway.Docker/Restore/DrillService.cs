@@ -22,6 +22,7 @@ public sealed class DrillService(
     SnapshotCatalog catalog,
     ResticRepository repository,
     ResticRunner runner,
+    SqlServerDrill sqlServer,
     ILogger<DrillService> logger)
 {
     /// <summary>Sources larger than this are skipped (the weekly integrity check still reads a sample of them).</summary>
@@ -69,7 +70,11 @@ public sealed class DrillService(
                     continue;
                 }
 
-                if (source.Kind == SnapshotCatalog.DumpsKind)
+                if (source.Kind == SnapshotCatalog.DumpsKind && contents.App.Platform == Platforms.Windows)
+                {
+                    await sqlServer.CheckAsync(client, volume, log, phase, failures, ct);
+                }
+                else if (source.Kind == SnapshotCatalog.DumpsKind)
                 {
                     var dumpFiles = (await catalog.BrowseAsync(request.DestinationId, request.SnapshotId, source.SnapshotPath, ct))
                         .Select(e => e.Name).ToHashSet(StringComparer.Ordinal);

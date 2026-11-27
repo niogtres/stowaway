@@ -53,7 +53,7 @@ function containerTone(c: ContainerInfo): 'ok' | 'warn' | 'danger' | 'muted' {
   return 'muted'
 }
 
-export function ContainerRow({ container }: { container: ContainerInfo }) {
+export function ContainerRow({ container, platform = 'linux' }: { container: ContainerInfo; platform?: 'linux' | 'windows' }) {
   const tone = containerTone(container)
   return (
     <div className="flex items-start gap-3 py-2">
@@ -78,7 +78,7 @@ export function ContainerRow({ container }: { container: ContainerInfo }) {
             </span>
           )}
           {container.health === 'unhealthy' && <Badge tone="danger">Unhealthy</Badge>}
-          <DatabaseLoginButton container={container} />
+          <DatabaseLoginButton container={container} platform={platform} />
         </div>
         <div className="mt-0.5 truncate font-mono text-[11px] text-muted" title={container.image}>
           {container.image} · {container.statusText}
@@ -120,11 +120,15 @@ export function MountRow({ mount, sharedBy = 1 }: { mount: MountInfo; sharedBy?:
  * its compose project folder), not host folders, drives or shares that happen to be mapped into it.
  */
 /** Windows containers keep files they write inside the container; only volumes (and SQL Server databases) are backed up. */
-export function WindowsContainerNote() {
+export function WindowsContainerNote({ sqlServer }: { sqlServer: boolean }) {
   return (
     <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-muted">
       <Info className="mt-px size-3 shrink-0" />
-      <span>Windows containers: volumes are backed up, but files written inside the container itself aren't. Keep data in a volume.</span>
+      <span>
+        {sqlServer
+          ? 'Windows containers: volumes and SQL Server databases are backed up; other files written inside the container itself aren’t.'
+          : 'Windows containers: volumes are backed up, but files written inside the container itself aren’t. Keep data in a volume.'}
+      </span>
     </p>
   )
 }

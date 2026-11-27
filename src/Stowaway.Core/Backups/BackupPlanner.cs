@@ -43,6 +43,9 @@ public static class BackupPlanner
     /// </summary>
     public const string StageFolderName = "stowaway-stage";
 
+    /// <summary>Folder for database dumps next to <c>_stowaway</c>.</summary>
+    public const string DumpsFolder = "_dumps";
+
     public const string AppTagPrefix = "app=";
     public const string RunTagPrefix = "run=";
     public const string ProductTag = "stowaway";
@@ -117,7 +120,7 @@ public static class BackupPlanner
 
     public static string MetadataDirOf(IReadOnlyList<string>? snapshotPaths) => DataRootOf(snapshotPaths) + "/_stowaway";
 
-    public static string DumpsDirOf(IReadOnlyList<string>? snapshotPaths) => DataRootOf(snapshotPaths) + "/_dumps";
+    public static string DumpsDirOf(IReadOnlyList<string>? snapshotPaths) => DataRootOf(snapshotPaths) + "/" + DumpsFolder;
 
     /// <summary>How restic on Windows records a path: <c>C:\a\b</c> → <c>/C/a/b</c>.</summary>
     public static string WindowsResticPath(string windowsPath)

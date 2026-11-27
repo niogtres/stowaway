@@ -10,4 +10,6 @@ To restore only some files or folders, choose **Browse** next to a volume or bin
 
 **Database dumps** are restored as files (`.sql` or the database's own format) into a new volume or a folder, never over the running database. Load them with the database's own tools.
 
+SQL Server databases from Windows containers come back as `.bak` files (or, from a stopped container, as `.mdf`/`.ldf` files), one folder per container, with a `sqlserver.json` that lists the databases. Load a `.bak` with `RESTORE DATABASE … FROM DISK = '…' WITH REPLACE` (add `MOVE` if the files belong somewhere else), or attach `.mdf`/`.ldf` files with `CREATE DATABASE … FOR ATTACH`.
+
 **See also:** [Recover a whole app](08-recreate.md), [Restore drills](09-drills.md)
