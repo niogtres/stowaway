@@ -4,6 +4,8 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-27
+
 ### Added
 
 - **Windows containers:** Docker engines running Windows containers are supported. restic and rclone for Windows ship with Stowaway and run on the computer itself; while containers run, backups read through a Windows volume shadow copy (VSS), so files a container holds open are captured. Volumes are backed up; files a container writes inside itself aren't (the app card says so).
@@ -59,5 +61,6 @@ Since the internal 0.7.x builds:
 - Dialogs with fields closed when clicking outside them, losing what was typed.
 - A database dump could hang the backup when Docker didn't pass on the end of the dump stream, and could fail with "No such exec instance" when Docker removed a finished command before its exit code was read.
 
-[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/niogtres/stowaway/releases/tag/v0.8.1
 [0.8.0]: https://github.com/niogtres/stowaway/releases/tag/v0.8.0
