@@ -8,7 +8,8 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <Version>0.1.0</Version>
     <Product>Stowaway</Product>
-    <Company>Stowaway</Company>
-    <Copyright>Copyright © Stowaway. All rights reserved.</Copyright>
+    <Company>Thomas Kraft</Company>
+    <Authors>Thomas Kraft</Authors>
+    <Copyright>Copyright (c) 2026 Thomas Kraft. MIT License.</Copyright>
   </PropertyGroup>
 </Project>

@@ -73,9 +73,13 @@ $header.defaultLocale.$manifestVersion.schema.json
 PackageIdentifier: $PackageIdentifier
 PackageVersion: $Version
 PackageLocale: en-US
-Publisher: niogtres
+Publisher: Thomas Kraft
+PublisherUrl: https://github.com/niogtres
+PackageUrl: https://github.com/niogtres/stowaway
+Copyright: Copyright (c) 2026 Thomas Kraft
+LicenseUrl: https://github.com/niogtres/stowaway/blob/main/LICENSE
 PackageName: Stowaway
-License: Proprietary
+License: MIT
 ShortDescription: Sensible Docker backup management. Scheduled, encrypted backup and restore for Docker containers, volumes and bind mounts on Windows.
 Description: |-
   Runs as a Windows service, discovers every container, compose stack, volume and bind mount, and backs them up on a

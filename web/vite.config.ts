@@ -17,6 +17,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
   },
   server: {
+    // Help pages are bundled from ../docs/help.
+    fs: { allow: ['..'] },
     port: 5173,
     strictPort: true,
     proxy: {

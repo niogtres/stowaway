@@ -86,3 +86,97 @@
   0% { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
 }
+
+/* Help pages: Markdown from docs/help, rendered in the app. */
+.help-prose {
+  line-height: 1.65;
+  font-size: 0.925rem;
+}
+.help-prose > * + * {
+  margin-top: 0.9em;
+}
+.help-prose h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.4em;
+}
+.help-prose h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 1.8em;
+  scroll-margin-top: 1rem;
+}
+.help-prose h3 {
+  font-weight: 600;
+  margin-top: 1.4em;
+  scroll-margin-top: 1rem;
+}
+.help-prose a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+.help-prose a:hover {
+  text-decoration: underline;
+}
+.help-prose ul,
+.help-prose ol {
+  padding-left: 1.4em;
+}
+.help-prose ul {
+  list-style: disc;
+}
+.help-prose ol {
+  list-style: decimal;
+}
+.help-prose li + li,
+.help-prose li > ul,
+.help-prose li > ol {
+  margin-top: 0.3em;
+}
+.help-prose code {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.375rem;
+  background: var(--accent-soft);
+}
+.help-prose pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.help-prose pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+.help-prose blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 0.25em 0 0.25em 1em;
+  color: var(--muted);
+}
+.help-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.help-prose th,
+.help-prose td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5em 0.75em;
+  border-bottom: 1px solid var(--line);
+}
+.help-prose th {
+  font-weight: 600;
+  color: var(--muted);
+}
+.help-prose hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}

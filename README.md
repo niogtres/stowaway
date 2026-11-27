@@ -4,41 +4,60 @@
 
 **Sensible Docker backup management.**
 
-Scheduled backup and restore for everything Docker holds on a Windows 10/11 host: containers, compose stacks, volumes and bind mounts. It runs as a Windows Service and is managed from a web UI at **https://localhost:8484**.
+Stowaway backs up everything Docker holds on a Windows 10/11 computer (containers, compose stacks, volumes and bind mounts) on a schedule, and restores it when you need to. It runs as a Windows service and you manage it from a web page at **https://localhost:8484**.
 
-> Status: **M6c**. Live inventory; scheduled, encrypted, deduplicated backups (restic) to local folders, SMB shares, S3-compatible storage, Backblaze B2, Azure Blob, SFTP and Dropbox; consistent database dumps (Postgres, MySQL/MariaDB, MongoDB, Redis) with no downtime; retention, maintenance, protection status, alerts; snapshot browser and restore; full app recreation after a disaster; weekly restore drills that prove backups restore; Windows sign-in, a tray app; opt-in remote access with password + authenticator app, also over the internet behind a reverse proxy such as nginx + Cloudflare. **Using it:** [docs/USER-GUIDE.md](docs/USER-GUIDE.md). Design: [docs/DESIGN.md](docs/DESIGN.md).
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+## What it does
+
+- **Finds everything by itself.** Every container, compose stack, volume and bind mount, with sizes, live as Docker changes. Nothing to list by hand.
+- **Backs up on a schedule.** Encrypted and deduplicated with [restic](https://restic.net), with retention ("keep 7 daily, 4 weekly…") and weekly integrity checks.
+- **Keeps databases consistent without downtime.** PostgreSQL, MySQL/MariaDB, MongoDB and Redis are dumped with their own tools while they run. Apps it can't dump are stopped briefly, in the right order, and started again.
+- **Backs up to where you want.** A second disk, a network share (SMB), S3-compatible storage, Backblaze B2, Azure Blob, SFTP, or Dropbox.
+- **Restores files, volumes or whole apps.** Restore a single file, a volume to where it was (with an undo snapshot) or to a new one, or rebuild an app's containers, networks and data after a disaster.
+- **Proves backups work.** Weekly restore drills restore into scratch space and load database dumps into throwaway containers, without touching your apps.
+- **Tells you when something's wrong.** Protection status for every app, a tray icon, and alerts by email, webhook (Slack, Discord, Teams) or ntfy.
+- **Secure by default.** Only this computer can open it, with Windows sign-in. Optional remote access, even over the internet behind a reverse proxy, needs a password and an authenticator app, and every change is in an audit log.
 
 ## Install
-Run `Stowaway-<version>-x64.msi` (from CI artifacts or Releases). It installs the `Stowaway` service (LocalSystem, delayed auto-start) and a Start-menu link to the UI. Data lives in `%ProgramData%\Stowaway` (access restricted to SYSTEM and Administrators).
 
-**Who can use it:** the UI signs you in with your Windows account. Local administrators have access. To let a standard user in, add them to a local group named `Stowaway Operators` (from an elevated prompt):
+1. Download `Stowaway-<version>-x64.msi` from [Releases](https://github.com/niogtres/stowaway/releases) and run it.
+2. Open **Stowaway** from the Start menu (https://localhost:8484).
+3. Add a destination, create a backup plan, done.
+
+You need Docker Desktop with Linux containers (or Docker Engine in WSL). The [user guide](docs/USER-GUIDE.md) covers everything, including remote access and troubleshooting. The same guide is built into Stowaway under **Help**.
+
+## Documentation
+
+- [User guide](docs/USER-GUIDE.md): installing, backing up, restoring, remote access, troubleshooting.
+- [Design](docs/DESIGN.md): architecture, security model and the decisions behind them.
+- [Contributing](CONTRIBUTING.md): building from source, tests, pull requests.
+- [Security policy](SECURITY.md): how to report a vulnerability.
+
+## Building from source
+
+Requirements: Windows 10/11, .NET SDK 10.0.1xx, Node.js 24, and Docker Desktop for the integration tests.
 
 ```powershell
-New-LocalGroup -Name "Stowaway Operators" -Description "Can manage Stowaway"
-Add-LocalGroupMember -Group "Stowaway Operators" -Member "<user>"
+dotnet tool restore
+./build.ps1 -Version 0.1.0                                 # web UI -> tests -> self-contained publish -> artifacts/*.msi
+./build.ps1 -Version 0.1.0 -SignThumbprint <thumbprint>    # also Authenticode-sign the exe and the MSI
 ```
 
-Uninstalling removes the trusted UI certificate but keeps `%ProgramData%\Stowaway` (it holds your repository keys); delete it yourself if you no longer need those backups.
-
-## Build
-Requirements: .NET SDK 10.0.1xx, Node.js 24. Restore local tools once with `dotnet tool restore`.
+For development:
 
 ```powershell
-./build.ps1 -Version 0.1.0      # web UI -> tests -> self-contained publish -> artifacts/*.msi
-./build.ps1 -Version 0.1.0 -SignThumbprint <thumbprint>   # also Authenticode-sign the exe and the MSI
-```
-
-Releases (tags `vX.Y.Z`) are signed when the repository secrets `STOWAWAY_SIGN_PFX` (base64 .pfx) and `STOWAWAY_SIGN_PFX_PASSWORD` are set, and carry winget manifests and a SHA-256 file.
-
-## Develop
-```powershell
-dotnet run --project src/Stowaway.Service   # API on https://localhost:8484 (sign-in off in Development)
-cd web; npm run dev                              # UI on http://localhost:5173 (proxies /api)
+dotnet run --project src/Stowaway.Service   # https://localhost:8484 (sign-in off in Development)
+cd web; npm run dev                          # UI with hot reload on http://localhost:5173 (proxies /api)
 dotnet test
 ```
 
-## Stack
-.NET 10 (ASP.NET Core, Windows Service) · Docker.DotNet.Enhanced · React 19 + Vite + Tailwind v4 + TanStack · WiX v5 · restic + rclone in a locally built runner image
+Built with .NET 10 (ASP.NET Core, Windows service), Docker.DotNet, React 19, Vite, Tailwind CSS, TanStack, WiX v5, and restic + rclone in a runner container. Third-party licenses: [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) (regenerate with `python -I tools/generate-notices.py`).
 
-## Brand assets
-Masters live in `assets/brand/` and are supplied by the owner; see `docs/imagery-requests.txt`. Run `python -I tools/generate-brand-assets.py` to regenerate the derived files (ICO, favicon, installer BMPs, web illustrations).
+Brand artwork masters are in `assets/brand/`; `python -I tools/generate-brand-assets.py` regenerates the derived files (icon, favicon, installer images, illustrations).
+
+## License
+
+Copyright (c) 2026 Thomas Kraft. Released under the [MIT License](LICENSE).
+
+"Docker" is a trademark of Docker, Inc. Stowaway is an independent project and isn't affiliated with or endorsed by Docker, Inc.

@@ -12,6 +12,11 @@ Design and decisions: [docs/DESIGN.md](docs/DESIGN.md). Read §10 (decisions) be
 - `installer/`: WiX **v5** MSI (do not upgrade to v6+ without approval: it requires accepting the OSMF EULA).
 - `tests/Stowaway.Tests`: xUnit v3 on Microsoft.Testing.Platform (`global.json` opts in).
 
+## License and docs
+- MIT, copyright (c) 2026 Thomas Kraft (project-level notices only; no per-file headers).
+- After changing NuGet or npm dependencies, run `python -I tools/generate-notices.py` and commit `THIRD-PARTY-NOTICES.txt`; new dependencies must be MIT-compatible.
+- The user guide lives in `docs/help/NN-slug.md` (one topic per file); the web client bundles the same files as its Help section. Link between topics by file name (`04-destinations.md`).
+
 ## Commands
 - Full build → MSI: `./build.ps1 [-Version x.y.z] [-SkipTests]` (output in `artifacts/`).
 - Dev: `dotnet run --project src/Stowaway.Service` (https://localhost:8484, data in `%LOCALAPPDATA%\Stowaway-dev`) and `npm run dev` in `web/` (http://localhost:5173, proxies `/api`).

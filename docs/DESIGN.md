@@ -273,7 +273,7 @@ M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworth
 | # | Topic | Decision |
 |---|---|---|
 | 1 | Repo name | `niogtres/stowaway` (private). Created as `docker_backuup`, then `docker_backup`, renamed with the product (decision 8). |
-| 2 | License | Closed source for now. No license file. |
+| 2 | License | Closed source at first. *2026-11-27:* **MIT**, copyright (c) 2026 Thomas Kraft, published as open source. Third-party licenses in `THIRD-PARTY-NOTICES.txt` (generated, shipped with the program, shown on the About page). |
 | 3 | Backup engine | **restic** (BSD-2-Clause, bundled). The service already owns scheduling, policy and UI, and restic is a minimal, scriptable engine with JSON output and a stable repo format. Kopia would duplicate our UI/server/policy layers. *Correction:* restic calls are concentrated in `ResticRepository`, but a formal `IBackupEngine` interface was not introduced; add one if a second engine is ever needed. |
 | 4 | Container platforms | v1: Linux containers only. Windows-containers engine in phase 2. |
 | 5 | Remote access | Localhost only for the MVP. *M6b:* opt-in remote access, approved with the M6b scope. Off by default, switched on only from this computer, and only with Windows sign-in on. Remote users need a Stowaway account with password and authenticator. |

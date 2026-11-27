@@ -1,7 +1,8 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
-import { Activity, Boxes, CalendarClock, HardDrive, History, LayoutDashboard, LogOut, Settings, type LucideIcon } from 'lucide-react'
+import { Activity, Boxes, CalendarClock, CircleHelp, HardDrive, History, LayoutDashboard, LifeBuoy, LogOut, Settings, type LucideIcon } from 'lucide-react'
 import logoMark from '@/assets/logo-mark.svg'
 import { ApiError, displayVersion, isAuthError, signOut, useAuthMode, useMe, useSystemInfo } from '@/lib/api'
+import { helpForPath } from '@/lib/help'
 import { useRealtime } from '@/lib/realtime'
 import { EngineStatusPill } from './EngineStatusPill'
 import { FreshCodePrompt } from './FreshCode'
@@ -23,7 +24,11 @@ const navItems: NavItem[] = [
   { to: '/activity', label: 'Activity', icon: Activity },
   { to: '/destinations', label: 'Destinations', icon: HardDrive },
   { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/help', label: 'Help', icon: LifeBuoy },
 ]
+
+// Pages that aren't in the navigation but still need a title.
+const otherTitles: Record<string, string> = { '/about': 'About' }
 
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -49,7 +54,9 @@ export function AppShell() {
           <img src={logoMark} alt="" className="size-8" />
           <div className="leading-tight">
             <div className="font-semibold tracking-tight">Stowaway</div>
-            <div className="text-[11px] text-muted">{data ? `v${displayVersion(data.version)}` : ' '}</div>
+            <Link to="/about" className="text-[11px] text-muted transition hover:text-fg" title="About Stowaway">
+              {data ? `v${displayVersion(data.version)}` : ' '}
+            </Link>
           </div>
         </div>
 
@@ -95,6 +102,9 @@ export function AppShell() {
               )}
             </div>
           )}
+          <Link to="/about" className="mt-2 block transition hover:text-fg">
+            © 2026 Thomas Kraft
+          </Link>
           <div className="mt-2 flex items-center gap-1.5" title="Live updates from the service">
             <StatusDot tone={realtime === 'live' ? 'ok' : realtime === 'connecting' ? 'warn' : 'muted'} />
             {realtime === 'live' ? 'Live' : realtime === 'connecting' ? 'Connecting…' : 'Offline'}
@@ -104,8 +114,19 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-4 px-8 pb-2 pt-6">
-          <h1 className="text-xl font-semibold tracking-tight">{current?.label ?? 'Stowaway'}</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{current?.label ?? otherTitles[pathname] ?? 'Stowaway'}</h1>
           <div className="flex items-center gap-2">
+            {helpForPath(pathname) && (
+              <Link
+                to="/help/$slug"
+                params={{ slug: helpForPath(pathname)! }}
+                className="glass grid size-9 place-items-center rounded-xl text-muted transition hover:text-fg"
+                title="Help for this page"
+                aria-label="Help for this page"
+              >
+                <CircleHelp className="size-4" />
+              </Link>
+            )}
             <EngineStatusPill />
             <ThemeToggle />
           </div>

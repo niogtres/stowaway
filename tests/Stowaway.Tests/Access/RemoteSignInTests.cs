@@ -122,8 +122,15 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
         var service = factory.Services.GetRequiredService<AccountService>();
         var (account, setup) = await service.CreateAsync("user" + Guid.NewGuid().ToString("N")[..8], password, "test", _ct);
         var secret = Base32.Decode(setup.Secret);
-        // Confirm with the previous step's code so the current one stays unused for signing in.
-        Assert.True(await service.ConfirmAsync(account.Id, Totp.Code(secret, Totp.StepAt(DateTimeOffset.UtcNow) - 1), _ct));
+        // Confirm with the previous step's code so the current one stays unused for signing in. If a 30-second step
+        // boundary passes between computing and checking, that code is two steps old and rightly refused: recompute.
+        var confirmed = false;
+        for (var attempt = 0; attempt < 2 && !confirmed; attempt++)
+        {
+            confirmed = await service.ConfirmAsync(account.Id, Totp.Code(secret, Totp.StepAt(DateTimeOffset.UtcNow) - 1), _ct);
+        }
+
+        Assert.True(confirmed);
         return (account, secret, setup.RecoveryCodes);
     }
 

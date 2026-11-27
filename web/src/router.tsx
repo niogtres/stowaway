@@ -1,8 +1,10 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, useRouterState } from '@tanstack/react-router'
 import { AppShell } from '@/components/AppShell'
+import { About } from '@/pages/About'
 import { Activity } from '@/pages/Activity'
 import { Dashboard } from '@/pages/Dashboard'
 import { Destinations } from '@/pages/Destinations'
+import { Help } from '@/pages/Help'
 import { Inventory } from '@/pages/Inventory'
 import { Plans } from '@/pages/Plans'
 import { Settings } from '@/pages/Settings'
@@ -20,6 +22,16 @@ const snapshotsRoute = createRoute({
   },
 })
 
+const helpTopicRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/help/$slug',
+  component: function HelpTopicPage() {
+    const { slug } = helpTopicRoute.useParams()
+    const hash = useRouterState({ select: (s) => s.location.hash })
+    return <Help slug={slug} hash={hash || undefined} />
+  },
+})
+
 const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: Dashboard }),
   createRoute({ getParentRoute: () => rootRoute, path: '/inventory', component: Inventory }),
@@ -27,6 +39,9 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/activity', component: Activity }),
   createRoute({ getParentRoute: () => rootRoute, path: '/plans', component: Plans }),
   createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: Settings }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/help', component: () => <Help /> }),
+  helpTopicRoute,
+  createRoute({ getParentRoute: () => rootRoute, path: '/about', component: About }),
   snapshotsRoute,
 ])
 

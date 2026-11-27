@@ -2,6 +2,8 @@
   "name": "stowaway-web",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "Thomas Kraft",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +19,7 @@
     "@tanstack/react-router": "^1.170.46",
     "clsx": "^2.1.1",
     "lucide-react": "^1.82.0",
+    "marked": "^18.3.0",
     "motion": "^14.14.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

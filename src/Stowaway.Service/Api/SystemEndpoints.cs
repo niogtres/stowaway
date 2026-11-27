@@ -30,6 +30,10 @@ public static class SystemEndpoints
             .WithName("Health")
             .AllowAnonymous();
 
+        // License texts for the About page; public anyway, so no sign-in needed.
+        api.MapGet("/about/license", () => TextFile("LICENSE.txt")).AllowAnonymous();
+        api.MapGet("/about/notices", () => TextFile("THIRD-PARTY-NOTICES.txt")).AllowAnonymous();
+
         api.MapGet("/system", (IEngineStatusProvider engine) => new SystemInfoResponse(
                 Product: "Stowaway",
                 Version: ProductVersion,
@@ -41,5 +45,11 @@ public static class SystemEndpoints
             .WithName("SystemInfo");
 
         return api;
+    }
+
+    private static IResult TextFile(string name)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, name);
+        return File.Exists(path) ? Results.Text(File.ReadAllText(path), "text/plain; charset=utf-8") : Results.NotFound();
     }
 }
