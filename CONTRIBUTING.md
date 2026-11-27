@@ -40,6 +40,8 @@ Build the installer with `./build.ps1 -Version 0.1.0` (output in `artifacts/`).
 - **Security-sensitive areas** (sign-in, remote access, host filtering, the request-origin guard, secret storage) need a test for the behaviour you change. Anything that manages access or reveals secrets stays local-only.
 - **Docs:** update [docs/USER-GUIDE.md](docs/USER-GUIDE.md) / the help pages in `docs/help/` when behaviour visible to users changes.
 
+- **Changelog:** add a line under *Unreleased* in [CHANGELOG.md](CHANGELOG.md) for anything users would notice.
+
 Keep pull requests focused on one change, describe what and why, and make sure CI is green.
 
 ## License

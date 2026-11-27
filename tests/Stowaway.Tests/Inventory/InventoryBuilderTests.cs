@@ -61,7 +61,7 @@ public sealed class InventoryBuilderTests
     public void Groups_compose_projects_and_standalone_containers()
     {
         var snapshot = Build();
-        Assert.Equal(["Notifier", "Jellyfin", "blog"], snapshot.Apps.Select(a => a.Name));
+        Assert.Equal(["blog", "Jellyfin", "Notifier"], snapshot.Apps.Select(a => a.Name));
 
         var blog = snapshot.Apps.Single(a => a.Id == "compose:blog");
         Assert.Equal(AppKind.Compose, blog.Kind);

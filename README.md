@@ -31,6 +31,7 @@ You need Docker Desktop with Linux containers (or Docker Engine in WSL). The [us
 
 - [User guide](docs/USER-GUIDE.md): installing, backing up, restoring, remote access, troubleshooting.
 - [Design](docs/DESIGN.md): architecture, security model and the decisions behind them.
+- [Changelog](CHANGELOG.md): what changed in each release.
 - [Contributing](CONTRIBUTING.md): building from source, tests, pull requests.
 - [Security policy](SECURITY.md): how to report a vulnerability.
 
