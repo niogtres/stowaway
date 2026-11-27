@@ -388,7 +388,8 @@ public sealed class BackupService(
             {
                 // The snapshot exists, but without a usable dump the database part may not restore cleanly.
                 run.Status = RunStatus.Failed;
-                run.Error = $"Database dump failed ({string.Join("; ", dumpErrors)}). The files were still copied live.";
+                var hint = dumpErrors.Any(LooksLikeLoginProblem) ? " If the login is the problem, set the database's credentials in Inventory." : "";
+                run.Error = $"Database dump failed ({string.Join("; ", dumpErrors)}). The files were still copied live.{hint}";
             }
             log.Add(string.Create(CultureInfo.InvariantCulture,
                 $"Snapshot {summary.SnapshotId[..8]}: {summary.TotalFilesProcessed} files, {summary.TotalBytesProcessed:N0} bytes processed, {summary.DataAdded:N0} bytes new"));
@@ -804,4 +805,9 @@ public sealed class BackupService(
             }
         }
     }
+
+    /// <summary>Dump errors that mean "couldn't log in", so the run can point at the credentials form.</summary>
+    internal static bool LooksLikeLoginProblem(string error) =>
+        new[] { "password", "authentication", "access denied", "auth failed", "noauth", "not authorized", "role \"", "login" }
+            .Any(token => error.Contains(token, StringComparison.OrdinalIgnoreCase));
 }

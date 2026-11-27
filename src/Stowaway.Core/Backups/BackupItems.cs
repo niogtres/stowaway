@@ -20,7 +20,7 @@ public static class BackupItems
         }
 
         var name = itemId[VolumePrefix.Length..];
-        var volume = snapshot.Volumes.FirstOrDefault(v => v.Name == name && v.Orphaned);
+        var volume = snapshot.Volumes.FirstOrDefault(v => v.Name == name && v.Orphaned && v.ExclusionReason is null);
         return volume is null ? null : VolumeAsApp(volume);
     }
 
@@ -34,7 +34,7 @@ public static class BackupItems
         if (plan.IncludeOrphanedVolumes)
         {
             items.AddRange(snapshot.Volumes
-                .Where(v => v.Orphaned && v.SizeBytes is not 0)
+                .Where(v => v.Orphaned && v.ExclusionReason is null && v.SizeBytes is not 0)
                 .Select(VolumeAsApp));
         }
 

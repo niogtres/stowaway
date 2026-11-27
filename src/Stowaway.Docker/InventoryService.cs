@@ -238,11 +238,12 @@ public sealed class InventoryService(
     }
 
     /// <summary>Windows paths of bind mounts that are backed up by default.</summary>
+    /// <summary>Host folders that belong to an app (inside its project folder): the only ones worth measuring.</summary>
     private static IEnumerable<string> BindPaths(RawInventory raw) =>
-        raw.Containers
-            .SelectMany(c => c.Mounts)
-            .Where(m => m.Type == "bind" && HostPaths.BindExclusionReason(m.Source, m.Destination) is null)
-            .Select(m => HostPaths.ToWindowsPath(m.Source))
+        InventoryBuilder.WithoutOwnResources(raw).Containers
+            .SelectMany(c => c.Mounts.Select(m => (Mount: m, ProjectDir: InventoryBuilder.ProjectDir(c))))
+            .Where(x => x.Mount.Type == "bind" && HostPaths.BindExclusionReason(x.Mount.Source, x.Mount.Destination, x.ProjectDir) is null)
+            .Select(x => HostPaths.ToWindowsPath(x.Mount.Source))
             .OfType<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase);
 

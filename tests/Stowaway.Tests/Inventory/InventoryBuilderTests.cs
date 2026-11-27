@@ -86,7 +86,8 @@ public sealed class InventoryBuilderTests
         var drive = jellyfin.Mounts.Single(m => m.Destination == "/mnt/mdrive");
         Assert.False(drive.Included);
         Assert.Equal(@"M:\", drive.DisplaySource);
-        Assert.StartsWith("Entire drive", drive.ExclusionReason);
+        Assert.StartsWith("Whole drive", drive.ExclusionReason);
+        Assert.Null(drive.SizeBytes);
 
         Assert.False(jellyfin.Mounts.Single(m => m.Kind == MountKind.Tmpfs).Included);
     }
@@ -160,5 +161,37 @@ public sealed class InventoryBuilderTests
     public void Score_is_null_without_measured_data()
     {
         Assert.Null(Build(SizeIndex.Empty).Totals.ProtectionScore);
+    }
+
+    [Fact]
+    public void Stowaways_own_runners_and_scratch_volumes_are_hidden()
+    {
+        var own = new Dictionary<string, string> { [InventoryBuilder.OwnLabel] = "true" };
+        var raw = Sample() with
+        {
+            Containers = [.. Sample().Containers, Container("stowaway-runner-1", "stowaway/runner:abc", own, new RawMount("volume", "stowaway-dump-1", "", "/dumps", true))],
+            Volumes = [.. Sample().Volumes, new RawVolume("stowaway-dump-1", "local", null, own), new RawVolume(InventoryBuilder.OwnCacheVolume, "local", null, NoLabels)],
+            Images = [.. Sample().Images, new RawImage("img-runner", [], new Dictionary<string, string> { [InventoryBuilder.OwnLabel + ".image"] = "true" })],
+        };
+
+        var snapshot = InventoryBuilder.Build(raw, Sizes, version: 1, capturedAt: DateTimeOffset.UnixEpoch);
+        Assert.DoesNotContain(snapshot.Apps, a => a.Name.StartsWith("stowaway", StringComparison.Ordinal));
+        Assert.DoesNotContain(snapshot.Volumes, v => v.Name.StartsWith("stowaway", StringComparison.Ordinal));
+        Assert.Equal(Build().Totals, snapshot.Totals);
+    }
+
+    [Fact]
+    public void Network_share_volumes_are_never_backed_up()
+    {
+        var raw = Sample() with
+        {
+            Volumes = [.. Sample().Volumes, new RawVolume("nas-media", "local", null, NoLabels, new Dictionary<string, string> { ["type"] = "cifs", ["device"] = "//nas/media" })],
+        };
+        var snapshot = InventoryBuilder.Build(raw, Sizes, version: 1, capturedAt: DateTimeOffset.UnixEpoch);
+        var share = snapshot.Volumes.Single(v => v.Name == "nas-media");
+        Assert.Equal(ProtectionStatus.Excluded, share.Protection);
+        Assert.Equal(HostPaths.NetworkShare, share.ExclusionReason);
+        Assert.Null(share.SizeBytes);
+        Assert.Equal(Build().Totals.UnprotectedItems, snapshot.Totals.UnprotectedItems);
     }
 }

@@ -10,6 +10,34 @@ public static partial class InventoryBuilder
     public const string ComposeWorkingDirLabel = "com.docker.compose.project.working_dir";
     public const string ComposeConfigFilesLabel = "com.docker.compose.project.config_files";
 
+    /// <summary>Label on Stowaway's own runner containers, temporary volumes and runner image (".image").</summary>
+    public const string OwnLabel = "stowaway.runner";
+
+    /// <summary>restic's cache volume, created implicitly by mounting it into runners (so it carries no label).</summary>
+    public const string OwnCacheVolume = "stowaway-restic-cache";
+
+    /// <summary>
+    /// The inventory without Stowaway's own temporary containers, volumes and images (runners, dump and drill
+    /// scratch space, the restic cache): they're plumbing, not the user's data.
+    /// </summary>
+    public static RawInventory WithoutOwnResources(RawInventory raw) => raw with
+    {
+        Containers = raw.Containers.Where(c => !c.Labels.ContainsKey(OwnLabel)).ToList(),
+        Volumes = raw.Volumes.Where(v => !v.Labels.ContainsKey(OwnLabel) && v.Name != OwnCacheVolume).ToList(),
+        Images = raw.Images.Where(i => !i.Labels.ContainsKey(OwnLabel + ".image")).ToList(),
+    };
+
+    /// <summary>The compose project folder a container belongs to, or null for standalone containers.</summary>
+    public static string? ProjectDir(RawContainer c) =>
+        c.Labels.ContainsKey(ComposeProjectLabel) && c.Labels.TryGetValue(ComposeWorkingDirLabel, out var dir) && !string.IsNullOrWhiteSpace(dir) ? dir : null;
+
+    /// <summary>Volumes whose data lives elsewhere: network shares (CIFS/NFS) and volume plugins.</summary>
+    public static string? VolumeExclusionReason(RawVolume v) =>
+        !string.Equals(v.Driver, "local", StringComparison.OrdinalIgnoreCase)
+        || (v.Options?.TryGetValue("type", out var type) == true && type.ToLowerInvariant() is "cifs" or "smb3" or "smb" or "nfs" or "nfs4")
+            ? HostPaths.NetworkShare
+            : null;
+
     /// <param name="protection">Resolves (item id, holds data) to a status; null treats everything with data as unprotected.</param>
     public static InventorySnapshot Build(
         RawInventory raw,
@@ -19,13 +47,18 @@ public static partial class InventoryBuilder
         Func<string, bool, ProtectionStatus>? protection = null)
     {
         protection ??= static (_, hasData) => hasData ? ProtectionStatus.Unprotected : ProtectionStatus.Stateless;
+        raw = WithoutOwnResources(raw);
+        var externalVolumes = raw.Volumes
+            .Select(v => (v.Name, Reason: VolumeExclusionReason(v)))
+            .Where(x => x.Reason is not null)
+            .ToDictionary(x => x.Name, x => x.Reason!, StringComparer.Ordinal);
         var localOnlyImages = raw.Images
             .Where(IsLocallyBuilt)
             .Select(i => i.Id)
             .ToHashSet(StringComparer.Ordinal);
 
         var containers = raw.Containers
-            .Select(c => (Raw: c, Info: MapContainer(c, sizes, localOnlyImages)))
+            .Select(c => (Raw: c, Info: MapContainer(c, sizes, localOnlyImages, externalVolumes)))
             .ToList();
 
         var apps = containers
@@ -48,8 +81,10 @@ public static partial class InventoryBuilder
             .Select(v =>
             {
                 var users = usedBy.GetValueOrDefault(v.Name) ?? [];
-                var size = sizes.Volumes.TryGetValue(v.Name, out var s) ? s : (long?)null;
-                var status = users.Count == 0
+                var external = externalVolumes.GetValueOrDefault(v.Name);
+                var size = external is null && sizes.Volumes.TryGetValue(v.Name, out var s) ? s : (long?)null;
+                var status = external is not null ? ProtectionStatus.Excluded
+                    : users.Count == 0
                     ? protection(Plans.ProtectionEvaluator.VolumeItemId(v.Name), size is not 0)
                     : appStatusByContainer.GetValueOrDefault(users[0], ProtectionStatus.Unprotected);
                 return new VolumeInfo
@@ -63,6 +98,7 @@ public static partial class InventoryBuilder
                     UsedBy = users,
                     SizeBytes = size,
                     Protection = status,
+                    ExclusionReason = external,
                 };
             })
             .OrderBy(v => v.Orphaned)
@@ -147,7 +183,7 @@ public static partial class InventoryBuilder
 
     private static string MountIdentity(MountInfo m) => m.VolumeName is not null ? $"v:{m.VolumeName}" : $"p:{m.DisplaySource}";
 
-    private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages) => new()
+    private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes) => new()
     {
         Id = c.Id,
         Name = c.Name,
@@ -161,16 +197,17 @@ public static partial class InventoryBuilder
         ComposeService = c.Labels.GetValueOrDefault(ComposeServiceLabel),
         ComposeDependsOn = c.Labels.GetValueOrDefault(Backups.ComposeOrder.DependsOnLabel),
         Database = DatabaseDetector.Detect(c.Image, c.Command),
-        Mounts = c.Mounts.Select(m => MapMount(m, sizes)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
+        Mounts = c.Mounts.Select(m => MapMount(m, sizes, ProjectDir(c), externalVolumes)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
     };
 
-    private static MountInfo MapMount(RawMount m, SizeIndex sizes)
+    private static MountInfo MapMount(RawMount m, SizeIndex sizes, string? projectDir, IReadOnlyDictionary<string, string> externalVolumes)
     {
         switch (m.Type.ToLowerInvariant())
         {
             case "volume":
             {
                 var name = string.IsNullOrEmpty(m.Name) ? m.Source : m.Name;
+                var external = externalVolumes.GetValueOrDefault(name);
                 return new MountInfo
                 {
                     Kind = MountKind.Volume,
@@ -180,15 +217,16 @@ public static partial class InventoryBuilder
                     ReadOnly = !m.ReadWrite,
                     VolumeName = name,
                     Anonymous = IsAnonymousVolumeName(name),
-                    Included = true,
-                    SizeBytes = sizes.Volumes.TryGetValue(name, out var size) ? size : null,
+                    Included = external is null,
+                    ExclusionReason = external,
+                    SizeBytes = external is null && sizes.Volumes.TryGetValue(name, out var size) ? size : null,
                 };
             }
 
             case "bind":
             {
                 var windows = HostPaths.ToWindowsPath(m.Source);
-                var reason = HostPaths.BindExclusionReason(m.Source, m.Destination);
+                var reason = HostPaths.BindExclusionReason(m.Source, m.Destination, projectDir);
                 return new MountInfo
                 {
                     Kind = MountKind.Bind,
@@ -198,7 +236,8 @@ public static partial class InventoryBuilder
                     ReadOnly = !m.ReadWrite,
                     Included = reason is null,
                     ExclusionReason = reason,
-                    SizeBytes = windows is not null && sizes.HostPaths.TryGetValue(windows, out var size) ? size : null,
+                    // Folders outside the app aren't measured: their size is irrelevant to the backup.
+                    SizeBytes = reason is null && windows is not null && sizes.HostPaths.TryGetValue(windows, out var size) ? size : null,
                 };
             }
 
@@ -246,7 +285,7 @@ public static partial class InventoryBuilder
             }
         }
 
-        foreach (var volume in volumes.Where(v => v.Orphaned && v.SizeBytes is not null))
+        foreach (var volume in volumes.Where(v => v.Orphaned && v.ExclusionReason is null && v.SizeBytes is not null))
         {
             if (seen.Add($"v:{volume.Name}"))
             {

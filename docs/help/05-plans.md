@@ -2,7 +2,7 @@
 
 A plan says **what** to back up, **how**, **where** and **when**, and how long to keep backups. Open **Plans** and choose **Create plan**.
 
-1. **What:** *All apps* (including ones you add later) or *Selected apps*. An "app" is a compose project or a standalone container, together with its volumes and bind mounts.
+1. **What:** *All apps* (including ones you add later) or *Selected apps*. An "app" is a compose project or a standalone container, together with its volumes, its databases and the folders inside its project folder. Folders mapped in from elsewhere on the computer, drives and network shares aren't part of the app and aren't backed up (see [Before you start](01-before-you-start.md)).
 2. **How:**
    - **Automatic** (recommended): copies files while the app keeps running. Databases it recognises (PostgreSQL, MySQL/MariaDB, MongoDB, Redis) are dumped with their own tools, so the backup is consistent with no downtime. Apps with a database it can't dump are stopped briefly instead.
    - **Live:** copies files while everything runs. Fine for apps without databases.
@@ -25,5 +25,9 @@ The **Dashboard** shows how much of your data is protected. **Inventory** lists 
 | Excluded | Left out on purpose (for example a whole drive mounted into a container) |
 
 You can also back up a single app at any time with **Back up now** in **Inventory**.
+
+## Database logins
+
+Stowaway logs in to databases with the credentials the container was set up with (the official images' variables, including Docker secrets). If a dump fails because it can't log in, for example because the password was changed after setup, click **Login** next to the database in **Inventory**, enter a user and password (and optionally one database), use **Test these**, and **Save**. The password is stored encrypted and used only for dumps. **Use automatic** goes back to the container's own settings.
 
 **See also:** [Destinations](04-destinations.md), [Watching backups run](06-activity.md), [Restore drills](09-drills.md)

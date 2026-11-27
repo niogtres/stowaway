@@ -24,7 +24,7 @@ public sealed class DockerInventoryReader(Uri endpoint)
 
         return new RawInventory(
             containers.Select(MapContainer).ToList(),
-            (volumes.Volumes ?? []).Select(v => new RawVolume(v.Name, v.Driver, v.CreatedAt, Labels(v.Labels))).ToList(),
+            (volumes.Volumes ?? []).Select(v => new RawVolume(v.Name, v.Driver, v.CreatedAt, Labels(v.Labels), Labels(v.Options))).ToList(),
             images.Select(i => new RawImage(i.ID, (i.RepoDigests ?? []).ToList(), Labels(i.Labels))).ToList());
     }
 

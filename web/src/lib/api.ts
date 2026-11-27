@@ -94,6 +94,7 @@ export interface VolumeInfo {
   usedBy: string[]
   sizeBytes: number | null
   protection: ProtectionStatus
+  exclusionReason: string | null
 }
 
 export interface InventoryTotals {
@@ -545,6 +546,45 @@ export function useAccountActions() {
 }
 
 export const restartService = () => request<void>('POST', '/api/system/restart')
+
+// ---- Database logins for dumps ---------------------------------------------
+
+export interface DatabaseCredential {
+  containerName: string
+  appId: string
+  kind: DatabaseKind
+  user: string
+  database: string | null
+  updatedAt: string
+}
+
+const credentialsKey = ['databaseCredentials'] as const
+
+export function useDatabaseCredentials() {
+  return useQuery({ queryKey: credentialsKey, queryFn: () => getJson<DatabaseCredential[]>('/api/databases/credentials'), staleTime: 60_000 })
+}
+
+export function useDatabaseCredentialActions() {
+  const queryClient = useQueryClient()
+  const refresh = () => queryClient.invalidateQueries({ queryKey: credentialsKey })
+  const path = (container: string) => `/api/databases/credentials/${encodeURIComponent(container)}`
+  return {
+    save: async (container: string, input: { user: string; password: string; database: string }) => {
+      await request<void>('PUT', path(container), { user: input.user, password: input.password || null, database: input.database || null })
+      await refresh()
+    },
+    remove: async (container: string) => {
+      await request<void>('DELETE', path(container))
+      await refresh()
+    },
+    test: (container: string, input?: { user: string; password: string; database: string }) =>
+      request<{ ok: boolean; error: string | null }>(
+        'POST',
+        `${path(container)}/test`,
+        input ? { user: input.user, password: input.password || null, database: input.database || null } : {},
+      ),
+  }
+}
 
 /** 401/403: not signed in, or no access. Retrying or polling won't change that until the user acts. */
 export const isAuthError = (error: unknown) => error instanceof ApiError && (error.status === 401 || error.status === 403)

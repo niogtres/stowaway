@@ -22,6 +22,13 @@ The first public release.
 - **Tray icon** with protection status and failure alerts.
 - **Help** built into the web interface (the user guide as searchable topics) and an **About** page with license and third-party notices.
 - **Installer** (MSI) with optional Authenticode signing, and winget manifests with each release.
+- **Database logins:** when a dump can't log in with the container's own settings, set user and password (and optionally one database) per database in Inventory, with a test button. Passwords in Docker secret files (`*_FILE`) are found automatically.
+
+### Changed
+
+- **Stowaway backs up apps, not host files:** volumes, database dumps, and folders inside a compose app's project folder. Folders mapped in from elsewhere, whole drives and network shares are shown as *not included* (with the reason) and are no longer measured or backed up.
+- Stowaway's own temporary containers and volumes (backup runners, dump and drill scratch space, the restic cache) no longer appear in the inventory.
+- The installer starts the tray icon when you click Finish, and the tray closes and restarts cleanly during upgrades.
 
 ### Fixed
 
@@ -31,5 +38,6 @@ Since the internal 0.7.x builds:
 - A backup sidecar running a database image (for example a `pg_dump` cron container on the `postgres` image) was treated as a database and its dump failed. Containers whose command is a script that never starts the server are no longer databases.
 - The remote sign-in screen reset itself every 15 seconds, clearing what was typed.
 - Dialogs with fields closed when clicking outside them, losing what was typed.
+- A database dump could hang the backup when Docker didn't pass on the end of the dump stream, and could fail with "No such exec instance" when Docker removed a finished command before its exit code was read.
 
 [Unreleased]: https://github.com/niogtres/stowaway/commits/main

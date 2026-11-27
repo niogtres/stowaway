@@ -20,7 +20,12 @@ public sealed record RawContainer(
 /// <param name="Name">Volume name for volume mounts.</param>
 public sealed record RawMount(string Type, string? Name, string Source, string Destination, bool ReadWrite);
 
-public sealed record RawVolume(string Name, string Driver, string? CreatedAt, IReadOnlyDictionary<string, string> Labels);
+public sealed record RawVolume(
+    string Name,
+    string Driver,
+    string? CreatedAt,
+    IReadOnlyDictionary<string, string> Labels,
+    IReadOnlyDictionary<string, string>? Options = null);
 
 public sealed record RawImage(string Id, IReadOnlyList<string> RepoDigests, IReadOnlyDictionary<string, string> Labels);
 

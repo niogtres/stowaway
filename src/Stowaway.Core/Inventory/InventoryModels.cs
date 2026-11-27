@@ -147,6 +147,9 @@ public sealed record VolumeInfo
     public required IReadOnlyList<string> UsedBy { get; init; }
     public long? SizeBytes { get; init; }
     public required ProtectionStatus Protection { get; init; }
+
+    /// <summary>Why it isn't backed up (a network share), or null.</summary>
+    public string? ExclusionReason { get; init; }
 }
 
 public sealed record InventoryTotals

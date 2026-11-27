@@ -16,7 +16,7 @@ public sealed class BackupOptions
     public string ResticImage { get; set; } = "restic/restic:0.19.1";
 
     /// <summary>Named volume holding restic's cache between runs (makes repeat backups much faster).</summary>
-    public string CacheVolume { get; set; } = "stowaway-restic-cache";
+    public string CacheVolume { get; set; } = Stowaway.Core.Inventory.InventoryBuilder.OwnCacheVolume;
 
     /// <summary>How long to wait for a container to stop gracefully before Docker kills it.</summary>
     public int StopTimeoutSeconds { get; set; } = 60;
@@ -45,7 +45,7 @@ public sealed record RunnerResult(long ExitCode, IReadOnlyList<string> StdOut, I
 /// <summary>Runs restic in short-lived, labelled containers and streams their output line by line.</summary>
 public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOptions> options, ILogger<ResticRunner> logger)
 {
-    public const string RunnerLabel = "stowaway.runner";
+    public const string RunnerLabel = Stowaway.Core.Inventory.InventoryBuilder.OwnLabel;
     public const string RunnerHostPrefix = "stowaway-";
     public const string EnvFile = CloudRepositories.SecretsDir + "/env";
 

@@ -141,6 +141,8 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 builder.Services.AddSingleton<AccountService>();
+builder.Services.AddSingleton<DatabaseCredentialService>();
+builder.Services.AddSingleton<IDatabaseCredentialSource>(sp => sp.GetRequiredService<DatabaseCredentialService>());
 builder.Services.AddSingleton<ISecurityEvents, SecurityEventSink>();
 
 builder.Services.AddDockerEngine(builder.Configuration);
@@ -174,7 +176,7 @@ app.UseAuthorization();
 app.UseAuditAndFreshCode();
 app.UseRateLimiter();
 
-app.MapGroup("/api").MapSystemEndpoints().MapAccessEndpoints().MapInventoryEndpoints().MapBackupEndpoints().MapPlanEndpoints().MapRestoreEndpoints();
+app.MapGroup("/api").MapSystemEndpoints().MapAccessEndpoints().MapDatabaseEndpoints().MapInventoryEndpoints().MapBackupEndpoints().MapPlanEndpoints().MapRestoreEndpoints();
 app.MapHub<EventsHub>(EventsHub.Path);
 app.MapFallback("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html").AllowAnonymous();

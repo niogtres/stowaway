@@ -145,11 +145,11 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 | Risk | Mitigation |
 |---|---|
 | **Docker Desktop only runs while a user is logged in** | Detect "engine unavailable"; queued runs wait ("waiting for Docker") until the engine returns, and missed schedules are caught up once. Docs recommend "Start Docker Desktop when you sign in" plus auto-logon, or native dockerd/Docker CE in WSL for servers. |
-| Bind mounts to huge drives | Whole drives are excluded by default and sized only when included. *Not built yet:* per-mount include/exclude overrides. |
-| DB credential discovery fails | The dump fails the run (alerting), files are still copied live; use Stop & start for that app. *Not built yet:* a credential override form. |
+| Bind mounts to huge drives, shares, folders outside the app | **Decided (2026-11-27): not Stowaway's job.** Stowaway backs up an app: its volumes, database dumps, and folders inside its compose project folder. Drives, network shares (bind or CIFS/NFS volume) and any other host folder, including those of standalone containers, are never included, not measured, and can't be switched on; the UI says so and points to a file backup. |
+| DB credential discovery fails | Discovery reads the official images' variables and their `*_FILE` (Docker secrets) forms. When that fails (password changed after setup, other images), a **Login** form per database container saves user, password and optionally one database (DPAPI), passed to the dump as exec environment (`STOWAWAY_DB_*`), with a **Test** button. A failed dump that looks like a login problem points there. |
 | Windows-containers engine | v1 targets Linux containers (the vast majority). The Windows engine path is phase 2 (§3.2 fallback). |
 | restic repo lock left behind by a crash | A run that hits a lock checks who holds it. Locks held only by our own runners (hostname `stowaway-*`) are stale by construction, since runs on one repository are serialised, so they're removed and the command retried once. Any other holder fails the run with a clear "locked" message. |
-| **"Docker" is a trademark of Docker, Inc.** Their brand guidelines restrict its use in product names and logos | Resolved: the product is **Stowaway** (decision 8). "Docker" appears only descriptively, as in the tagline. Artwork must never use the whale or Docker logos. |
+| **"Docker" is a trademark of Docker, Inc.** Their brand guidelines restrict its use in product names and logos | Resolved: the product is **Stowaway** (decision 8). "Docker" appears only descriptively, as in the tagline. Artwork must never use Docker's own logos. A whale in Stowaway's artwork is the owner's decision (2026-11-27). |
 
 ## 8. Repository layout
 
@@ -265,6 +265,12 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Audit log** (SQLite `AuditEntries`, 180 days): every API change (actor, client address, local/remote, method + path, status; never bodies) and the security events. `GET /api/audit`; Settings → Audit log.
   - **HSTS** on remote responses only (on localhost it would stick to every other local site).
   - **nginx** guide: Authenticated Origin Pulls, `X-Forwarded-For $http_cf_connecting_ip`, WebSocket upgrade, optional `proxy_ssl_verify` against Stowaway's certificate (`/api/remote/certificate?format=pem`; off in the default example, as the hop is on the LAN). Cloudflare Access recommended as an independent first gate.
+- **After M6c (2026-11-27):** the app boundary and database logins.
+  - **What gets backed up:** volumes, dumps, and bind mounts inside the compose project folder (`com.docker.compose.project.working_dir`). Other bind mounts (including all of standalone containers), drives, UNC paths and network-share volumes (driver other than `local`, or `type` cifs/smb/nfs) are excluded with a reason, not sized, and not selectable.
+  - **Stowaway's own resources are invisible:** containers and volumes labelled `stowaway.runner`, the runner image (`stowaway.runner.image`) and the restic cache volume are filtered out of the inventory (`InventoryBuilder.WithoutOwnResources`).
+  - **Database logins:** `DatabaseCredentials` table keyed by container name; `/api/databases/credentials` (list, put, delete, test). Dump scripts take `STOWAWAY_DB_USER/PASSWORD/NAME` first, then the image variables and `*_FILE` secrets.
+  - **Dump robustness:** commands report their own exit code on stderr (Docker may delete a finished exec before it can be inspected), and the sink is considered done once its file holds every byte (the attach connection doesn't always pass on end-of-input).
+  - **Tray:** started by the installer's Finish button; closes on Restart Manager requests during upgrades and registers for restart.
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 
