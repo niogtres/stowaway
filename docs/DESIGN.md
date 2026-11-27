@@ -223,7 +223,18 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
     - **Dropbox:** via rclone (`rclone:dropbox:` with an `RCLONE_CONFIG_DROPBOX_*` env-defined remote).
     - **Network:** cloud runners have network access; local and SMB runners stay offline.
   - **Dropbox sign-in:** `rclone authorize dropbox` runs in a runner. Its loopback listener is bridged by socat to the host's `127.0.0.1:53682`, which is the redirect URI registered for rclone's Dropbox app. The token goes straight from the session to destination creation and never reaches the UI.
-- **M5b (next):** recreate a whole app from a snapshot (data plus container definitions), and scheduled restore drills that load dumps into throwaway database containers.
+- **M5b (done):** recreate and restore drills.
+  - **Recreate app:**
+    - **Data:** an in-place restore of the data runs first.
+    - **Containers:** every container of the app that no longer exists is rebuilt from the `docker inspect` JSON saved in the snapshot. Config and HostConfig are carried over unchanged. Runtime fields (ids, IPs, the generated hostname, short-id aliases) are dropped.
+    - **Networks and images:** missing user networks are recreated, with compose labels so `docker compose` adopts them. Images are pulled if absent.
+    - **Order:** containers start in dependency order, and only if they were running at backup time.
+    - **Local images:** a locally built image that's missing blocks the recreate, with instructions to rebuild it from the saved compose files. The snapshot's "App definition" source (compose files, `.env`, container settings) can be restored to a folder for that.
+  - **Restore drills (`Drill` runs):** the real app is never touched.
+    - **Data sources:** restored into scratch volumes with `restic restore --verify`. Sources over 5 GB are skipped; the weekly `check` still samples them.
+    - **Dumps:** each dump is loaded into a throwaway, network-less container of the same image. Readiness waits for the real TCP listener (the official images run a socket-only init server first). A probe query (databases or keys count) must answer.
+    - **Scheduling:** weekly per plan item (plan option `VerifyRestores`, default on for new plans), in the night window, and only when there's a newer snapshot to verify. Also available on demand ("Verify restore").
+    - **Results:** a failed drill fails the run and alerts. The snapshot shows "Verified restorable …".
 - **M5 (planned) Dropbox:** restic has no native Dropbox backend, but it supports rclone (`-r rclone:<remote>:<path>`). The plan:
   - Ship a runner image that bundles rclone next to restic.
   - Add a "Connect Dropbox" OAuth flow in the UI. Its token is stored DPAPI-protected and passed to rclone as an environment-based remote config (`RCLONE_CONFIG_DROPBOX_TYPE=dropbox`, `RCLONE_CONFIG_DROPBOX_TOKEN=…`), never written to disk.

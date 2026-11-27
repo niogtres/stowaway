@@ -39,6 +39,16 @@ public static partial class RestorePlanner
             throw new RestoreValidationException("Database dumps can't be restored in place. Restore them to a folder or a volume, then load them into the database.");
         }
 
+        if (request.Target == RestoreTarget.InPlace && selected.Any(s => s.Kind == "definition"))
+        {
+            throw new RestoreValidationException("The app definition (compose files, container settings) can only be restored to a folder or a volume.");
+        }
+
+        if (request.RecreateContainers && request.Target != RestoreTarget.InPlace)
+        {
+            throw new RestoreValidationException("Recreating containers needs the data restored where it was.");
+        }
+
         var include = NormalizeSubPath(request.SubPath);
         if (include is not null && selected.Count != 1)
         {

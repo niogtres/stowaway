@@ -16,7 +16,8 @@ public sealed record PlanInput(
     PlanStrategy Strategy,
     Guid DestinationId,
     string Cron,
-    RetentionPolicy? Retention);
+    RetentionPolicy? Retention,
+    bool VerifyRestores = true);
 
 public sealed record SchedulePreview(bool Valid, string? Error, IReadOnlyList<DateTimeOffset> NextRuns, double? IntervalHours);
 
@@ -102,7 +103,7 @@ public sealed class PlanService(
         Id = plan.Id, Name = plan.Name, Enabled = true, Selection = plan.Selection, AppIds = plan.AppIds,
         ExcludedAppIds = plan.ExcludedAppIds, IncludeOrphanedVolumes = plan.IncludeOrphanedVolumes,
         Strategy = plan.Strategy, DestinationId = plan.DestinationId, Cron = plan.Cron, Retention = plan.Retention,
-        CreatedAt = plan.CreatedAt, LastTriggeredAt = plan.LastTriggeredAt,
+        VerifyRestores = plan.VerifyRestores, CreatedAt = plan.CreatedAt, LastTriggeredAt = plan.LastTriggeredAt,
     };
 
     public SchedulePreview Preview(string cron)
@@ -136,6 +137,7 @@ public sealed class PlanService(
         plan.IncludeOrphanedVolumes = input.IncludeOrphanedVolumes;
         plan.Strategy = input.Strategy;
         plan.Retention = input.Retention ?? RetentionPolicy.Standard;
+        plan.VerifyRestores = input.VerifyRestores;
     }
 
     private async Task ValidateAsync(PlanInput input, Guid? existingId, CancellationToken ct)

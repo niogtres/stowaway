@@ -60,6 +60,8 @@ export function Activity() {
                         <Badge tone="accent">Maintenance</Badge>
                       ) : run.kind === 'restore' ? (
                         <Badge tone="warn">Restore</Badge>
+                      ) : run.kind === 'drill' ? (
+                        <Badge tone="ok">Restore drill</Badge>
                       ) : (
                         <Badge>{run.strategy === 'stopStart' ? 'Stop & start' : 'Live'}</Badge>
                       )}
@@ -73,7 +75,7 @@ export function Activity() {
                       <div className="mt-0.5 text-xs text-muted">
                         {runStatusLabels[run.status]} {relativeTime(run.finishedAt ?? run.queuedAt)} · took {duration(run)}
                         {run.bytesProcessed !== null &&
-                          (run.kind === 'restore'
+                          (run.kind === 'restore' || run.kind === 'drill'
                             ? ` · ${formatBytes(run.bytesProcessed)} restored`
                             : ` · ${formatBytes(run.bytesProcessed)} scanned, ${formatBytes(run.bytesAdded)} new`)}
                         {run.downtimeSeconds !== null && ` · ${run.downtimeSeconds}s downtime`}

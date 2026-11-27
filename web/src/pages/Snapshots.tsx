@@ -1,13 +1,15 @@
-import { ChevronRight, Database, File, Folder, FolderOpen, HardDrive, Layers, RotateCcw, Search, ShieldCheck } from 'lucide-react'
+import { BadgeCheck, ChevronRight, Database, File, FileCog, Folder, FolderOpen, HardDrive, Hammer, Layers, RotateCcw, Search, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import emptySnapshots from '@/assets/illustrations/empty-snapshots.webp'
 import { RestoreDialog, type RestoreScope } from '@/components/RestoreDialog'
 import { Button } from '@/components/forms'
 import { Badge, Card, Skeleton } from '@/components/ui'
 import {
+  useBackupRuns,
   useDestinations,
   useInventory,
   usePlans,
+  useStartDrill,
   useSnapshotContents,
   useSnapshotListing,
   useSnapshots,
@@ -140,10 +142,20 @@ function Timeline({ snapshots, selected, onSelect }: { snapshots: SnapshotInfo[]
 function SnapshotDetail({ snapshot, appName }: { snapshot: SnapshotInfo; appName: string }) {
   const destinations = useDestinations()
   const contents = useSnapshotContents(snapshot.destinationId, snapshot.id)
+  const inventory = useInventory()
+  const runs = useBackupRuns()
+  const drill = useStartDrill()
   const [browsing, setBrowsing] = useState<SnapshotSource | null>(null)
   const [restore, setRestore] = useState<RestoreScope | null>(null)
+  const [recreating, setRecreating] = useState(false)
   const destination = destinations.data?.find((d) => d.id === snapshot.destinationId)
   const sources = contents.data?.sources ?? []
+  const dataSources = sources.filter((x) => x.kind === 'volume' || x.kind === 'bind')
+  const drills = (runs.data ?? []).filter((r) => r.kind === 'drill' && r.snapshotId === snapshot.id)
+  const lastDrill = drills.find((r) => r.status === 'succeeded' || r.status === 'failed')
+  const drillActive = drills.some((r) => r.status === 'queued' || r.status === 'running')
+  const app = inventory.data?.snapshot?.apps.find((a) => a.id === snapshot.appId)
+  const appMissing = !!contents.data && !snapshot.appId?.startsWith('volume:') && !app
 
   return (
     <Card className="min-w-0">
@@ -159,19 +171,42 @@ function SnapshotDetail({ snapshot, appName }: { snapshot: SnapshotInfo; appName
             <span className="font-mono">{snapshot.shortId}</span>
             {snapshot.dataAdded !== null && <span>{formatBytes(snapshot.dataAdded)} new when taken</span>}
           </div>
+          {lastDrill && (
+            <p className={cn('mt-2 flex items-center gap-1.5 text-xs', lastDrill.status === 'succeeded' ? 'text-ok' : 'text-danger')}>
+              <BadgeCheck className="size-3.5" />
+              {lastDrill.status === 'succeeded'
+                ? `Verified restorable ${relativeTime(lastDrill.finishedAt)}: restored and checked in scratch space`
+                : `Restore drill failed ${relativeTime(lastDrill.finishedAt)}: ${lastDrill.error ?? ''}`}
+            </p>
+          )}
           {snapshot.safety && (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-warn">
               <ShieldCheck className="size-3.5" /> Safety snapshot taken just before a restore: restore it to undo that restore.
             </p>
           )}
         </div>
-        <Button
-          variant="primary"
-          disabled={sources.length === 0}
-          onClick={() => setRestore({ sources: sources.filter((x) => x.kind !== 'dumps'), subPath: null, label: `everything in ${appName}` })}
-        >
-          <RotateCcw className="size-4" /> Restore everything
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            disabled={drillActive || drill.isPending}
+            onClick={() => drill.mutate({ destinationId: snapshot.destinationId, snapshotId: snapshot.id })}
+            title="Restore into scratch space and load database dumps, without touching the app"
+          >
+            <BadgeCheck className="size-4" /> {drillActive ? 'Verifying…' : 'Verify restore'}
+          </Button>
+          {appMissing && (
+            <Button variant="secondary" onClick={() => setRecreating(true)} title="The app isn't running on this host any more">
+              <Hammer className="size-4" /> Recreate app
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            disabled={dataSources.length === 0}
+            onClick={() => setRestore({ sources: dataSources, subPath: null, label: `everything in ${appName}` })}
+          >
+            <RotateCcw className="size-4" /> Restore everything
+          </Button>
+        </div>
       </header>
 
       {contents.isPending ? (
@@ -182,13 +217,21 @@ function SnapshotDetail({ snapshot, appName }: { snapshot: SnapshotInfo; appName
         <ul className="divide-y divide-line rounded-xl border border-line">
           {sources.map((s) => (
             <li key={s.snapshotPath} className="flex items-center gap-3 px-4 py-3">
-              {s.kind === 'volume' ? <Layers className="size-4 shrink-0 text-accent" /> : s.kind === 'dumps' ? <Database className="size-4 shrink-0 text-accent" /> : <FolderOpen className="size-4 shrink-0 text-accent" />}
+              {s.kind === 'volume' ? (
+                <Layers className="size-4 shrink-0 text-accent" />
+              ) : s.kind === 'dumps' ? (
+                <Database className="size-4 shrink-0 text-accent" />
+              ) : s.kind === 'definition' ? (
+                <FileCog className="size-4 shrink-0 text-accent" />
+              ) : (
+                <FolderOpen className="size-4 shrink-0 text-accent" />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="truncate font-mono text-sm" title={s.displaySource}>
                   {s.displaySource}
                 </div>
                 <div className="text-xs text-muted">
-                  {s.kind === 'dumps' ? 'Consistent dumps taken while the databases ran' : `${s.containerName} → ${s.destination}`}
+                  {s.kind === 'dumps' ? 'Consistent dumps taken while the databases ran' : s.kind === 'definition' ? 'Compose files, .env and container settings' : `${s.containerName} → ${s.destination}`}
                   {s.sizeBytes !== null && ` · ${formatBytes(s.sizeBytes)}`}
                 </div>
               </div>
@@ -214,6 +257,10 @@ function SnapshotDetail({ snapshot, appName }: { snapshot: SnapshotInfo; appName
       )}
 
       {restore && <RestoreDialog snapshot={snapshot} appName={appName} scope={restore} onClose={() => setRestore(null)} />}
+      {recreating && (
+        <RestoreDialog snapshot={snapshot} appName={appName} scope={{ sources: dataSources, subPath: null, label: appName }} recreate onClose={() => setRecreating(false)} />
+      )}
+      {drill.error && <p className="mt-3 text-sm text-danger">{drill.error.message}</p>}
     </Card>
   )
 }

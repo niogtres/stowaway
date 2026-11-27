@@ -70,6 +70,9 @@ public sealed class BackupPlan
     /// <summary>Five-field cron expression in the host's local time zone, e.g. <c>30 2 * * *</c>.</summary>
     public required string Cron { get; set; }
     public RetentionPolicy Retention { get; set; } = RetentionPolicy.Standard;
+
+    /// <summary>Weekly restore drill of each covered item's latest snapshot.</summary>
+    public bool VerifyRestores { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>The scheduled occurrence that was last triggered (or the catch-up time after a missed run).</summary>

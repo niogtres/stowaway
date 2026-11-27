@@ -26,6 +26,15 @@ public static class RestoreEndpoints
         api.MapPost("/restores/preview", (RestoreRequest body, RestoreService service, CancellationToken ct) => Guard(async () =>
             Results.Ok(await service.PreviewAsync(body with { SnapshotId = RequireSnapshotId(body.SnapshotId) }, ct))));
 
+        api.MapPost("/drills", (DrillRequest body, SnapshotCatalog catalog, BackupService backups, CancellationToken ct) => Guard(async () =>
+        {
+            var request = body with { SnapshotId = RequireSnapshotId(body.SnapshotId) };
+            var contents = await catalog.ContentsAsync(request.DestinationId, request.SnapshotId, ct);
+            return await backups.EnqueueDrillAsync(request, contents.App.Id, contents.App.Name, "manual", ct) is { } run
+                ? Results.Accepted($"/api/backups/{run.Id}", run)
+                : Results.Conflict(new { detail = "A drill for this app is already queued." });
+        }));
+
         api.MapPost("/restores", (RestoreRequest body, RestoreService service, CancellationToken ct) => Guard(async () =>
         {
             var run = await service.StartAsync(body with { SnapshotId = RequireSnapshotId(body.SnapshotId) }, ct);

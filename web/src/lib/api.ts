@@ -131,7 +131,7 @@ export interface InventoryResponse {
 export type DestinationKind = 'local' | 'smb' | 's3' | 'b2' | 'azure' | 'sftp' | 'dropbox'
 export type BackupStrategy = 'live' | 'stopStart'
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
-export type RunKind = 'backup' | 'maintenance' | 'restore'
+export type RunKind = 'backup' | 'maintenance' | 'restore' | 'drill'
 
 export interface DestinationStatus {
   reachable: boolean
@@ -225,6 +225,7 @@ export interface PlanInput {
   destinationId: string
   cron: string
   retention: RetentionPolicy
+  verifyRestores: boolean
 }
 
 export interface PlanRunSummary {
@@ -309,7 +310,7 @@ export interface SnapshotInfo {
 
 export interface SnapshotSource {
   snapshotPath: string
-  kind: 'volume' | 'bind' | 'dumps'
+  kind: 'volume' | 'bind' | 'dumps' | 'definition'
   source: string
   displaySource: string
   containerName: string
@@ -343,6 +344,7 @@ export interface RestoreRequest {
   newVolumeName: string | null
   hostFolder: string | null
   safetySnapshot: boolean
+  recreateContainers?: boolean
 }
 
 export interface RestorePreview {
@@ -351,6 +353,7 @@ export interface RestorePreview {
   deletesExtraFiles: boolean
   safetySnapshot: boolean
   warnings: string[]
+  containersToRecreate: string[] | null
 }
 
 // ---- Transport ------------------------------------------------------------
@@ -583,6 +586,14 @@ export function useSnapshotListing(destinationId: string, snapshotId: string, pa
     queryFn: () => getJson<SnapshotEntry[]>(`/api/destinations/${destinationId}/snapshots/${snapshotId}/browse?path=${encodeURIComponent(path!)}`),
     enabled: !!path,
     staleTime: Infinity,
+  })
+}
+
+export function useStartDrill() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { destinationId: string; snapshotId: string }) => request<BackupRun>('POST', '/api/drills', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.backups }),
   })
 }
 

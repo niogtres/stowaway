@@ -72,6 +72,9 @@ public enum RunKind
 
     /// <summary>Put data from a snapshot back (in place, into a new volume or into a folder).</summary>
     Restore,
+
+    /// <summary>Restore drill: restore into scratch space and load database dumps, to prove the snapshot works.</summary>
+    Drill,
 }
 
 public enum RunStatus
@@ -158,6 +161,9 @@ public interface IBackupRunStore
 
     /// <summary>When maintenance last finished successfully, per destination.</summary>
     Task<IReadOnlyDictionary<Guid, DateTimeOffset>> LastMaintenanceAsync(CancellationToken ct);
+
+    /// <summary>The latest finished run of a kind per item (app id), e.g. the last drill of each app.</summary>
+    Task<IReadOnlyDictionary<string, BackupRun>> LatestByItemAsync(RunKind kind, CancellationToken ct);
 }
 
 /// <summary>Encrypts secrets at rest (DPAPI in the service account's scope).</summary>

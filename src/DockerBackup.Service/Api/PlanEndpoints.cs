@@ -20,6 +20,7 @@ public sealed record PlanView(
     Guid DestinationId,
     string Cron,
     RetentionPolicy Retention,
+    bool VerifyRestores,
     DateTimeOffset CreatedAt,
     DateTimeOffset? NextRunAt,
     double IntervalHours,
@@ -90,7 +91,7 @@ public static class PlanEndpoints
         var next = p.Enabled ? Schedule.Next(p.Cron, anchor > now ? anchor : now, 1, TimeZoneInfo.Local).FirstOrDefault() : (DateTimeOffset?)null;
         return new PlanView(
             p.Id, p.Name, p.Enabled, p.Selection, p.AppIds, p.ExcludedAppIds, p.IncludeOrphanedVolumes, p.Strategy, p.DestinationId,
-            p.Cron, p.Retention, p.CreatedAt,
+            p.Cron, p.Retention, p.VerifyRestores, p.CreatedAt,
             next == default(DateTimeOffset) ? null : next,
             Schedule.TypicalInterval(p.Cron, now, TimeZoneInfo.Local).TotalHours,
             service.Items(PlanService.AsEnabled(p)).Select(i => i.Id).ToList(),

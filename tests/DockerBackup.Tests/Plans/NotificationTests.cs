@@ -138,5 +138,6 @@ public sealed class NotificationTests
         public Task<int> FailInterruptedAsync(string reason, CancellationToken ct) => Task.FromResult(0);
         public Task<IReadOnlyDictionary<string, ItemRunState>> LatestStatesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<string, ItemRunState>>(new Dictionary<string, ItemRunState>());
         public Task<IReadOnlyDictionary<Guid, DateTimeOffset>> LastMaintenanceAsync(CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<Guid, DateTimeOffset>>(new Dictionary<Guid, DateTimeOffset>());
+        public Task<IReadOnlyDictionary<string, BackupRun>> LatestByItemAsync(RunKind kind, CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<string, BackupRun>>(new Dictionary<string, BackupRun>());
     }
 }

@@ -38,8 +38,8 @@ const runsUndumpableDatabase = (app: AppInfo) => app.containers.some((c) => c.da
 
 function initialInput(plan: Plan | undefined, destinationId: string | undefined): PlanInput {
   if (plan) {
-    const { name, enabled, selection, appIds, excludedAppIds, includeOrphanedVolumes, strategy, destinationId: d, cron, retention } = plan
-    return { name, enabled, selection, appIds, excludedAppIds, includeOrphanedVolumes, strategy, destinationId: d, cron, retention }
+    const { name, enabled, selection, appIds, excludedAppIds, includeOrphanedVolumes, strategy, destinationId: d, cron, retention, verifyRestores } = plan
+    return { name, enabled, selection, appIds, excludedAppIds, includeOrphanedVolumes, strategy, destinationId: d, cron, retention, verifyRestores }
   }
   return {
     name: 'Nightly backup',
@@ -52,6 +52,7 @@ function initialInput(plan: Plan | undefined, destinationId: string | undefined)
     destinationId: destinationId ?? '',
     cron: toCron(defaultSchedule),
     retention: retentionPresets.standard.policy,
+    verifyRestores: true,
   }
 }
 
@@ -310,6 +311,13 @@ export function PlanWizard({ open, onClose, plan }: { open: boolean; onClose: ()
             <Field label="Plan name">
               <TextInput value={input.name} onChange={(e) => update({ name: e.target.value })} />
             </Field>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-0.5 accent-[var(--accent)]" checked={input.verifyRestores} onChange={(e) => update({ verifyRestores: e.target.checked })} />
+              <span>
+                Prove the backups restore, weekly
+                <span className="block text-xs text-muted">Restores the latest backup of each app into scratch space and loads its database dumps into throwaway containers. Your apps aren't touched.</span>
+              </span>
+            </label>
           </div>
         )}
       </div>
@@ -319,6 +327,7 @@ export function PlanWizard({ open, onClose, plan }: { open: boolean; onClose: ()
         {input.includeOrphanedVolumes && orphans.length > 0 && ` + ${orphans.length} unowned volumes`} · ~{formatBytes(coveredBytes)}
         {stopping.length > 0 && ` · stops ${stopping.length} briefly`}
         {destination && ` · to ${destination.name}`} · {describeSchedule(cron)} · {describeRetention(input.retention).toLowerCase()}
+        {input.verifyRestores && ' · verified weekly'}
       </div>
 
       {save.error && <p className="mt-3 text-sm text-danger">{save.error.message}</p>}

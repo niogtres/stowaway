@@ -102,9 +102,14 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         bool deleteExtra,
         Action<ResticStatus> onProgress,
         Action<string> onLog,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool verify = false)
     {
         var args = new List<string> { "restore", $"{snapshotId}:{snapshotPath}", "--target", "/restore", "--json" };
+        if (verify)
+        {
+            args.Add("--verify"); // re-reads every restored file and checks it against the snapshot
+        }
         if (include is not null)
         {
             args.Add("--include");

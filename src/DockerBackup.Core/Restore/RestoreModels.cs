@@ -23,7 +23,8 @@ public sealed record RestoreRequest(
     RestoreTarget Target,
     string? NewVolumeName,
     string? HostFolder,
-    bool SafetySnapshot = true);
+    bool SafetySnapshot = true,
+    bool RecreateContainers = false);
 
 /// <summary>A snapshot as shown in the UI, with the tags DockerBackup puts on it decoded.</summary>
 public sealed record SnapshotInfo(
@@ -47,6 +48,7 @@ public sealed record RestorePreview(
     IReadOnlyList<string> ContainersToStop,
     bool DeletesExtraFiles,
     bool SafetySnapshot,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<string>? ContainersToRecreate = null);
 
 public sealed record RestorePreviewItem(string Source, string Kind, string Target, long? SnapshotBytes);

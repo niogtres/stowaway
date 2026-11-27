@@ -39,6 +39,8 @@ public sealed class BackupService(
     DestinationService destinationService,
     SnapshotCatalog catalog,
     DumpService dumps,
+    ContainerRecreator recreator,
+    DrillService drills,
     IBackupEvents events,
     IEnumerable<IRunObserver> observers,
     IOptions<BackupOptions> options,
@@ -99,6 +101,24 @@ public sealed class BackupService(
         };
         await QueueAsync(run, $"restore:{run.Id:N}", ct);
         return run;
+    }
+
+    /// <summary>Queues a restore drill of one snapshot; returns null when one for the same item is already pending.</summary>
+    public async Task<BackupRun?> EnqueueDrillAsync(DrillRequest request, string itemId, string itemName, string trigger, CancellationToken ct)
+    {
+        var run = new BackupRun
+        {
+            AppId = itemId,
+            AppName = itemName,
+            DestinationId = request.DestinationId,
+            Strategy = BackupStrategy.Live,
+            Kind = RunKind.Drill,
+            Trigger = trigger,
+            SnapshotId = request.SnapshotId,
+            Details = JsonSerializer.Serialize(request),
+            QueuedAt = time.GetUtcNow(),
+        };
+        return await QueueAsync(run, $"drill:{itemId}", ct) ? run : null;
     }
 
     private async Task<BackupRun?> EnqueueCoreAsync(string itemId, Guid destinationId, BackupStrategy strategy, Guid? planId, string trigger, CancellationToken ct)
@@ -254,6 +274,10 @@ public sealed class BackupService(
         else if (run.Kind == RunKind.Restore)
         {
             await ExecuteRestoreAsync(run, log, ct);
+        }
+        else if (run.Kind == RunKind.Drill)
+        {
+            await ExecuteDrillAsync(run, log, ct);
         }
         else
         {
@@ -520,6 +544,11 @@ public sealed class BackupService(
                     $"Restored {summary.FilesRestored:N0} files ({summary.BytesRestored:N0} bytes){(summary.FilesDeleted > 0 ? $", removed {summary.FilesDeleted:N0} files not in the snapshot" : string.Empty)}"));
             }
 
+            if (request.RecreateContainers)
+            {
+                await RecreateMissingContainersAsync(client, request, contents, log, ct);
+            }
+
             run.FilesProcessed = files;
             run.BytesProcessed = bytes;
             run.Status = RunStatus.Succeeded;
@@ -563,6 +592,62 @@ public sealed class BackupService(
                 client.Dispose();
             }
         }
+    }
+
+    private async Task ExecuteDrillAsync(BackupRun run, RunLog log, CancellationToken ct)
+    {
+        try
+        {
+            var request = JsonSerializer.Deserialize<DrillRequest>(run.Details ?? "null") ?? throw new InvalidOperationException("The drill request is missing.");
+            log.Add($"Restore drill of {run.AppName}, snapshot {request.SnapshotId[..8]}: restoring into scratch space; the real app isn't touched");
+            await SaveAsync(run, log);
+            var outcome = await drills.RunAsync(request, run.Id, log.Add, phase => Report(run.Id, phase, null, 0, 0, 0, 0), ct);
+            run.FilesProcessed = outcome.Files;
+            run.BytesProcessed = outcome.Bytes;
+            if (outcome.Failures.Count == 0)
+            {
+                run.Status = RunStatus.Succeeded;
+                log.Add("Drill passed: this snapshot restores");
+            }
+            else
+            {
+                run.Status = RunStatus.Failed;
+                run.Error = "Restore drill failed: " + string.Join("; ", outcome.Failures);
+                log.Add(run.Error);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            run.Status = RunStatus.Cancelled;
+            log.Add("Cancelled");
+        }
+        catch (Exception ex)
+        {
+            run.Status = RunStatus.Failed;
+            run.Error = ex.Message;
+            log.Add($"Failed: {ex.Message}");
+            logger.LogWarning(ex, "Restore drill of {App} failed", run.AppName);
+        }
+    }
+
+    private async Task RecreateMissingContainersAsync(DockerClient client, RestoreRequest request, SnapshotContents contents, RunLog log, CancellationToken ct)
+    {
+        var existing = (await client.Containers.ListContainersAsync(new ContainersListParameters { All = true }, ct))
+            .SelectMany(c => c.Names ?? []).Select(n => n.TrimStart('/')).ToHashSet(StringComparer.Ordinal);
+        var definitions = (await catalog.DefinitionsAsync(request.DestinationId, request.SnapshotId, ct)).ToDictionary(d => d.Name.TrimStart('/'), StringComparer.Ordinal);
+
+        var steps = BackupPlanner.StartOrder(contents.App.Containers)
+            .Where(c => !existing.Contains(c.Name) && definitions.ContainsKey(c.Name))
+            .Select(c => ContainerRecreator.Plan(definitions[c.Name], wasRunning: c.State is "running" or "restarting"))
+            .ToList();
+        if (steps.Count == 0)
+        {
+            log.Add("All containers already exist; nothing to recreate");
+            return;
+        }
+
+        await recreator.RecreateAsync(client, steps, log.Add, ct);
+        inventory.RequestRefresh();
     }
 
     /// <summary>Backs up the current state of the sources about to be overwritten, so the restore can be undone.</summary>

@@ -19,7 +19,7 @@ const stamp = (iso: string) => {
 }
 
 /** Mounted only while open (see callers), so every opening starts with fresh state. */
-export function RestoreDialog({ snapshot, appName, scope, onClose }: { snapshot: SnapshotInfo; appName: string; scope: RestoreScope; onClose: () => void }) {
+export function RestoreDialog({ snapshot, appName, scope, onClose, recreate = false }: { snapshot: SnapshotInfo; appName: string; scope: RestoreScope; onClose: () => void; recreate?: boolean }) {
   const start = useStartRestore()
   const single = scope.sources.length === 1 ? scope.sources[0] : null
   const dumpsOnly = scope.sources.every((s) => s.kind === 'dumps')
@@ -40,6 +40,7 @@ export function RestoreDialog({ snapshot, appName, scope, onClose }: { snapshot:
     newVolumeName: target === 'newVolume' ? volumeName : null,
     hostFolder: target === 'hostFolder' ? hostFolder : null,
     safetySnapshot: target === 'inPlace' && safety,
+    recreateContainers: recreate,
   }
   const requestKey = JSON.stringify(request)
 
@@ -60,13 +61,13 @@ export function RestoreDialog({ snapshot, appName, scope, onClose }: { snapshot:
 
   const inPlace = target === 'inPlace'
   const confirmed = !inPlace || confirmText.trim() === appName
-  const blocked = !!previewError || !!preview?.warnings.some((w) => w.includes('already exists'))
+  const blocked = !!previewError || !!preview?.warnings.some((w) => w.includes('already exists;') || w.includes("can't be recreated"))
 
   return (
     <Dialog
       open
       onClose={onClose}
-      title={`Restore ${scope.label}`}
+      title={recreate ? `Recreate ${appName}` : `Restore ${scope.label}`}
       description={`From the snapshot of ${new Date(snapshot.time).toLocaleString()}.`}
       className="w-[min(40rem,calc(100vw-2rem))]"
     >
@@ -82,7 +83,13 @@ export function RestoreDialog({ snapshot, appName, scope, onClose }: { snapshot:
         </div>
       ) : (
         <div className="space-y-5">
-          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Restore to">
+          {recreate && (
+            <p className="rounded-xl bg-accent-soft p-3 text-sm">
+              Puts the data back where it was and rebuilds any of this app's containers that no longer exist, from the definitions saved with the
+              snapshot: same images, settings, networks and volumes. Missing images are pulled.
+            </p>
+          )}
+          <div className={cn('grid grid-cols-3 gap-2', recreate && 'hidden')} role="radiogroup" aria-label="Restore to">
             {(
               [
                 { id: 'inPlace', icon: RotateCcw, title: 'Where it was', text: 'Overwrite the current data' },
@@ -158,6 +165,14 @@ export function RestoreDialog({ snapshot, appName, scope, onClose }: { snapshot:
                     </span>
                   </li>
                 ))}
+                {(preview.containersToRecreate ?? []).length > 0 && (
+                  <li className="flex gap-2">
+                    <RotateCcw className="mt-0.5 size-4 shrink-0 text-ok" />
+                    <span>
+                      Recreates and starts <strong>{preview.containersToRecreate!.join(', ')}</strong>.
+                    </span>
+                  </li>
+                )}
                 {preview.deletesExtraFiles && (
                   <li className="flex gap-2">
                     <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" /> Files that didn't exist at the time of the snapshot are removed.
@@ -182,7 +197,7 @@ export function RestoreDialog({ snapshot, appName, scope, onClose }: { snapshot:
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
             <Button variant={inPlace ? 'danger' : 'primary'} disabled={!confirmed || blocked || !preview || start.isPending} onClick={() => start.mutate(request)}>
-              <RotateCcw className="size-4" /> {inPlace ? 'Overwrite and restore' : 'Restore'}
+              <RotateCcw className="size-4" /> {recreate ? 'Recreate app' : inPlace ? 'Overwrite and restore' : 'Restore'}
             </Button>
           </div>
         </div>

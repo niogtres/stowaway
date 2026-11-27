@@ -127,3 +127,71 @@ public sealed class MaintenanceScheduler(
         return age >= Interval + TimeSpan.FromDays(1) || localHour is >= 1 and < 6;
     }
 }
+
+/// <summary>
+/// Weekly restore drill of each item covered by a plan with <see cref="BackupPlan.VerifyRestores"/>: the latest
+/// successful scheduled snapshot is restored into scratch space and its database dumps are loaded and probed.
+/// </summary>
+public sealed class DrillScheduler(
+    IPlanStore plans,
+    IBackupRunStore runs,
+    IInventoryProvider inventory,
+    BackupService backups,
+    TimeProvider time,
+    ILogger<DrillScheduler> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await Task.Delay(TimeSpan.FromMinutes(5), time, stoppingToken); // let startup settle
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await TickAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Drill scheduler failed");
+            }
+
+            await Task.Delay(TimeSpan.FromMinutes(30), time, stoppingToken);
+        }
+    }
+
+    internal async Task TickAsync(CancellationToken ct)
+    {
+        if (inventory.Current is not { } snapshot)
+        {
+            return;
+        }
+
+        var now = time.GetUtcNow();
+        var lastDrills = await runs.LatestByItemAsync(RunKind.Drill, ct);
+        var lastBackups = (await runs.ListRecentAsync(500, ct))
+            .Where(r => r is { Kind: RunKind.Backup, Status: RunStatus.Succeeded, PlanId: not null, SnapshotId: not null })
+            .ToList();
+
+        foreach (var plan in (await plans.ListAsync(ct)).Where(p => p.Enabled && p.VerifyRestores))
+        {
+            foreach (var item in BackupItems.ForPlan(snapshot, plan))
+            {
+                var since = lastDrills.TryGetValue(item.Id, out var drill) ? drill.FinishedAt ?? drill.QueuedAt : plan.CreatedAt;
+                if (!MaintenanceScheduler.IsDue(since, now, time.LocalTimeZone))
+                {
+                    continue;
+                }
+
+                var latest = lastBackups.FirstOrDefault(r => r.AppId == item.Id && r.PlanId == plan.Id);
+                if (latest is null || (drill is not null && drill.SnapshotId == latest.SnapshotId && drill.Status == RunStatus.Succeeded))
+                {
+                    continue; // nothing new to verify
+                }
+
+                if (await backups.EnqueueDrillAsync(new Restore.DrillRequest(latest.DestinationId, latest.SnapshotId!), item.Id, item.Name, "schedule", ct) is not null)
+                {
+                    logger.LogInformation("Restore drill queued for {Item}", item.Name);
+                }
+            }
+        }
+    }
+}

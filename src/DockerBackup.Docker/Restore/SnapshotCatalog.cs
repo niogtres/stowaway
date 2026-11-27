@@ -15,11 +15,13 @@ public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationS
 {
     public const string SafetyTag = "safety";
     public const string DumpsKind = "dumps";
+    public const string DefinitionKind = "definition";
     private const int MaxCachedListings = 500;
     private static readonly JsonSerializerOptions MetadataJson = new() { PropertyNameCaseInsensitive = true };
 
     private readonly ConcurrentDictionary<string, SnapshotContents> _contents = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, IReadOnlyList<SnapshotEntry>> _listings = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, IReadOnlyList<global::Docker.DotNet.Models.ContainerInspectResponse>> _definitions = new(StringComparer.Ordinal);
 
     /// <summary>DockerBackup snapshots in every destination, newest first, optionally for one app or volume item.</summary>
     public async Task<IReadOnlyList<SnapshotInfo>> ListAsync(string? itemId, CancellationToken ct)
@@ -61,9 +63,37 @@ public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationS
             sources.Add(new SnapshotSource(DatabaseDumps.SnapshotDir, DumpsKind, "_dumps", "Database dumps", "databases", "/", null));
         }
 
+        sources.Add(new SnapshotSource(BackupPlanner.MetadataDir, DefinitionKind, "_dockerbackup", "App definition", "compose files and container settings", "/", null));
+
         var contents = new SnapshotContents(app, sources);
         _contents[key] = contents;
         return contents;
+    }
+
+    /// <summary>The <c>docker inspect</c> documents saved with the snapshot, one per container.</summary>
+    public async Task<IReadOnlyList<global::Docker.DotNet.Models.ContainerInspectResponse>> DefinitionsAsync(Guid destinationId, string snapshotId, CancellationToken ct)
+    {
+        var key = $"{destinationId:N}/{snapshotId}";
+        if (_definitions.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var destination = await RequireDestinationAsync(destinationId, ct);
+        var dir = $"{BackupPlanner.MetadataDir}/containers";
+        var files = await repository.ListAsync(destination, snapshotId, dir, ct);
+        var definitions = new List<global::Docker.DotNet.Models.ContainerInspectResponse>();
+        foreach (var file in files.Where(f => f.Type == "file" && f.Name.EndsWith(".json", StringComparison.Ordinal)))
+        {
+            var json = await repository.ReadTextAsync(destination, snapshotId, file.Path, ct);
+            if (JsonSerializer.Deserialize<global::Docker.DotNet.Models.ContainerInspectResponse>(json) is { } definition)
+            {
+                definitions.Add(definition);
+            }
+        }
+
+        _definitions[key] = definitions;
+        return definitions;
     }
 
     public async Task<IReadOnlyList<SnapshotEntry>> BrowseAsync(Guid destinationId, string snapshotId, string path, CancellationToken ct)

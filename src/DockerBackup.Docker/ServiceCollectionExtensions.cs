@@ -38,6 +38,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<DestinationService>();
         services.AddSingleton<Restore.SnapshotCatalog>();
         services.AddSingleton<Restore.RestoreService>();
+        services.AddSingleton<Restore.ContainerRecreator>();
+        services.AddSingleton<Restore.DrillService>();
         services.AddSingleton<BackupService>();
         services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
         services.AddHostedService<DestinationMonitor>();
@@ -49,6 +51,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<PlanService>();
         services.AddHostedService<PlanScheduler>();
         services.AddHostedService<MaintenanceScheduler>();
+        services.AddHostedService<DrillScheduler>();
         return services;
     }
 }

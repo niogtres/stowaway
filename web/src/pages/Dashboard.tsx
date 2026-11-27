@@ -4,7 +4,7 @@ import { ArrowRight, Boxes, CheckCircle2, Circle, Cpu, Database, HeartPulse, Lay
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
 import { ProtectionRing } from '@/components/ProtectionRing'
 import { Badge, Card, CardHeader, Skeleton, Stat, StatusDot } from '@/components/ui'
-import { useDestinations, useInventory, usePlans, useSystemInfo, type InventorySnapshot, type SystemInfo } from '@/lib/api'
+import { useBackupRuns, useDestinations, useInventory, usePlans, useSystemInfo, type BackupRun, type InventorySnapshot, type SystemInfo } from '@/lib/api'
 import { cn, formatBytes, formatNumber } from '@/lib/utils'
 
 const rise = {
@@ -239,7 +239,16 @@ function attentionItems(snapshot: InventorySnapshot): AttentionItem[] {
 const toneText = { warn: 'text-warn', danger: 'text-danger', accent: 'text-accent' } as const
 
 function NeedsAttention({ snapshot }: { snapshot: InventorySnapshot }) {
-  const items = attentionItems(snapshot)
+  const runs = useBackupRuns()
+  const latestDrill = new Map<string, BackupRun>()
+  for (const r of runs.data ?? []) if (r.kind === 'drill' && (r.status === 'succeeded' || r.status === 'failed') && !latestDrill.has(r.appId)) latestDrill.set(r.appId, r)
+  const failedDrills = [...latestDrill.values()].filter((r) => r.status === 'failed')
+  const items = [
+    ...(failedDrills.length > 0
+      ? [{ tone: 'danger' as const, icon: ShieldAlert, title: `${plural(failedDrills.length, 'restore drill')} failed`, detail: `${failedDrills.map((r) => r.appName).join(', ')}: a backup didn't restore cleanly.` }]
+      : []),
+    ...attentionItems(snapshot),
+  ]
   return (
     <Card>
       <CardHeader title="Needs attention" icon={<TriangleAlert className="size-4" />} />

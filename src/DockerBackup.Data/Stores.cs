@@ -122,6 +122,17 @@ public sealed class BackupRunStore(IDbContextFactory<AppDbContext> factory) : IB
         return candidates.FirstOrDefault(r => r.QueuedAt < run.QueuedAt);
     }
 
+    public async Task<IReadOnlyDictionary<string, BackupRun>> LatestByItemAsync(RunKind kind, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        var runs = await db.BackupRuns.AsNoTracking()
+            .Where(r => r.Kind == kind && (r.Status == RunStatus.Succeeded || r.Status == RunStatus.Failed))
+            .OrderByDescending(r => r.QueuedAt)
+            .Take(StateWindow)
+            .ToListAsync(ct);
+        return runs.GroupBy(r => r.AppId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+    }
+
     public async Task<IReadOnlyDictionary<Guid, DateTimeOffset>> LastMaintenanceAsync(CancellationToken ct)
     {
         await using var db = await factory.CreateDbContextAsync(ct);
