@@ -76,6 +76,7 @@ public sealed class SqlServerDrill(ILogger<SqlServerDrill> logger)
 
         var created = await client.Containers.CreateContainerAsync(new CreateContainerParameters
         {
+            Name = DrillService.ContainerName(), // easy to spot (and clean up) if Stowaway dies mid-drill
             Image = manifest.Image,
             Entrypoint = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(StartScript))],
             Labels = new Dictionary<string, string> { [ResticRunner.RunnerLabel] = "true", ["stowaway.purpose"] = "drill" },

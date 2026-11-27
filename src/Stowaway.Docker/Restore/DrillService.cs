@@ -135,6 +135,7 @@ public sealed class DrillService(
 
         var created = await client.Containers.CreateContainerAsync(new CreateContainerParameters
         {
+            Name = ContainerName(), // easy to spot (and clean up) if Stowaway dies mid-drill
             Image = dump.Container.Image,
             Env = check.Environment.ToList(),
             Cmd = check.CommandOverride?.ToList(),
@@ -182,6 +183,9 @@ public sealed class DrillService(
             }
         }
     }
+
+    /// <summary>A unique name for a drill's throwaway database container.</summary>
+    internal static string ContainerName() => $"stowaway-drill-{Guid.NewGuid().ToString("N")[..12]}";
 
     private static async Task WaitReadyAsync(DockerClient client, string id, DrillCheck check, CancellationToken ct)
     {

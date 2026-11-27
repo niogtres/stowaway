@@ -130,7 +130,7 @@ public sealed class SqlServerDumpService(
                 continue; // the folder doesn't exist in this container
             }
 
-            await using var stream = archive.Stream ?? throw new InvalidOperationException($"Docker returned no archive for {source}");
+            await using var stream = new ZeroReadSafeStream(archive.Stream ?? throw new InvalidOperationException($"Docker returned no archive for {source}"));
             await using var reader = new TarReader(stream);
             while (await reader.GetNextEntryAsync(copyData: false, ct) is { } entry)
             {
@@ -199,7 +199,8 @@ public sealed class SqlServerDumpService(
         var received = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         var (exitCode, stderr) = await DockerExec.StreamAsync(client, containerId, ["tar.exe", "-cf", "-", "-C", SqlServerDumps.ContainerDumpDir, "."], async stream =>
         {
-            await using var reader = new TarReader(stream);
+            // leaveOpen: StreamAsync drains the stream after the archive's end and closes it itself.
+            await using var reader = new TarReader(stream, leaveOpen: true);
             while (await reader.GetNextEntryAsync(copyData: false, ct) is { } entry)
             {
                 var name = Path.GetFileName(entry.Name.Replace('\\', '/').TrimEnd('/'));
