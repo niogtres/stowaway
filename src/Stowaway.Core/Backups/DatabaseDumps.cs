@@ -15,19 +15,24 @@ public static class DatabaseDumps
     /// <summary>Where dumps appear inside snapshots.</summary>
     public const string SnapshotDir = "/data/_dumps";
 
-    public static bool Supported(DatabaseKind kind) =>
-        kind is DatabaseKind.PostgreSql or DatabaseKind.MySql or DatabaseKind.MariaDb or DatabaseKind.MongoDb or DatabaseKind.Redis;
+    /// <summary>
+    /// Whether Stowaway can take a consistent copy of this database while it runs. Linux engines: shell-based dumps
+    /// (<see cref="For"/>). Windows engines: SQL Server only (<see cref="SqlServerDumps"/>).
+    /// </summary>
+    public static bool Supported(DatabaseKind kind, string platform = Platforms.Linux) => platform == Platforms.Windows
+        ? kind == DatabaseKind.SqlServer
+        : kind is DatabaseKind.PostgreSql or DatabaseKind.MySql or DatabaseKind.MariaDb or DatabaseKind.MongoDb or DatabaseKind.Redis;
 
-    /// <summary>Dumps for the item's running database containers.</summary>
+    /// <summary>Shell-based dumps for the item's running database containers (Linux engines).</summary>
     public static IReadOnlyList<DumpCommand> For(AppInfo item) =>
         item.Containers
-            .Where(c => c.State == "running" && c.Id.Length > 0 && c.Database is { } kind && Supported(kind))
+            .Where(c => item.Platform == Platforms.Linux && c.State == "running" && c.Id.Length > 0 && c.Database is { } kind && Supported(kind))
             .Select(c => new DumpCommand(c, c.Database!.Value, $"{Safe(c.Name)}.{Extension(c.Database!.Value)}", ["sh", "-c", Script(c.Database!.Value)]))
             .ToList();
 
     /// <summary>Running database containers in the item that can't be dumped (they need stop &amp; start for consistency).</summary>
     public static IReadOnlyList<ContainerInfo> Undumpable(AppInfo item) =>
-        item.Containers.Where(c => c.State == "running" && c.Database is { } kind && !Supported(kind)).ToList();
+        item.Containers.Where(c => c.State == "running" && c.Database is { } kind && !Supported(kind, item.Platform)).ToList();
 
     /// <summary>Environment variables carrying credentials entered in Stowaway; they win over what the container's own environment says.</summary>
     public const string UserVariable = "STOWAWAY_DB_USER";

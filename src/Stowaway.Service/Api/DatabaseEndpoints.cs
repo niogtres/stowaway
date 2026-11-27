@@ -98,7 +98,7 @@ public static class DatabaseEndpoints
                 environment = await credentials.EnvironmentForAsync(container, ct);
             }
 
-            return Results.Ok(await probe.TestAsync(found.Container.Id, found.Container.Database!.Value, environment, ct));
+            return Results.Ok(await probe.TestAsync(found.Container.Id, found.Container.Database!.Value, environment, ct, found.App.Platform));
         });
 
         return api;

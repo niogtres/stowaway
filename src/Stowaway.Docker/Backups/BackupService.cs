@@ -39,6 +39,7 @@ public sealed class BackupService(
     DestinationService destinationService,
     SnapshotCatalog catalog,
     DumpService dumps,
+    SqlServerDumpService sqlDumps,
     ContainerRecreator recreator,
     DrillService drills,
     IBackupEvents events,
@@ -312,6 +313,7 @@ public sealed class BackupService(
         Destination? destination = null;
         var dumpVolume = false;
         var dumpErrors = new List<string>();
+        var windowsDatabaseErrors = new List<string>();
         try
         {
             var item = (inventory.Current is { } snapshot ? BackupItems.Resolve(snapshot, run.AppId) : null)
@@ -367,6 +369,15 @@ public sealed class BackupService(
                 await SaveAsync(run, log);
             }
 
+            // Windows engines: SQL Server keeps its databases inside the container (Business Central images), where
+            // the volume backup can't see them. Running: BACKUP DATABASE; stopped (now or all along): copy the files.
+            if (SqlServerDumps.Containers(item).Count > 0)
+            {
+                Report(run.Id, "backing up SQL Server databases", null, 0, 0, 0, 0);
+                windowsDatabaseErrors.AddRange(await sqlDumps.CreateAsync(client, item, log.Add, ct));
+                await SaveAsync(run, log);
+            }
+
             // Windows engines: files a running container holds open exclusively can only be read through a VSS snapshot,
             // and without one restic may even keep an older copy and report success. Stopped containers hold no locks.
             var useFsSnapshot = runner.OnHost && plan.StopOrder.Count == 0 && item.Containers.Any(c => c.State is "running" or "restarting");
@@ -400,6 +411,13 @@ public sealed class BackupService(
                 run.Status = RunStatus.Failed;
                 var hint = dumpErrors.Any(LooksLikeLoginProblem) ? " If the login is the problem, set the database's credentials in Inventory." : "";
                 run.Error = $"Database dump failed ({string.Join("; ", dumpErrors)}). The files were still copied live.{hint}";
+            }
+            else if (windowsDatabaseErrors.Count > 0)
+            {
+                // These databases live inside the container: without the dump, the snapshot doesn't have them at all.
+                run.Status = RunStatus.Failed;
+                var hint = windowsDatabaseErrors.Any(LooksLikeLoginProblem) ? " If the login is the problem, set the database's credentials in Inventory." : "";
+                run.Error = $"SQL Server backup failed ({string.Join("; ", windowsDatabaseErrors)}). The snapshot doesn't include those databases.{hint}";
             }
             log.Add(string.Create(CultureInfo.InvariantCulture,
                 $"Snapshot {summary.SnapshotId[..8]}: {summary.TotalFilesProcessed} files, {summary.TotalBytesProcessed:N0} bytes processed, {summary.DataAdded:N0} bytes new"));

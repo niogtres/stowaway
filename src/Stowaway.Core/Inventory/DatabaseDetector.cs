@@ -17,6 +17,9 @@ public static class DatabaseDetector
         ("valkey", DatabaseKind.Redis),
         ("keydb", DatabaseKind.Redis),
         ("mssql", DatabaseKind.SqlServer),
+        ("businesscentral", DatabaseKind.SqlServer), // Windows images with SQL Server Express inside
+        ("dynamics-nav", DatabaseKind.SqlServer),
+        ("dynamicsnav", DatabaseKind.SqlServer),
         ("azure-sql-edge", DatabaseKind.SqlServer),
         ("elasticsearch", DatabaseKind.Elasticsearch),
         ("opensearch", DatabaseKind.Elasticsearch),

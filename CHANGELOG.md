@@ -4,6 +4,10 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- **SQL Server in Windows containers** (Business Central, for example): while the container runs, each database is backed up with SQL Server's own copy-only `BACKUP DATABASE`; while it's stopped, its database files are copied out without starting it. Restore drills restore the databases into a temporary container from the same image and run `DBCC CHECKDB`. SQL logins can be set under **Login** when Windows authentication isn't enough.
+
 ## [0.9.0] - 2026-11-27
 
 ### Added

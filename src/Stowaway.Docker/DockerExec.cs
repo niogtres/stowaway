@@ -53,11 +53,16 @@ public static class DockerExec
         }
     }
 
-    public static async Task<ExecResult> RunAsync(DockerClient client, string containerId, IList<string> command, CancellationToken ct, int maxOutput = 64 * 1024, IList<string>? environment = null)
+    /// <param name="windows">
+    /// A Windows container: no <c>sh</c> to wrap the command in, so the exit code comes from Docker. Windows has no
+    /// argv either: Docker joins the arguments into one command line, so call executables directly with plain
+    /// arguments (never <c>cmd /c</c> with anything it would re-parse).
+    /// </param>
+    public static async Task<ExecResult> RunAsync(DockerClient client, string containerId, IList<string> command, CancellationToken ct, int maxOutput = 64 * 1024, IList<string>? environment = null, bool windows = false)
     {
         var exec = await client.Exec.CreateContainerExecAsync(containerId, new ContainerExecCreateParameters
         {
-            Cmd = WithExitCode(command),
+            Cmd = windows ? command : WithExitCode(command),
             Env = environment,
             AttachStdout = true,
             AttachStderr = true,
@@ -91,5 +96,73 @@ public static class DockerExec
 
         var exitCode = await ExitCodeAsync(client, exec.ID, stderr, ct);
         return new ExecResult(exitCode, stdout.ToString().Trim(), stderr.ToString().Trim());
+    }
+
+    /// <summary>
+    /// Runs a command in a Windows container and hands its stdout to <paramref name="consume"/> as a stream (e.g. a tar
+    /// archive). Returns the exit code and the (bounded) stderr.
+    /// </summary>
+    public static async Task<(long ExitCode, string StdErr)> StreamAsync(DockerClient client, string containerId, IList<string> command, Func<Stream, Task> consume, CancellationToken ct)
+    {
+        var exec = await client.Exec.CreateContainerExecAsync(containerId, new ContainerExecCreateParameters
+        {
+            Cmd = command,
+            AttachStdout = true,
+            AttachStderr = true,
+        }, ct);
+
+        var pipe = new System.IO.Pipelines.Pipe();
+        var stderr = new StringBuilder();
+        using var output = await client.Exec.StartContainerExecAsync(exec.ID, new ContainerExecStartParameters(), ct);
+        var produce = Task.Run(async () =>
+        {
+            Exception? failure = null;
+            try
+            {
+                var buffer = new byte[81920];
+                while (true)
+                {
+                    var read = await output.ReadOutputAsync(buffer, 0, buffer.Length, ct);
+                    if (read.EOF)
+                    {
+                        break;
+                    }
+
+                    if (read.Target == MultiplexedStream.TargetStream.StandardError)
+                    {
+                        if (stderr.Length < 16 * 1024)
+                        {
+                            stderr.Append(Encoding.UTF8.GetString(buffer, 0, read.Count));
+                        }
+                    }
+                    else if ((await pipe.Writer.WriteAsync(buffer.AsMemory(0, read.Count), ct)).IsCompleted)
+                    {
+                        break; // the reader gave up
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+            finally
+            {
+                await pipe.Writer.CompleteAsync(failure);
+            }
+        }, ct);
+
+        try
+        {
+            await using var stream = pipe.Reader.AsStream();
+            await consume(stream);
+            await stream.CopyToAsync(Stream.Null, ct); // drain anything after the end of the archive
+        }
+        finally
+        {
+            await pipe.Reader.CompleteAsync();
+            await produce;
+        }
+
+        return (await ExitCodeAsync(client, exec.ID, stderr, ct), stderr.ToString().Trim());
     }
 }
