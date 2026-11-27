@@ -107,7 +107,8 @@ public sealed class BackupRunStore(IDbContextFactory<AppDbContext> factory) : IB
                 g => g.Key,
                 g => new ItemRunState(
                     g.FirstOrDefault(r => r.PlanId is not null)?.Status,
-                    g.Where(r => r.Status == RunStatus.Succeeded).Select(r => r.FinishedAt).FirstOrDefault()),
+                    g.Where(r => r.Status == RunStatus.Succeeded).Select(r => r.FinishedAt).FirstOrDefault(),
+                    g.FirstOrDefault(r => r.PlanId is not null)?.FinishedAt),
                 StringComparer.Ordinal);
     }
 

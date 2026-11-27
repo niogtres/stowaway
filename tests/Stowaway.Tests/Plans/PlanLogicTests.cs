@@ -74,8 +74,15 @@ public sealed class ProtectionEvaluatorTests
     [Fact]
     public void Last_scheduled_failure_wins()
     {
-        var state = new ItemRunState(RunStatus.Failed, Now.AddHours(-1));
+        var state = new ItemRunState(RunStatus.Failed, Now.AddHours(-3), Now.AddHours(-1));
         Assert.Equal(ProtectionStatus.Failing, ProtectionEvaluator.Evaluate(true, [Daily], state, Now));
+    }
+
+    [Fact]
+    public void Later_manual_success_clears_a_scheduled_failure()
+    {
+        var state = new ItemRunState(RunStatus.Failed, Now.AddMinutes(-5), Now.AddHours(-1));
+        Assert.Equal(ProtectionStatus.Protected, ProtectionEvaluator.Evaluate(true, [Daily], state, Now));
     }
 
     [Fact]
