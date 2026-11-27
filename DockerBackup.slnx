@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/DockerBackup.Core/DockerBackup.Core.csproj" />
+    <Project Path="src/DockerBackup.Data/DockerBackup.Data.csproj" />
     <Project Path="src/DockerBackup.Docker/DockerBackup.Docker.csproj" />
     <Project Path="src/DockerBackup.Service/DockerBackup.Service.csproj" />
   </Folder>

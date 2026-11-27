@@ -1,7 +1,7 @@
 import { HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { queryKeys } from './api'
+import { queryKeys, type BackupProgress } from './api'
 
 export type RealtimeState = 'connecting' | 'live' | 'offline'
 
@@ -21,6 +21,23 @@ export function useRealtime(): RealtimeState {
       .build()
 
     connection.on('inventoryUpdated', () => queryClient.invalidateQueries({ queryKey: queryKeys.inventory }))
+    connection.on('destinationsChanged', () => queryClient.invalidateQueries({ queryKey: queryKeys.destinations }))
+    connection.on('backupUpdated', (update: { id: string; status: string }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.backups })
+      if (update.status !== 'running' && update.status !== 'queued') {
+        queryClient.setQueryData<Record<string, BackupProgress>>(queryKeys.progress, (current = {}) => {
+          const rest = { ...current }
+          delete rest[update.id]
+          return rest
+        })
+      }
+    })
+    connection.on('backupProgress', (progress: BackupProgress) =>
+      queryClient.setQueryData<Record<string, BackupProgress>>(queryKeys.progress, (current = {}) => ({
+        ...current,
+        [progress.runId]: progress,
+      })),
+    )
     connection.on('engineStatusChanged', () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.system })
       queryClient.invalidateQueries({ queryKey: queryKeys.inventory })

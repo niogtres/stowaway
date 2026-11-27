@@ -1,6 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DockerBackup.Core.Backups;
+using DockerBackup.Data;
 using DockerBackup.Docker;
+using DockerBackup.Docker.Backups;
 using DockerBackup.Service.Api;
 using DockerBackup.Service.Hosting;
 using DockerBackup.Service.Realtime;
@@ -27,6 +30,7 @@ builder.Services.AddSingleton(serviceOptions);
 builder.Services.AddSerilog(log => log
     .MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .WriteTo.Console()
     .WriteTo.File(
@@ -50,7 +54,13 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 });
 
 builder.Services.AddDockerEngine(builder.Configuration);
+builder.Services.AddDockerBackupData(Path.Combine(paths.Root, "dockerbackup.db"));
+builder.Services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
+builder.Services.AddSingleton<IBackupEvents, SignalRBackupEvents>();
+builder.Services.AddBackupEngine(builder.Configuration);
 builder.Services.AddProblemDetails();
+// Malformed request bodies are the client's fault: answer 400 in every environment, never 500.
+builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = false);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 builder.Services.AddSignalR().AddJsonProtocol(o => o.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 builder.Services.AddHostedService<EventsBroadcaster>();
@@ -63,7 +73,7 @@ app.UseRequestOriginGuard();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGroup("/api").MapSystemEndpoints().MapInventoryEndpoints();
+app.MapGroup("/api").MapSystemEndpoints().MapInventoryEndpoints().MapBackupEndpoints();
 app.MapHub<EventsHub>(EventsHub.Path);
 app.MapFallback("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html");
@@ -73,7 +83,8 @@ app.Lifetime.ApplicationStarted.Register(() =>
         "DockerBackup {Version} listening on https://localhost:{Port} (service: {IsService}, data: {DataDirectory})",
         SystemEndpoints.ProductVersion, serviceOptions.Port, isService, paths.Root));
 
-app.Run();
+await app.Services.MigrateDatabaseAsync();
+await app.RunAsync();
 
 /// <summary>Entry point marker, used by integration tests.</summary>
 public partial class Program;

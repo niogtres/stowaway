@@ -10,6 +10,24 @@ public sealed class EventsHub : Hub
     public const string Path = "/hubs/events";
     public const string InventoryUpdated = "inventoryUpdated";
     public const string EngineStatusChanged = "engineStatusChanged";
+    public const string BackupUpdated = "backupUpdated";
+    public const string BackupProgress = "backupProgress";
+    public const string DestinationsChanged = "destinationsChanged";
+}
+
+/// <summary>Pushes backup and destination changes to browsers.</summary>
+public sealed class SignalRBackupEvents(IHubContext<EventsHub> hub, ILogger<SignalRBackupEvents> logger) : Docker.Backups.IBackupEvents
+{
+    public void RunUpdated(Core.Backups.BackupRun run) => Send(EventsHub.BackupUpdated, new { run.Id, run.Status, run.AppId });
+
+    public void Progress(Core.Backups.BackupProgress progress) => Send(EventsHub.BackupProgress, progress);
+
+    public void DestinationsChanged() => Send(EventsHub.DestinationsChanged, new { });
+
+    private void Send(string method, object payload) =>
+        _ = hub.Clients.All.SendAsync(method, payload).ContinueWith(
+            t => logger.LogDebug(t.Exception, "Broadcasting {Method} failed", method),
+            TaskContinuationOptions.OnlyOnFaulted);
 }
 
 /// <summary>Forwards domain change events to connected browsers.</summary>

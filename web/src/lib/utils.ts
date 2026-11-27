@@ -47,3 +47,10 @@ export function timeAgo(iso: string, now = Date.now()) {
 export function shortVolumeName(name: string, anonymous: boolean) {
   return anonymous ? name.slice(0, 12) : name
 }
+
+/** Relative time for past or future instants. */
+export function relativeTime(iso: string | null, now = Date.now()) {
+  if (!iso) return '—'
+  const diff = new Date(iso).getTime() - now
+  return diff > 0 ? `in ${formatDuration(new Date(now - diff).toISOString(), now)}` : timeAgo(iso, now)
+}

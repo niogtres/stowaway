@@ -3,6 +3,7 @@ import { Boxes, Container, Database, FolderTree, Layers, RefreshCw, Search, Tria
 import { useDeferredValue, useMemo, useState } from 'react'
 import emptyInventory from '@/assets/illustrations/empty-inventory.webp'
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
+import { AppBackupStatus, BackupNowDialog } from '@/components/backup'
 import { ContainerRow, MountRow, ProtectionChip } from '@/components/inventory'
 import { Badge, Card, Skeleton } from '@/components/ui'
 import { useInventory, useRefreshInventory, type AppInfo, type InventorySnapshot, type MountInfo, type VolumeInfo } from '@/lib/api'
@@ -189,6 +190,7 @@ function SummaryStrip({ snapshot, refreshing, onRefresh }: { snapshot: Inventory
 }
 
 function AppCard({ app }: { app: AppInfo }) {
+  const [backingUp, setBackingUp] = useState(false)
   // The same source mounted at the same path by several containers is one piece of data: show it once.
   const mounts = [
     ...app.containers
@@ -202,7 +204,7 @@ function AppCard({ app }: { app: AppInfo }) {
       .values(),
   ]
   return (
-    <Card className="h-full">
+    <Card className="flex h-full flex-col">
       <header className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -236,6 +238,10 @@ function AppCard({ app }: { app: AppInfo }) {
           ))}
         </div>
       )}
+
+      <div className="mt-auto" />
+      <AppBackupStatus app={app} onBackup={() => setBackingUp(true)} />
+      <BackupNowDialog app={app} open={backingUp} onClose={() => setBackingUp(false)} />
     </Card>
   )
 }

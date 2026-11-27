@@ -184,6 +184,14 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 ### Implementation notes
 - **M0 (done):** service host, HTTPS on loopback, engine monitor, UI shell, MSI, CI.
 - **M1 (done):** discovery. Apps are grouped by compose project. Bind sources are mapped back to Windows paths (`/run/desktop/mnt/host/x/...` → `X:\...`). Sockets, tmpfs, system paths and whole drives are excluded by default. Volume sizes come from `/system/df` (raw HTTP over the pipe, because the client library lacks it); bind sizes come from a budgeted walk of the host filesystem. Engine events trigger debounced rescans, and changes are pushed to the UI over SignalR. "Locally built image" = no registry digest **or** Compose build labels: with the containerd image store, local builds have digests too. A request-origin guard protects hub and write endpoints against cross-site WebSocket and CSRF attacks.
+- **M2 (done):** backup core.
+  - **Runner:** `restic/restic:0.19.1` (pinned), in ephemeral containers labelled `dockerbackup.runner`. Leftovers are removed at startup. No network for local/SMB destinations, `no-new-privileges`, and a persistent `dockerbackup-restic-cache` volume.
+  - **Repository password:** placed as a file inside the container before start (not in env, so never visible in `docker inspect`).
+  - **SMB destinations:** a CIFS volume (`local` driver, `type=cifs`) created per run and removed afterwards, so share credentials only exist on the engine during a run. Commas in credentials are doubled for the CIFS option parser. *Only verified by unit tests so far: no SMB share was available on the dev host.*
+  - **Snapshot layout:** `/data/<container>/<mount path>` plus `/data/_dockerbackup/` (app.json, run.json, container inspect JSON, compose files and `.env`). Tags: `dockerbackup`, `app=<id>`, `run=<id>`; host = machine name.
+  - **Strategies:** *Live*, or *Stop & start*. Stop & start stops dependents first (from the `com.docker.compose.depends_on` label) and always restarts in dependency order, even on failure or cancel. Downtime is recorded per run.
+  - **Queue:** one backup at a time. Interrupted runs are marked failed at startup.
+  - **Persistence:** SQLite through EF Core with migrations (`dotnet ef migrations add <Name> --project src/DockerBackup.Data --startup-project src/DockerBackup.Data`).
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 

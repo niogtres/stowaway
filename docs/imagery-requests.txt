@@ -70,6 +70,18 @@ Prompt (banner):
    on the far right a small shield-and-layers logo mark (~40 px tall) with a faint teal glow. No text."
 
 -----------------------------------------------------------------
+5) MORE EMPTY STATES (set of 2)              PRIORITY: MEDIUM (M2/M3)
+-----------------------------------------------------------------
+Files:     empty-activity.png, empty-destinations.png
+Size/style: exactly as section 2 (1200x900 transparent PNG, same shared style prefix).
+Currently the Activity page reuses empty-plans.png and Destinations shows only an icon.
+  a) empty-activity.png: "...a vertical timeline of three small rounded cards with a soft progress
+     ring on the newest one, faint motion trails between them (backup runs happening over time)."
+  b) empty-destinations.png: "...a translucent stacked-layer block hovering above two pedestals: a
+     small external drive and a small NAS box with a shield emblem, a dotted arc linking them
+     (data going somewhere safe)."
+
+-----------------------------------------------------------------
 4) README / SOCIAL PREVIEW                   PRIORITY: LOW
 -----------------------------------------------------------------
 File:      social-preview.png  1280x640 PNG, opaque

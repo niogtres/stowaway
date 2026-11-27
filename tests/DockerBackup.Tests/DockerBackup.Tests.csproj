@@ -15,5 +15,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DockerBackup.Service\DockerBackup.Service.csproj" />
+    <ProjectReference Include="..\..\src\DockerBackup.Data\DockerBackup.Data.csproj" />
   </ItemGroup>
 </Project>

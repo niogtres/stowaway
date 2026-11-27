@@ -142,6 +142,31 @@ public sealed class ServiceHostTests(ServiceFactory factory) : IClassFixture<Ser
         Assert.Equal(expected, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("""{"name":"x","kind":"local","path":"relative/path"}""", "full folder path")]
+    [InlineData("""{"name":"","kind":"local","path":"D:/Backups"}""", "name")]
+    [InlineData("""{"name":"nas","kind":"smb","path":"D:/Backups"}""", "network path")]
+    public async Task Invalid_destinations_are_rejected_with_a_readable_problem(string body, string expectedFragment)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/destinations")
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("X-DockerBackup-Request", "1");
+        var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var text = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(text.Contains(expectedFragment, StringComparison.OrdinalIgnoreCase), text);
+    }
+
+    [Fact]
+    public async Task Destination_listing_never_includes_secrets()
+    {
+        var json = await _client.GetStringAsync("/api/destinations", TestContext.Current.CancellationToken);
+        Assert.DoesNotContain("protected", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task Responses_carry_security_headers()
     {

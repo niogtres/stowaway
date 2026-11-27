@@ -144,6 +144,7 @@ public static partial class InventoryBuilder
         Health = string.IsNullOrWhiteSpace(c.Health) || c.Health == "none" ? null : c.Health,
         CreatedAt = c.Created,
         ComposeService = c.Labels.GetValueOrDefault(ComposeServiceLabel),
+        ComposeDependsOn = c.Labels.GetValueOrDefault(Backups.ComposeOrder.DependsOnLabel),
         Database = DatabaseDetector.Detect(c.Image),
         Mounts = c.Mounts.Select(m => MapMount(m, sizes)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
     };

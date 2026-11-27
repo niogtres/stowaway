@@ -4,7 +4,7 @@ import { ArrowRight, Boxes, CheckCircle2, Circle, Cpu, Database, HeartPulse, Lay
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
 import { ProtectionRing } from '@/components/ProtectionRing'
 import { Badge, Card, CardHeader, Skeleton, Stat, StatusDot } from '@/components/ui'
-import { useInventory, useSystemInfo, type InventorySnapshot, type SystemInfo } from '@/lib/api'
+import { useDestinations, useInventory, useSystemInfo, type InventorySnapshot, type SystemInfo } from '@/lib/api'
 import { cn, formatBytes, formatNumber } from '@/lib/utils'
 
 const rise = {
@@ -20,6 +20,7 @@ function greeting() {
 export function Dashboard() {
   const { data, isPending } = useSystemInfo()
   const inventory = useInventory()
+  const destinations = useDestinations()
   const snapshot = inventory.data?.snapshot ?? null
   const score = snapshot?.totals.protectionScore ?? null
 
@@ -49,7 +50,7 @@ export function Dashboard() {
         </motion.div>
 
         <motion.div variants={rise} initial="hidden" animate="show" custom={3}>
-          <GettingStarted engineConnected={data?.engine.reachable ?? false} discovered={snapshot !== null} />
+          <GettingStarted engineConnected={data?.engine.reachable ?? false} discovered={snapshot !== null} hasDestination={(destinations.data?.length ?? 0) > 0} />
         </motion.div>
 
         {snapshot && (
@@ -143,11 +144,11 @@ function DataCard({ snapshot, loading }: { snapshot: InventorySnapshot | null; l
   )
 }
 
-function GettingStarted({ engineConnected, discovered }: { engineConnected: boolean; discovered: boolean }) {
+function GettingStarted({ engineConnected, discovered, hasDestination }: { engineConnected: boolean; discovered: boolean; hasDestination: boolean }) {
   const steps = [
     { label: 'Connect to Docker', done: engineConnected },
     { label: 'Discover containers and volumes', done: discovered },
-    { label: 'Add a backup destination', done: false },
+    { label: 'Add a backup destination', done: hasDestination },
     { label: 'Create your first plan', done: false },
   ]
   return (

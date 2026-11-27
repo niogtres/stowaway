@@ -100,6 +100,9 @@ public sealed record ContainerInfo
     public string? Health { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public string? ComposeService { get; init; }
+
+    /// <summary>Raw <c>com.docker.compose.depends_on</c> label, used to order stop/start.</summary>
+    public string? ComposeDependsOn { get; init; }
     public DatabaseKind? Database { get; init; }
     public required IReadOnlyList<MountInfo> Mounts { get; init; }
 }

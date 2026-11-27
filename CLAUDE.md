@@ -7,6 +7,8 @@ Design and decisions: [docs/DESIGN.md](docs/DESIGN.md). Read §10 (decisions) be
 - `src/DockerBackup.Core`: domain types, no infrastructure dependencies.
 - `src/DockerBackup.Docker`: Docker Engine access (Docker.DotNet.Enhanced, builder API: `new DockerClientBuilder().WithEndpoint(..).Build()`).
 - `web/`: React 19 + Vite 8 + TS 7 + Tailwind v4. `npm run build` writes into the service's `wwwroot`.
+- `src/DockerBackup.Data`: EF Core + SQLite (destinations, runs). Add migrations with `dotnet tool restore` then `dotnet ef migrations add <Name> --project src/DockerBackup.Data --startup-project src/DockerBackup.Data`.
+- Backups run restic in ephemeral `restic/restic:<pinned>` containers (`ResticRunner`); bump the pin deliberately and re-run the integration tests.
 - `installer/`: WiX **v5** MSI (do not upgrade to v6+ without approval: it requires accepting the OSMF EULA).
 - `tests/DockerBackup.Tests`: xUnit v3 on Microsoft.Testing.Platform (`global.json` opts in).
 

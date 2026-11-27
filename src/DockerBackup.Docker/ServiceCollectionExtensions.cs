@@ -1,5 +1,6 @@
 using DockerBackup.Core.Engine;
 using DockerBackup.Core.Inventory;
+using DockerBackup.Docker.Backups;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -21,6 +22,19 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<InventoryService>();
         services.AddSingleton<IInventoryProvider>(sp => sp.GetRequiredService<InventoryService>());
         services.AddHostedService(sp => sp.GetRequiredService<InventoryService>());
+        return services;
+    }
+
+    /// <summary>Backup engine. The host must also register <see cref="IBackupEvents"/>, the stores and a secret protector.</summary>
+    public static IServiceCollection AddBackupEngine(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<BackupOptions>(configuration.GetSection(BackupOptions.SectionName));
+        services.AddSingleton<ResticRunner>();
+        services.AddSingleton<ResticRepository>();
+        services.AddSingleton<DestinationService>();
+        services.AddSingleton<BackupService>();
+        services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
+        services.AddHostedService<DestinationMonitor>();
         return services;
     }
 }

@@ -34,7 +34,6 @@ public sealed class DockerEngineMonitor(
         {
             var previous = _current;
             var next = await ProbeAsync(stoppingToken);
-            _current = next;
             LogTransition(previous, next);
             if (previous.Reachable != next.Reachable || previous.Endpoint != next.Endpoint)
             {
@@ -44,8 +43,16 @@ public sealed class DockerEngineMonitor(
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    /// <summary>Probes candidates in order (last known-good first) and returns the first reachable engine.</summary>
+    /// <summary>Probes the engine now and updates <see cref="Current"/>.</summary>
     public async Task<EngineStatus> ProbeAsync(CancellationToken ct)
+    {
+        var status = await ProbeCandidatesAsync(ct);
+        _current = status;
+        return status;
+    }
+
+    /// <summary>Tries candidates in order (last known-good first) and returns the first reachable engine.</summary>
+    private async Task<EngineStatus> ProbeCandidatesAsync(CancellationToken ct)
     {
         var candidates = DockerEndpointResolver
             .Candidates(_options.Endpoint, Environment.GetEnvironmentVariable("DOCKER_HOST"))

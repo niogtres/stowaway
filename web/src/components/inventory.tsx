@@ -25,7 +25,7 @@ const protectionHints: Record<ProtectionStatus, string> = {
   protected: 'Covered by a healthy plan',
   stale: 'Covered, but the last successful backup is overdue',
   failing: 'Covered, but the last backup failed',
-  unprotected: 'Holds data that no plan covers yet',
+  unprotected: 'No scheduled backup plan covers this data yet (manual backups don\'t count)',
   excluded: 'Deliberately not backed up',
   stateless: 'Holds no persistent data: nothing to back up',
 }

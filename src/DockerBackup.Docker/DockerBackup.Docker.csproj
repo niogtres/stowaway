@@ -6,4 +6,7 @@
     <PackageReference Include="Docker.DotNet.Enhanced" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="DockerBackup.Tests" />
+  </ItemGroup>
 </Project>

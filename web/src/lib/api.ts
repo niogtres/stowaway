@@ -124,6 +124,73 @@ export interface InventoryResponse {
   snapshot: InventorySnapshot | null
 }
 
+// ---- Backups -------------------------------------------------------------
+
+export type DestinationKind = 'local' | 'smb'
+export type BackupStrategy = 'live' | 'stopStart'
+export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+export interface DestinationStatus {
+  reachable: boolean
+  error: string | null
+  snapshots: number | null
+  storedBytes: number | null
+  lastSnapshotAt: string | null
+  checkedAt: string
+}
+
+export interface Destination {
+  id: string
+  name: string
+  kind: DestinationKind
+  path: string
+  smbUsername: string | null
+  smbDomain: string | null
+  repositoryId: string | null
+  createdAt: string
+  status: DestinationStatus | null
+}
+
+export interface CreateDestination {
+  name: string
+  kind: DestinationKind
+  path: string
+  smbUsername?: string
+  smbPassword?: string
+  smbDomain?: string
+  existingRepositoryPassword?: string
+}
+
+export interface BackupRun {
+  id: string
+  appId: string
+  appName: string
+  destinationId: string
+  strategy: BackupStrategy
+  trigger: string
+  status: RunStatus
+  queuedAt: string
+  startedAt: string | null
+  finishedAt: string | null
+  snapshotId: string | null
+  filesProcessed: number | null
+  bytesProcessed: number | null
+  bytesAdded: number | null
+  downtimeSeconds: number | null
+  error: string | null
+  log: string
+}
+
+export interface BackupProgress {
+  runId: string
+  phase: string
+  percent: number | null
+  bytesDone: number
+  totalBytes: number
+  filesDone: number
+  totalFiles: number
+}
+
 // ---- Transport ------------------------------------------------------------
 
 export class ApiError extends Error {
@@ -135,23 +202,38 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: 'GET' | 'POST', path: string): Promise<T | undefined> {
+type Method = 'GET' | 'POST' | 'DELETE'
+
+async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   // Required by the server for state-changing calls (anti-CSRF; see RequestOriginGuard).
   if (method !== 'GET') headers['X-DockerBackup-Request'] = '1'
-  const response = await fetch(path, { method, headers })
-  if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
-  if (response.status === 202 || response.status === 204) return undefined
-  return (await response.json()) as T
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`
+    try {
+      const problem = (await response.json()) as { detail?: string; title?: string }
+      message = problem.detail ?? problem.title ?? message
+    } catch {
+      // not JSON
+    }
+    throw new ApiError(response.status, message)
+  }
+  const text = await response.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
-const getJson = async <T>(path: string) => (await request<T>('GET', path)) as T
+const getJson = <T>(path: string) => request<T>('GET', path)
 
 // ---- Hooks ----------------------------------------------------------------
 
 export const queryKeys = {
   system: ['system'] as const,
   inventory: ['inventory'] as const,
+  destinations: ['destinations'] as const,
+  backups: ['backups'] as const,
+  progress: ['backupProgress'] as const,
 }
 
 export function useSystemInfo() {
@@ -174,11 +256,81 @@ export function useInventory() {
 export function useRefreshInventory() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => request('POST', '/api/inventory/refresh'),
+    mutationFn: () => request<void>('POST', '/api/inventory/refresh'),
     onSuccess: () => {
       // The rescan is debounced server-side; the hub announces the result. Refetch shortly as a fallback.
       setTimeout(() => queryClient.invalidateQueries({ queryKey: queryKeys.inventory }), 2500)
     },
+  })
+}
+
+export function useDestinations() {
+  return useQuery({
+    queryKey: queryKeys.destinations,
+    queryFn: () => getJson<Destination[]>('/api/destinations'),
+    refetchInterval: 120_000,
+  })
+}
+
+export function useCreateDestination() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CreateDestination) => request<Destination>('POST', '/api/destinations', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.destinations }),
+  })
+}
+
+export function useCheckDestination() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => request<DestinationStatus>('POST', `/api/destinations/${id}/check`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.destinations }),
+  })
+}
+
+export function useDeleteDestination() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => request<void>('DELETE', `/api/destinations/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.destinations }),
+  })
+}
+
+export const revealRecoveryKey = (id: string) =>
+  request<{ recoveryKey: string }>('POST', `/api/destinations/${id}/recovery-key`).then((r) => r.recoveryKey)
+
+export function useBackupRuns(limit = 200) {
+  return useQuery({
+    queryKey: [...queryKeys.backups, limit],
+    queryFn: () => getJson<BackupRun[]>(`/api/backups?limit=${limit}`),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useStartBackup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { appId: string; destinationId: string; strategy: BackupStrategy }) =>
+      request<BackupRun>('POST', '/api/backups', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.backups }),
+  })
+}
+
+export function useCancelBackup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => request<void>('POST', `/api/backups/${id}/cancel`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.backups }),
+  })
+}
+
+/** Latest progress per running backup, fed by SignalR (see realtime.ts). */
+export function useBackupProgress() {
+  return useQuery<Record<string, BackupProgress>>({
+    queryKey: queryKeys.progress,
+    queryFn: () => ({}),
+    staleTime: Infinity,
+    initialData: {},
   })
 }
 
