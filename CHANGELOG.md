@@ -9,6 +9,10 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 - The sidebar no longer shows the signed-in user name (it can be an email address).
 - Help: *Signing in* now also covers signing in from another computer with a Stowaway account.
 
+### Fixed
+
+- An app stayed **Failing** after a successful *Back up now* that followed a failed scheduled backup. Any later successful backup now clears it.
+
 ## [0.8.0] - 2026-11-27
 
 The first public release.
