@@ -83,9 +83,8 @@ export function AppShell() {
           )}
           {me.data?.signInRequired && (
             <div className="flex items-center gap-1">
-              <span className="truncate" title={me.data.method === 'account' ? 'Signed in remotely' : 'Signed in with Windows'}>
-                {me.data.name}
-              </span>
+              {/* No user names on screen: they can be email addresses, and screens get shared and screenshotted. */}
+              <span className="truncate">{me.data.method === 'account' ? 'Remote session' : 'Windows sign-in'}</span>
               {me.data.method === 'account' && (
                 <button
                   type="button"
