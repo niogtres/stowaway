@@ -4,7 +4,7 @@
 
 **Sensible Docker backup management.**
 
-Stowaway backs up everything Docker holds on a Windows 10/11 computer (containers, compose stacks, volumes and bind mounts) on a schedule, and restores it when you need to. It runs as a Windows service and you manage it from a web page at **https://localhost:8484**.
+Stowaway backs up the apps you run in Docker on a Windows computer (their volumes, their databases and their compose project folders) on a schedule, and restores them when you need to. It runs as a Windows service and you manage it from a web page at **https://localhost:8484**.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -25,7 +25,16 @@ Stowaway backs up everything Docker holds on a Windows 10/11 computer (container
 2. Open **Stowaway** from the Start menu (https://localhost:8484).
 3. Add a destination, create a backup plan, done.
 
-You need Docker Desktop with Linux containers (or Docker Engine in WSL). The [user guide](docs/USER-GUIDE.md) covers everything, including remote access and troubleshooting. The same guide is built into Stowaway under **Help**.
+See [Requirements](#requirements) for what it runs on. The [user guide](docs/USER-GUIDE.md) covers everything, including remote access and troubleshooting. The same guide is built into Stowaway under **Help**.
+
+## Requirements
+
+- **64-bit Windows:** Windows 10 or 11, or Windows Server 2022 or later. Stowaway itself is a Windows program (service, Windows sign-in, tray, installer); Windows on Arm is untested.
+- **A Docker engine running Linux containers**, reachable from Windows:
+  - **Docker Desktop** (the default; this is what Stowaway is tested with, on Windows 11).
+  - **Docker Engine inside WSL 2**, for example on Windows Server where Docker Desktop isn't supported. Point Stowaway at it with the system environment variable `Stowaway__Docker__Endpoint` (or `DOCKER_HOST`), for example `tcp://localhost:2375`, and restart the service. Should work; not tested yet.
+  - Other Docker-compatible engines (Rancher Desktop, Podman) may work; untested.
+- **Not supported:** Windows containers, and running Stowaway on Linux or macOS (it backs up Linux *containers*, but the computer running Stowaway must be Windows).
 
 ## Documentation
 

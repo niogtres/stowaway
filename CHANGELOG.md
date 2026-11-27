@@ -32,6 +32,10 @@ The first public release.
 - Stowaway's own temporary containers and volumes (backup runners, dump and drill scratch space, the restic cache) no longer appear in the inventory.
 - The installer starts the tray icon when you click Finish, and the tray closes and restarts cleanly during upgrades.
 
+### Notes
+
+- Runs on 64-bit Windows 10/11 and Windows Server 2022+, with a Linux-container Docker engine: tested with Docker Desktop on Windows 11; Docker Engine in WSL 2 and other Docker-compatible engines should work but are untested. Windows containers aren't supported.
+
 ### Fixed
 
 Since the internal 0.7.x builds:
