@@ -1,272 +1,133 @@
 import { ShieldCheck, TriangleAlert } from 'lucide-react'
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { DropboxConnect, DropboxFolderInput, type DropboxSignIn } from '@/components/DropboxConnect'
+import { createElement, useState, type FormEvent } from 'react'
+import { DestinationFields } from '@/components/DestinationFields'
+import { DropboxConnect, type DropboxSignIn } from '@/components/DropboxConnect'
 import { Button, Dialog, Field, TextInput } from '@/components/forms'
-import { destinationKinds } from '@/lib/destinations'
-import { useCreateDestination, useDestinations, type DestinationKind } from '@/lib/api'
+import { iconFor, splitValues, type Values } from '@/lib/destinations'
+import { useCreateDestination, useDestinations, useDestinationTypes, type DestinationKind, type DestinationType } from '@/lib/api'
 import { cn } from '@/lib/utils'
-
-type Values = Record<string, string>
-
-const placeholders: Partial<Record<DestinationKind, string>> = { local: 'Backup disk', smb: 'NAS', s3: 'S3', b2: 'Backblaze', azure: 'Azure', sftp: 'Offsite server', dropbox: 'Dropbox' }
 
 /** Mounted only while open (see Destinations page), so state starts fresh each time. */
 export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
-  const create = useCreateDestination()
+  const types = useDestinationTypes().data ?? []
   const [kind, setKind] = useState<DestinationKind>('local')
-  const [v, setV] = useState<Values>({ endpoint: 'https://s3.amazonaws.com', port: '22' })
+  const [name, setName] = useState('')
+  const type = types.find((t) => t.kind === kind)
+
+  return (
+    <Dialog open onClose={onClose} title="Add destination" description="Where should backups be stored?" className="w-[min(42rem,calc(100vw-2rem))]">
+      <div className="space-y-4">
+        <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Destination type">
+          {types.map((t) => (
+            <button
+              key={t.kind}
+              type="button"
+              role="radio"
+              aria-checked={kind === t.kind}
+              onClick={() => setKind(t.kind)}
+              className={cn('flex flex-col items-start gap-1 rounded-xl border p-2.5 text-left transition', kind === t.kind ? 'border-accent bg-accent-soft' : 'border-line hover:border-muted')}
+            >
+              {createElement(iconFor(t.icon), { className: cn('size-4', kind === t.kind ? 'text-accent' : 'text-muted') })}
+              <span className="text-xs font-medium">{t.label}</span>
+            </button>
+          ))}
+        </div>
+        {/* Keyed by type, so switching starts with that type's defaults. */}
+        {type && <AddForm key={type.kind} type={type} name={name} setName={setName} onClose={onClose} />}
+      </div>
+    </Dialog>
+  )
+}
+
+function AddForm({ type, name, setName, onClose }: { type: DestinationType; name: string; setName: (name: string) => void; onClose: () => void }) {
+  const create = useCreateDestination()
+  const [values, setValues] = useState<Values>(() => Object.fromEntries(type.fields.filter((f) => f.default).map((f) => [f.key, f.default!])))
   const [connectExisting, setConnectExisting] = useState(false)
-  const [dropbox, setDropbox] = useState<DropboxSignIn | null>(null)
-  const existingDropbox = (useDestinations().data ?? []).filter((d) => d.kind === 'dropbox')
-  // '' = connect another account; otherwise reuse the sign-in of that destination.
-  const [dropboxFrom, setDropboxFrom] = useState<string | null>(null)
-  const reuseFrom = dropboxFrom ?? existingDropbox[0]?.id ?? ''
-  const set = (key: string) => (e: { target: { value: string } }) => setV((x) => ({ ...x, [key]: e.target.value }))
-  const val = (key: string) => v[key] ?? ''
+  const [existingKey, setExistingKey] = useState('')
+  const [signIn, setSignIn] = useState<DropboxSignIn | null>(null)
+
+  // Types with a browser sign-in can reuse the sign-in of a destination of the same type.
+  const sameType = (useDestinations().data ?? []).filter((d) => d.kind === type.kind)
+  const [reuseChoice, setReuseChoice] = useState<string | null>(null)
+  const reuseFrom = type.signIn ? (reuseChoice ?? sameType[0]?.id ?? '') : ''
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const settings: Values = {}
-    const secrets: Values = {}
-    const pick = (target: Values, ...keys: string[]) => keys.forEach((k) => val(k) && (target[k] = val(k)))
-    switch (kind) {
-      case 's3':
-        pick(settings, 'endpoint', 'bucket', 'prefix', 'region')
-        pick(secrets, 'accessKeyId', 'secretAccessKey')
-        break
-      case 'b2':
-        pick(settings, 'bucket', 'prefix')
-        pick(secrets, 'accountId', 'accountKey')
-        break
-      case 'azure':
-        pick(settings, 'accountName', 'bucket', 'prefix')
-        pick(secrets, 'accountKey')
-        break
-      case 'sftp':
-        pick(settings, 'host', 'port', 'user', 'path')
-        pick(secrets, 'privateKey')
-        break
-      case 'dropbox':
-        pick(settings, 'prefix')
-        break
-    }
+    const { settings, secrets } = splitValues(type.fields, values)
     create.mutate(
       {
-        name: val('name'),
-        kind,
-        path: val('path'),
-        smbUsername: kind === 'smb' ? val('smbUsername') : undefined,
-        smbPassword: kind === 'smb' ? val('smbPassword') : undefined,
-        smbDomain: kind === 'smb' ? val('smbDomain') : undefined,
-        existingRepositoryPassword: connectExisting ? val('existing') : undefined,
+        name,
+        kind: type.kind,
         settings,
         secrets,
-        dropboxSession: kind === 'dropbox' && !reuseFrom ? dropbox?.id : undefined,
-        credentialsFrom: kind === 'dropbox' && reuseFrom ? reuseFrom : undefined,
+        existingRepositoryPassword: connectExisting ? existingKey : undefined,
+        signInSession: type.signIn && !reuseFrom ? signIn?.id : undefined,
+        credentialsFrom: reuseFrom || undefined,
       },
       { onSuccess: onClose },
     )
   }
 
-  const ready = kind !== 'dropbox' || !!reuseFrom || dropbox?.state === 'ready'
+  const ready = !type.signIn || !!reuseFrom || signIn?.state === 'ready'
 
   return (
-    <Dialog open onClose={onClose} title="Add destination" description="Where should backups be stored?" className="w-[min(42rem,calc(100vw-2rem))]">
-      <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Destination type">
-          {destinationKinds.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              role="radio"
-              aria-checked={kind === o.id}
-              onClick={() => setKind(o.id)}
-              className={cn('flex flex-col items-start gap-1 rounded-xl border p-2.5 text-left transition', kind === o.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-muted')}
-            >
-              <o.icon className={cn('size-4', kind === o.id ? 'text-accent' : 'text-muted')} />
-              <span className="text-xs font-medium">{o.label}</span>
-            </button>
-          ))}
-        </div>
+    <form onSubmit={submit} className="space-y-4">
+      <Field label="Name">
+        <TextInput required value={name} onChange={(e) => setName(e.target.value)} placeholder={type.namePlaceholder} autoFocus />
+      </Field>
 
-        <Field label="Name">
-          <TextInput required value={val('name')} onChange={set('name')} placeholder={placeholders[kind]} autoFocus />
+      {type.signIn === 'dropbox' && (
+        <>
+          {sameType.length > 0 && (
+            <Field label="Dropbox account" hint="Reuse the account of a Dropbox destination you already have, or connect another one.">
+              <select
+                value={reuseFrom}
+                onChange={(e) => setReuseChoice(e.target.value)}
+                className="w-full rounded-xl border border-line bg-surface-strong px-3 py-2 text-sm outline-none focus:border-accent"
+              >
+                {sameType.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    Same account as {d.name} ({d.path})
+                  </option>
+                ))}
+                <option value="">Connect another Dropbox account</option>
+              </select>
+            </Field>
+          )}
+          {!reuseFrom && <DropboxConnect value={signIn} onChange={setSignIn} />}
+        </>
+      )}
+
+      <DestinationFields fields={type.fields} values={values} onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))} />
+      {type.notes && <p className="text-xs text-muted">{type.notes}</p>}
+
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={connectExisting} onChange={(e) => setConnectExisting(e.target.checked)} className="accent-[var(--accent)]" />
+        This location already has Stowaway backups (connect with its recovery key)
+      </label>
+      {connectExisting && (
+        <Field label="Recovery key">
+          <TextInput required type="password" value={existingKey} onChange={(e) => setExistingKey(e.target.value)} className="font-mono" />
         </Field>
+      )}
 
-        {kind === 'local' && (
-          <Field label="Folder" hint="For example D:\Backups\docker. It will be created if needed.">
-            <TextInput required value={val('path')} onChange={set('path')} className="font-mono" placeholder="D:\Backups\docker" />
-          </Field>
-        )}
-
-        {kind === 'smb' && (
-          <>
-            <Field label="Share path" hint="For example \\nas\backups\docker">
-              <TextInput required value={val('path')} onChange={set('path')} className="font-mono" placeholder="\\nas\backups\docker" />
-            </Field>
-            <Grid>
-              <Field label="Username" hint="Leave empty for guest access">
-                <TextInput value={val('smbUsername')} onChange={set('smbUsername')} autoComplete="off" />
-              </Field>
-              <Field label="Password">
-                <TextInput type="password" value={val('smbPassword')} onChange={set('smbPassword')} autoComplete="new-password" />
-              </Field>
-              <Field label="Domain (optional)">
-                <TextInput value={val('smbDomain')} onChange={set('smbDomain')} autoComplete="off" />
-              </Field>
-            </Grid>
-          </>
-        )}
-
-        {kind === 's3' && (
-          <>
-            <Field label="Endpoint" hint="AWS: https://s3.amazonaws.com. Also works with MinIO, Wasabi, Cloudflare R2 and other S3-compatible services.">
-              <TextInput required value={val('endpoint')} onChange={set('endpoint')} className="font-mono" />
-            </Field>
-            <Grid>
-              <Field label="Bucket">
-                <TextInput required value={val('bucket')} onChange={set('bucket')} className="font-mono" />
-              </Field>
-              <Field label="Folder in bucket (optional)">
-                <TextInput value={val('prefix')} onChange={set('prefix')} className="font-mono" placeholder="docker" />
-              </Field>
-              <Field label="Access key ID">
-                <TextInput required value={val('accessKeyId')} onChange={set('accessKeyId')} autoComplete="off" />
-              </Field>
-              <Field label="Secret access key">
-                <TextInput required type="password" value={val('secretAccessKey')} onChange={set('secretAccessKey')} autoComplete="new-password" />
-              </Field>
-              <Field label="Region (optional)">
-                <TextInput value={val('region')} onChange={set('region')} placeholder="eu-west-1" />
-              </Field>
-            </Grid>
-          </>
-        )}
-
-        {kind === 'b2' && (
-          <Grid>
-            <Field label="Bucket">
-              <TextInput required value={val('bucket')} onChange={set('bucket')} className="font-mono" />
-            </Field>
-            <Field label="Folder in bucket (optional)">
-              <TextInput value={val('prefix')} onChange={set('prefix')} className="font-mono" placeholder="docker" />
-            </Field>
-            <Field label="Application key ID">
-              <TextInput required value={val('accountId')} onChange={set('accountId')} autoComplete="off" />
-            </Field>
-            <Field label="Application key">
-              <TextInput required type="password" value={val('accountKey')} onChange={set('accountKey')} autoComplete="new-password" />
-            </Field>
-          </Grid>
-        )}
-
-        {kind === 'azure' && (
-          <Grid>
-            <Field label="Storage account">
-              <TextInput required value={val('accountName')} onChange={set('accountName')} className="font-mono" />
-            </Field>
-            <Field label="Account key">
-              <TextInput required type="password" value={val('accountKey')} onChange={set('accountKey')} autoComplete="new-password" />
-            </Field>
-            <Field label="Container">
-              <TextInput required value={val('bucket')} onChange={set('bucket')} className="font-mono" />
-            </Field>
-            <Field label="Folder (optional)">
-              <TextInput value={val('prefix')} onChange={set('prefix')} className="font-mono" placeholder="docker" />
-            </Field>
-          </Grid>
-        )}
-
-        {kind === 'sftp' && (
-          <>
-            <div className="grid grid-cols-[1fr_6rem_1fr] gap-3">
-              <Field label="Server">
-                <TextInput required value={val('host')} onChange={set('host')} className="font-mono" placeholder="backup.example.com" />
-              </Field>
-              <Field label="Port">
-                <TextInput value={val('port')} onChange={set('port')} inputMode="numeric" />
-              </Field>
-              <Field label="User">
-                <TextInput required value={val('user')} onChange={set('user')} className="font-mono" />
-              </Field>
-            </div>
-            <Field label="Folder on the server">
-              <TextInput required value={val('path')} onChange={set('path')} className="font-mono" placeholder="/backups/docker" />
-            </Field>
-            <Field label="SSH private key" hint="OpenSSH format without a passphrase. The server's identity is recorded now and checked on every connection.">
-              <textarea
-                required
-                value={val('privateKey')}
-                onChange={set('privateKey')}
-                rows={4}
-                spellCheck={false}
-                className="w-full rounded-xl border border-line bg-surface-strong px-3 py-2 font-mono text-xs outline-none focus:border-accent"
-                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-              />
-            </Field>
-          </>
-        )}
-
-        {kind === 'dropbox' && (
-          <>
-            {existingDropbox.length > 0 && (
-              <Field label="Dropbox account" hint="Reuse the account of a Dropbox destination you already have, or connect another one.">
-                <select
-                  value={reuseFrom}
-                  onChange={(e) => setDropboxFrom(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-surface-strong px-3 py-2 text-sm outline-none focus:border-accent"
-                >
-                  {existingDropbox.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      Same account as {d.name} ({d.path})
-                    </option>
-                  ))}
-                  <option value="">Connect another Dropbox account</option>
-                </select>
-              </Field>
-            )}
-            {!reuseFrom && <DropboxConnect value={dropbox} onChange={setDropbox} />}
-            <Field
-              label="Folder in Dropbox"
-              hint="Backups always go under /Stowaway. Use a subfolder per computer or purpose. In Dropbox you'll see restic's encrypted folders (data, index, keys, snapshots), not your files: restore with Stowaway."
-            >
-              <DropboxFolderInput value={val('prefix')} onChange={(x) => setV((o) => ({ ...o, prefix: x }))} />
-            </Field>
-          </>
-        )}
-
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={connectExisting} onChange={(e) => setConnectExisting(e.target.checked)} className="accent-[var(--accent)]" />
-          This location already has Stowaway backups (connect with its recovery key)
-        </label>
-        {connectExisting && (
-          <Field label="Recovery key">
-            <TextInput required type="password" value={val('existing')} onChange={set('existing')} className="font-mono" />
-          </Field>
-        )}
-
-        {create.error && (
-          <div className="flex items-start gap-2 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {create.error.message}
-          </div>
-        )}
-
-        <div className="flex items-center justify-between gap-3 pt-2">
-          <span className="flex items-center gap-1.5 text-xs text-muted">
-            <ShieldCheck className="size-3.5" /> Encrypted before it leaves this computer
-          </span>
-          <div className="flex gap-2">
-            <Button onClick={onClose}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={create.isPending || !ready}>
-              {create.isPending ? 'Setting up…' : connectExisting ? 'Connect' : 'Create'}
-            </Button>
-          </div>
+      {create.error && (
+        <div className="flex items-start gap-2 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {create.error.message}
         </div>
-      </form>
-    </Dialog>
-  )
-}
+      )}
 
-function Grid({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 gap-3">{children}</div>
+      <div className="flex items-center justify-between gap-3 pt-2">
+        <span className="flex items-center gap-1.5 text-xs text-muted">
+          <ShieldCheck className="size-3.5" /> Encrypted before it leaves this computer
+        </span>
+        <div className="flex gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={create.isPending || !ready}>
+            {create.isPending ? 'Setting up…' : connectExisting ? 'Connect' : 'Create'}
+          </Button>
+        </div>
+      </div>
+    </form>
+  )
 }

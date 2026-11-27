@@ -13,8 +13,10 @@ public sealed class ResticException(int exitCode, string message) : Exception(me
 }
 
 /// <summary>restic operations against one destination's repository, executed in runner containers.</summary>
-public sealed class ResticRepository(ResticRunner runner, ISecretProtector secrets, ILogger<ResticRepository> logger)
+public sealed class ResticRepository(ResticRunner runner, ISecretProtector secrets, ILogger<ResticRepository> logger, Destinations.DestinationProviders? destinations = null)
 {
+    private readonly Destinations.DestinationProviders _destinations = destinations ?? Destinations.DestinationProviders.BuiltIn(runner);
+
     public const string RepositoryPath = "/repo";
     private const string PasswordFile = "/run/stowaway/repository-password";
 
@@ -319,116 +321,22 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
             ["RESTIC_PASSWORD_FILE"] = PasswordFile,
         };
 
-        if (CloudRepositories.IsCloud(destination.Kind))
+        // The destination's provider says how restic reaches it: a repository string with credentials, a mount, or both.
+        var provider = _destinations.Get(destination.Kind);
+        var values = Destinations.DestinationValues.Load(destination, provider.Descriptor, secrets);
+        await using var access = await provider.OpenAsync(values, ct);
+        env["RESTIC_REPOSITORY"] = access.Repository;
+        foreach (var (key, value) in access.Environment)
         {
-            var connection = CloudRepositories.Connect(destination.Kind, SettingsOf(destination), SecretsOf(destination));
-            env["RESTIC_REPOSITORY"] = connection.Repository;
-            foreach (var (key, value) in connection.Environment)
-            {
-                env[key] = value;
-            }
-
-            foreach (var (path, content) in connection.Files)
-            {
-                files[path] = content;
-            }
-
-            return await runner.RunAsync(new RunnerRequest([.. connection.ExtraArgs, .. args], extraMounts, env, files, Network: true, purpose), onLine, ct);
+            env[key] = value;
         }
 
-        await using var target = await OpenTargetAsync(destination, ct);
-        return await runner.RunAsync(new RunnerRequest(args, [target.Mount, .. extraMounts], env, files, Network: false, purpose), onLine, ct);
-    }
-
-    public static IReadOnlyDictionary<string, string> SettingsOf(Destination destination) =>
-        string.IsNullOrEmpty(destination.Settings)
-            ? new Dictionary<string, string>()
-            : JsonSerializer.Deserialize<Dictionary<string, string>>(destination.Settings) ?? [];
-
-    private IReadOnlyDictionary<string, string> SecretsOf(Destination destination) =>
-        string.IsNullOrEmpty(destination.ProtectedSecrets)
-            ? new Dictionary<string, string>()
-            : JsonSerializer.Deserialize<Dictionary<string, string>>(secrets.Unprotect(destination.ProtectedSecrets)) ?? [];
-
-    /// <summary>Records the SFTP server's host keys (trust on first use); later connections check them strictly.</summary>
-    public async Task<string> ScanHostKeysAsync(string host, int port, CancellationToken ct)
-    {
-        if (host.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or ':' or '[' or ']')))
+        foreach (var (path, content) in access.Files)
         {
-            throw new ResticException(1, "That server name isn't valid.");
+            files[path] = content;
         }
 
-        RunnerResult result;
-        if (runner.OnHost)
-        {
-            // Windows ships OpenSSH's client (with ssh-keyscan) since Windows 10 1809.
-            var keyscan = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "OpenSSH", "ssh-keyscan.exe"))
-            {
-                RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
-            };
-            foreach (var arg in new[] { "-T", "10", "-p", port.ToString(System.Globalization.CultureInfo.InvariantCulture), host })
-            {
-                keyscan.ArgumentList.Add(arg);
-            }
-
-            result = await HostResticRunner.RunProcessAsync(keyscan, null, ct);
-        }
-        else
-        {
-            var script = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ssh-keyscan -T 10 -p {port} {host} 2>/dev/null");
-            result = await runner.RunAsync(new RunnerRequest([], [], new Dictionary<string, string>(), new Dictionary<string, byte[]>(), Network: true, "keyscan", script), null, ct);
-        }
-        var keys = string.Join('\n', result.StdOut.Where(l => l.Length > 0 && !l.StartsWith('#')));
-        return keys.Length > 0 ? keys : throw new ResticException(1, $"Couldn't reach an SSH server at {host}:{port}.");
-    }
-
-    /// <summary>Mounts the destination at /repo: a bind for local folders, a short-lived CIFS volume for SMB.</summary>
-    private async Task<RepositoryTarget> OpenTargetAsync(Destination destination, CancellationToken ct)
-    {
-        if (destination.Kind == DestinationKind.Local)
-        {
-            Directory.CreateDirectory(destination.Path);
-            return new RepositoryTarget(new RunnerMount("bind", destination.Path, RepositoryPath, ReadOnly: false), null);
-        }
-
-        var smbPassword = destination.ProtectedSmbPassword is null ? null : secrets.Unprotect(destination.ProtectedSmbPassword);
-        if (runner.OnHost)
-        {
-            // Host-side restic reaches the share directly, through a connection made with the saved credentials.
-            var connection = SmbConnection.Open(destination.Path, destination.SmbUsername, smbPassword, destination.SmbDomain);
-            return new RepositoryTarget(new RunnerMount("bind", destination.Path, RepositoryPath, ReadOnly: false), () =>
-            {
-                connection.Dispose();
-                return Task.CompletedTask;
-            });
-        }
-
-        var options = SmbMount.VolumeOptions(destination.Path, destination.SmbUsername, smbPassword, destination.SmbDomain);
-        var name = $"stowaway-smb-{Guid.NewGuid():N}";
-        var client = runner.CreateClient(TimeSpan.FromSeconds(60));
-        await client.Volumes.CreateAsync(new VolumesCreateParameters
-        {
-            Name = name,
-            Driver = "local",
-            DriverOpts = options.ToDictionary(kv => kv.Key, kv => kv.Value),
-            Labels = new Dictionary<string, string> { [ResticRunner.RunnerLabel] = "true" },
-        }, ct);
-
-        return new RepositoryTarget(new RunnerMount("volume", name, RepositoryPath, ReadOnly: false), async () =>
-        {
-            try
-            {
-                await client.Volumes.RemoveAsync(name, force: true, CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Could not remove temporary SMB volume {Volume}", name);
-            }
-            finally
-            {
-                client.Dispose();
-            }
-        });
+        return await runner.RunAsync(new RunnerRequest([.. access.ExtraArgs, .. args], [.. access.Mounts, .. extraMounts], env, files, access.Network, purpose), onLine, ct);
     }
 
     private static void EnsureSuccess(RunnerResult result)
@@ -453,19 +361,6 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         return result.ExitCode is ResticExitCodes.WrongPassword or ResticExitCodes.RepositoryDoesNotExist or ResticExitCodes.RepositoryLocked
             ? ResticExitCodes.Describe((int)result.ExitCode)
             : message;
-    }
-
-    private sealed class RepositoryTarget(RunnerMount mount, Func<Task>? cleanup) : IAsyncDisposable
-    {
-        public RunnerMount Mount { get; } = mount;
-
-        public async ValueTask DisposeAsync()
-        {
-            if (cleanup is not null)
-            {
-                await cleanup();
-            }
-        }
     }
 }
 

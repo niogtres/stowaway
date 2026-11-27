@@ -58,10 +58,10 @@ public sealed class DestinationEditTests
             var repository = new ResticRepository(runner, protector, NullLogger<ResticRepository>.Instance);
             var store = new MemoryDestinations();
             var plans = new MemoryPlans();
-            var service = new DestinationService(store, repository, protector, new NoEvents(), new DropboxAuthService(runner, NullLogger<DropboxAuthService>.Instance), plans, NullLogger<DestinationService>.Instance);
+            var service = new DestinationService(store, repository, protector, new NoEvents(), Stowaway.Docker.Destinations.DestinationProviders.BuiltIn(runner), plans, NullLogger<DestinationService>.Instance);
 
-            var first = await service.CreateAsync(new CreateDestinationRequest("First", DestinationKind.Local, Path.Combine(root, "a"), null, null, null, null), ct);
-            var other = await service.CreateAsync(new CreateDestinationRequest("Other", DestinationKind.Local, Path.Combine(root, "b"), null, null, null, null), ct);
+            var first = await service.CreateAsync(new CreateDestinationRequest("First", DestinationKind.Local, Folder(Path.Combine(root, "a"))), ct);
+            var other = await service.CreateAsync(new CreateDestinationRequest("Other", DestinationKind.Local, Folder(Path.Combine(root, "b"))), ct);
 
             // Rename only: no location check needed.
             Assert.Equal("Renamed", (await service.UpdateAsync(first.Id, new UpdateDestinationRequest("Renamed"), ct)).Name);
@@ -69,13 +69,13 @@ public sealed class DestinationEditTests
 
             // The repository was moved: the destination can follow it.
             Directory.Move(Path.Combine(root, "a"), Path.Combine(root, "moved"));
-            var moved = await service.UpdateAsync(first.Id, new UpdateDestinationRequest(null, Path: Path.Combine(root, "moved")), ct);
+            var moved = await service.UpdateAsync(first.Id, new UpdateDestinationRequest(null, Folder(Path.Combine(root, "moved"))), ct);
             Assert.Equal(Path.Combine(root, "moved"), moved.Path);
             Assert.Equal(first.RepositoryId, moved.RepositoryId);
 
             // Pointing it at different backups (or nothing) is refused and changes nothing.
-            await Assert.ThrowsAsync<ValidationException>(() => service.UpdateAsync(first.Id, new UpdateDestinationRequest(null, Path: Path.Combine(root, "b")), ct));
-            await Assert.ThrowsAsync<ValidationException>(() => service.UpdateAsync(first.Id, new UpdateDestinationRequest(null, Path: Path.Combine(root, "empty")), ct));
+            await Assert.ThrowsAsync<ValidationException>(() => service.UpdateAsync(first.Id, new UpdateDestinationRequest(null, Folder(Path.Combine(root, "b"))), ct));
+            await Assert.ThrowsAsync<ValidationException>(() => service.UpdateAsync(first.Id, new UpdateDestinationRequest(null, Folder(Path.Combine(root, "empty"))), ct));
             Assert.Equal(Path.Combine(root, "moved"), (await store.GetAsync(first.Id, ct))!.Path);
 
             // A destination a plan uses can't be removed; the message names the plan.
@@ -108,6 +108,8 @@ public sealed class DestinationEditTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    private static Dictionary<string, string> Folder(string path) => new() { ["path"] = path };
 
     private sealed class MemoryDestinations : IDestinationStore
     {

@@ -53,7 +53,7 @@ public sealed class ResticRunner(DockerEngineMonitor engine, IOptions<BackupOpti
 {
     public const string RunnerLabel = Stowaway.Core.Inventory.InventoryBuilder.OwnLabel;
     public const string RunnerHostPrefix = "stowaway-";
-    public const string EnvFile = CloudRepositories.SecretsDir + "/env";
+    public const string EnvFile = RepositoryConnection.SecretsDir + "/env";
 
     // Sources the env file (secrets) and hands over to restic with the remaining arguments.
     private const string ResticWrapper = "set -a; [ -f " + EnvFile + " ] && . " + EnvFile + "; set +a; exec restic \"$@\"";

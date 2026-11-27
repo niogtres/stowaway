@@ -10,10 +10,11 @@ import {
   useCheckDestination,
   useDeleteDestination,
   useDestinations,
+  useDestinationTypes,
   useRunMaintenance,
   type Destination,
 } from '@/lib/api'
-import { kindIcon, kindLabel } from '@/lib/destinations'
+import { iconFor, typeOf } from '@/lib/destinations'
 import { cn, formatBytes, relativeTime } from '@/lib/utils'
 
 export function Destinations() {
@@ -68,6 +69,7 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
   const [showKey, setShowKey] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editing, setEditing] = useState(false)
+  const type = typeOf(useDestinationTypes().data, d.kind)
   const status = d.status
 
   return (
@@ -75,12 +77,12 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
           <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft">
-            {createElement(kindIcon(d.kind), { className: "size-5 text-accent" })}
+            {createElement(iconFor(type?.icon), { className: "size-5 text-accent" })}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold tracking-tight">{d.name}</h3>
-              <Badge>{kindLabel(d.kind)}</Badge>
+              <Badge>{type?.label ?? d.kind}</Badge>
             </div>
             <div className="mt-0.5 truncate font-mono text-xs text-muted">{d.path}</div>
           </div>

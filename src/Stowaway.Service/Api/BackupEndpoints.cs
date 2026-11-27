@@ -17,28 +17,21 @@ public sealed record DestinationResponse(
     DestinationStatus? Status,
     IReadOnlyDictionary<string, string>? Settings);
 
+/// <summary>A new destination: <c>Settings</c> and <c>Secrets</c> hold the fields its type describes (<c>GET /api/destination-types</c>).</summary>
 public sealed record CreateDestinationBody(
     string Name,
     DestinationKind Kind,
-    string? Path,
-    string? SmbUsername,
-    string? SmbPassword,
-    string? SmbDomain,
-    string? ExistingRepositoryPassword,
     Dictionary<string, string>? Settings,
     Dictionary<string, string>? Secrets,
-    Guid? DropboxSession,
+    string? ExistingRepositoryPassword,
+    Guid? SignInSession,
     Guid? CredentialsFrom);
 
 public sealed record UpdateDestinationBody(
     string? Name,
-    string? Path,
-    string? SmbUsername,
-    string? SmbPassword,
-    string? SmbDomain,
     Dictionary<string, string>? Settings,
     Dictionary<string, string>? Secrets,
-    Guid? DropboxSession);
+    Guid? SignInSession);
 
 public sealed record DropboxCallbackBody(string Url);
 
@@ -53,16 +46,18 @@ public static class BackupEndpoints
         var destinations = api.MapGroup("/destinations");
 
         destinations.MapGet("/", async (DestinationService service, CancellationToken ct) =>
-            (await service.ListAsync(ct)).Select(d => ToResponse(d, service.GetStatus(d.Id))));
+            (await service.ListAsync(ct)).Select(d => ToResponse(d, service.GetStatus(d.Id), service)));
+
+        // What each destination type needs; the web client renders its forms from this.
+        api.MapGet("/destination-types", (DestinationService service) => service.Types);
 
         destinations.MapPost("/", async (CreateDestinationBody body, DestinationService service, CancellationToken ct) =>
         {
             try
             {
                 var created = await service.CreateAsync(new CreateDestinationRequest(
-                    body.Name ?? string.Empty, body.Kind, body.Path ?? string.Empty, body.SmbUsername, body.SmbPassword, body.SmbDomain, body.ExistingRepositoryPassword,
-                    body.Settings, body.Secrets, body.DropboxSession, body.CredentialsFrom), ct);
-                return Results.Created($"/api/destinations/{created.Id}", ToResponse(created, null));
+                    body.Name ?? string.Empty, body.Kind, body.Settings, body.Secrets, body.ExistingRepositoryPassword, body.SignInSession, body.CredentialsFrom), ct);
+                return Results.Created($"/api/destinations/{created.Id}", ToResponse(created, null, service));
             }
             catch (ValidationException ex)
             {
@@ -105,9 +100,8 @@ public static class BackupEndpoints
         {
             try
             {
-                var updated = await service.UpdateAsync(id, new UpdateDestinationRequest(
-                    body.Name, body.Path, body.SmbUsername, body.SmbPassword, body.SmbDomain, body.Settings, body.Secrets, body.DropboxSession), ct);
-                return Results.Ok(ToResponse(updated, service.GetStatus(id)));
+                var updated = await service.UpdateAsync(id, new UpdateDestinationRequest(body.Name, body.Settings, body.Secrets, body.SignInSession), ct);
+                return Results.Ok(ToResponse(updated, service.GetStatus(id), service));
             }
             catch (KeyNotFoundException)
             {
@@ -181,9 +175,8 @@ public static class BackupEndpoints
         return api;
     }
 
-    private static DestinationResponse ToResponse(Destination d, DestinationStatus? status) =>
-        new(d.Id, d.Name, d.Kind, d.Path, d.SmbUsername, d.SmbDomain, d.RepositoryId, d.CreatedAt, status,
-            d.Settings is null ? null : DestinationService.ReadSettings(d).Where(kv => kv.Key != DestinationKeys.KnownHosts).ToDictionary()); // non-secret only
+    private static DestinationResponse ToResponse(Destination d, DestinationStatus? status, DestinationService service) =>
+        new(d.Id, d.Name, d.Kind, d.Path, d.SmbUsername, d.SmbDomain, d.RepositoryId, d.CreatedAt, status, service.PublicValues(d)); // no secrets, nothing hidden
 
     private static IResult Problem(string detail) =>
         Results.Problem(detail: detail, statusCode: StatusCodes.Status400BadRequest, title: "Request could not be completed");

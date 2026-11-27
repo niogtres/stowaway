@@ -1,15 +1,33 @@
-import { Cloud, Database, FolderClosed, Network, Server, Box, HardDriveUpload, type LucideIcon } from 'lucide-react'
-import type { DestinationKind } from './api'
+import { Box, Cloud, Database, FolderClosed, HardDriveUpload, Network, Server, type LucideIcon } from 'lucide-react'
+import type { DestinationField, DestinationKind, DestinationType } from './api'
 
-export const destinationKinds: { id: DestinationKind; label: string; icon: LucideIcon }[] = [
-  { id: 'local', label: 'Local folder', icon: FolderClosed },
-  { id: 'smb', label: 'Network share', icon: Network },
-  { id: 's3', label: 'S3 / compatible', icon: Cloud },
-  { id: 'b2', label: 'Backblaze B2', icon: HardDriveUpload },
-  { id: 'azure', label: 'Azure Blob', icon: Database },
-  { id: 'sftp', label: 'SFTP server', icon: Server },
-  { id: 'dropbox', label: 'Dropbox', icon: Box },
-]
+export type Values = Record<string, string>
 
-export const kindLabel = (kind: DestinationKind) => destinationKinds.find((k) => k.id === kind)?.label ?? kind
-export const kindIcon = (kind: DestinationKind) => destinationKinds.find((k) => k.id === kind)?.icon ?? FolderClosed
+/** Icons the server's destination types may name (DestinationDescriptor.Icon). Unknown names fall back to a folder. */
+const icons: Record<string, LucideIcon> = {
+  folder: FolderClosed,
+  network: Network,
+  cloud: Cloud,
+  hardDriveUpload: HardDriveUpload,
+  database: Database,
+  server: Server,
+  box: Box,
+}
+
+export const iconFor = (name: string | undefined): LucideIcon => (name && icons[name]) || FolderClosed
+
+export const typeOf = (types: DestinationType[] | undefined, kind: DestinationKind) => types?.find((t) => t.kind === kind)
+
+/** Splits form values into the type's settings and secrets, keeping only non-empty ones. */
+export function splitValues(fields: DestinationField[], values: Values, keys?: (f: DestinationField) => boolean) {
+  const settings: Values = {}
+  const secrets: Values = {}
+  for (const f of fields.filter((f) => !f.hidden && (keys ? keys(f) : true))) {
+    const v = values[f.key]
+    if (v === undefined) continue
+    if (f.secret) {
+      if (v) secrets[f.key] = v
+    } else settings[f.key] = v
+  }
+  return { settings, secrets }
+}
