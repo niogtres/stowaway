@@ -8,8 +8,8 @@ namespace DockerBackup.Core.Backups;
 /// <param name="Target">Path inside the runner container.</param>
 public sealed record RunnerMount(string Type, string Source, string Target, bool ReadOnly);
 
-/// <summary>Everything the executor needs to back up one app. Pure data, built by <see cref="BackupPlanner"/>.</summary>
-public sealed record BackupPlan(
+/// <summary>What one backup run does: mounts, tags and stop/start order. Pure data, built by <see cref="BackupPlanner"/>.</summary>
+public sealed record RunnerPlan(
     IReadOnlyList<RunnerMount> SourceMounts,
     IReadOnlyList<string> Tags,
     IReadOnlyList<ContainerInfo> StopOrder,
@@ -28,7 +28,7 @@ public static class BackupPlanner
     public const string RunTagPrefix = "run=";
     public const string ProductTag = "dockerbackup";
 
-    public static BackupPlan Plan(AppInfo app, BackupStrategy strategy, Guid runId)
+    public static RunnerPlan Plan(AppInfo app, BackupStrategy strategy, Guid runId)
     {
         var mounts = new List<RunnerMount>();
         var notes = new List<string>();
@@ -66,7 +66,7 @@ public static class BackupPlanner
             notes.Add("No data mounts: only the app definition will be saved.");
         }
 
-        return new BackupPlan(mounts, Tags(app.Id, runId), stopOrder, restartOrder, notes);
+        return new RunnerPlan(mounts, Tags(app.Id, runId), stopOrder, restartOrder, notes);
     }
 
     public static IReadOnlyList<string> Tags(string appId, Guid runId) =>

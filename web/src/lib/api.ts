@@ -32,7 +32,7 @@ export interface SystemInfo {
 
 export type AppKind = 'compose' | 'standalone'
 export type MountKind = 'volume' | 'bind' | 'tmpfs' | 'npipe' | 'other'
-export type ProtectionStatus = 'protected' | 'stale' | 'failing' | 'unprotected' | 'excluded' | 'stateless'
+export type ProtectionStatus = 'protected' | 'stale' | 'failing' | 'pending' | 'unprotected' | 'excluded' | 'stateless'
 export type DatabaseKind =
   | 'postgreSql'
   | 'mySql'
@@ -106,6 +106,8 @@ export interface InventoryTotals {
   databases: number
   localOnlyImages: number
   unprotectedItems: number
+  failingItems: number
+  staleItems: number
   dataBytes: number
   protectedBytes: number
   protectionScore: number | null
@@ -129,6 +131,7 @@ export interface InventoryResponse {
 export type DestinationKind = 'local' | 'smb'
 export type BackupStrategy = 'live' | 'stopStart'
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type RunKind = 'backup' | 'maintenance'
 
 export interface DestinationStatus {
   reachable: boolean
@@ -167,7 +170,10 @@ export interface BackupRun {
   appName: string
   destinationId: string
   strategy: BackupStrategy
+  kind: RunKind
+  planId: string | null
   trigger: string
+  snapshotsForgotten: number | null
   status: RunStatus
   queuedAt: string
   startedAt: string | null
@@ -191,6 +197,98 @@ export interface BackupProgress {
   totalFiles: number
 }
 
+// ---- Plans ---------------------------------------------------------------
+
+export type PlanSelection = 'selected' | 'allApps'
+export type PlanStrategy = 'auto' | 'live' | 'stopStart'
+
+export interface RetentionPolicy {
+  keepLast: number
+  keepHourly: number
+  keepDaily: number
+  keepWeekly: number
+  keepMonthly: number
+  keepYearly: number
+}
+
+export interface PlanInput {
+  name: string
+  enabled: boolean
+  selection: PlanSelection
+  appIds: string[]
+  excludedAppIds: string[]
+  includeOrphanedVolumes: boolean
+  strategy: PlanStrategy
+  destinationId: string
+  cron: string
+  retention: RetentionPolicy
+}
+
+export interface PlanRunSummary {
+  id: string
+  status: RunStatus
+  appName: string
+  queuedAt: string
+  finishedAt: string | null
+  error: string | null
+}
+
+export interface Plan extends PlanInput {
+  id: string
+  createdAt: string
+  nextRunAt: string | null
+  intervalHours: number
+  coveredItemIds: string[]
+  recentRuns: PlanRunSummary[]
+}
+
+export interface SchedulePreview {
+  valid: boolean
+  error: string | null
+  nextRuns: string[]
+  intervalHours: number | null
+}
+
+// ---- Notifications -------------------------------------------------------
+
+export type NotificationKind = 'email' | 'webhook' | 'ntfy'
+export type SmtpSecurity = 'auto' | 'startTls' | 'sslOnConnect' | 'none'
+export type WebhookFormat = 'json' | 'slack'
+
+export interface EmailSettings {
+  host: string
+  port: number
+  security: SmtpSecurity
+  username: string | null
+  password: string | null
+  from: string
+  to: string
+}
+
+export interface ChannelInput {
+  name: string
+  kind: NotificationKind
+  enabled: boolean
+  onFailure: boolean
+  onRecovery: boolean
+  onSuccess: boolean
+  email?: EmailSettings | null
+  webhook?: { url: string; format: WebhookFormat } | null
+  ntfy?: { serverUrl: string; topic: string; accessToken: string | null } | null
+}
+
+export interface NotificationChannel {
+  id: string
+  name: string
+  kind: NotificationKind
+  enabled: boolean
+  onFailure: boolean
+  onRecovery: boolean
+  onSuccess: boolean
+  target: string
+  createdAt: string
+}
+
 // ---- Transport ------------------------------------------------------------
 
 export class ApiError extends Error {
@@ -202,7 +300,7 @@ export class ApiError extends Error {
   }
 }
 
-type Method = 'GET' | 'POST' | 'DELETE'
+type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
@@ -234,6 +332,8 @@ export const queryKeys = {
   destinations: ['destinations'] as const,
   backups: ['backups'] as const,
   progress: ['backupProgress'] as const,
+  plans: ['plans'] as const,
+  channels: ['channels'] as const,
 }
 
 export function useSystemInfo() {
@@ -323,6 +423,71 @@ export function useCancelBackup() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.backups }),
   })
 }
+
+export function usePlans() {
+  return useQuery({ queryKey: queryKeys.plans, queryFn: () => getJson<Plan[]>('/api/plans'), refetchInterval: 60_000 })
+}
+
+export function useSavePlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id?: string; input: PlanInput }) =>
+      id ? request<Plan>('PUT', `/api/plans/${id}`, input) : request<Plan>('POST', '/api/plans', input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.plans })
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory })
+    },
+  })
+}
+
+export function useDeletePlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => request<void>('DELETE', `/api/plans/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.plans }),
+  })
+}
+
+export function useRunPlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => request<{ queued: number }>('POST', `/api/plans/${id}/run`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.backups }),
+  })
+}
+
+export const previewSchedule = (cron: string) => request<SchedulePreview>('POST', '/api/plans/preview', { cron })
+
+export function useRunMaintenance() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (destinationId: string) => request<BackupRun>('POST', `/api/destinations/${destinationId}/maintenance`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.backups }),
+  })
+}
+
+export function useChannels() {
+  return useQuery({ queryKey: queryKeys.channels, queryFn: () => getJson<NotificationChannel[]>('/api/notifications') })
+}
+
+export function useSaveChannel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id?: string; input: ChannelInput }) =>
+      id ? request<NotificationChannel>('PUT', `/api/notifications/${id}`, input) : request<NotificationChannel>('POST', '/api/notifications', input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.channels }),
+  })
+}
+
+export function useDeleteChannel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => request<void>('DELETE', `/api/notifications/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.channels }),
+  })
+}
+
+export const testChannel = (id: string) => request<{ ok: boolean; error: string | null }>('POST', `/api/notifications/${id}/test`)
 
 /** Latest progress per running backup, fed by SignalR (see realtime.ts). */
 export function useBackupProgress() {

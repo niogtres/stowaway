@@ -41,6 +41,15 @@ public enum BackupStrategy
     StopStart,
 }
 
+public enum RunKind
+{
+    /// <summary>Back up one app or orphaned volume.</summary>
+    Backup,
+
+    /// <summary>Repository upkeep: prune unreferenced data and verify a sample of it.</summary>
+    Maintenance,
+}
+
 public enum RunStatus
 {
     Queued,
@@ -58,9 +67,16 @@ public sealed class BackupRun
     public required string AppName { get; set; }
     public required Guid DestinationId { get; set; }
     public required BackupStrategy Strategy { get; set; }
+    public RunKind Kind { get; set; } = RunKind.Backup;
 
-    /// <summary>"manual" for now; plans arrive in M3.</summary>
+    /// <summary>The plan that scheduled this run; null for manual runs.</summary>
+    public Guid? PlanId { get; set; }
+
+    /// <summary>"manual", "schedule", "catch-up" or "maintenance".</summary>
     public string Trigger { get; set; } = "manual";
+
+    /// <summary>Snapshots removed by the plan's retention policy after this backup.</summary>
+    public int? SnapshotsForgotten { get; set; }
     public RunStatus Status { get; set; } = RunStatus.Queued;
     public DateTimeOffset QueuedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? StartedAt { get; set; }
@@ -106,6 +122,15 @@ public interface IBackupRunStore
 
     /// <summary>Marks runs left Queued/Running by a previous process as failed. Returns how many.</summary>
     Task<int> FailInterruptedAsync(string reason, CancellationToken ct);
+
+    /// <summary>Latest finished backup state per app/volume item: last plan-run status and last success time.</summary>
+    Task<IReadOnlyDictionary<string, Plans.ItemRunState>> LatestStatesAsync(CancellationToken ct);
+
+    /// <summary>The run before <paramref name="run"/> for the same item and plan (for recovery detection).</summary>
+    Task<BackupRun?> PreviousAsync(BackupRun run, CancellationToken ct);
+
+    /// <summary>When maintenance last finished successfully, per destination.</summary>
+    Task<IReadOnlyDictionary<Guid, DateTimeOffset>> LastMaintenanceAsync(CancellationToken ct);
 }
 
 /// <summary>Encrypts secrets at rest (DPAPI in the service account's scope).</summary>

@@ -7,15 +7,17 @@ const protectionLabels: Record<ProtectionStatus, string> = {
   protected: 'Protected',
   stale: 'Stale',
   failing: 'Failing',
+  pending: 'Scheduled',
   unprotected: 'Unprotected',
   excluded: 'Excluded',
   stateless: 'Stateless',
 }
 
-const protectionTones: Record<ProtectionStatus, 'ok' | 'warn' | 'danger' | 'muted'> = {
+const protectionTones: Record<ProtectionStatus, 'ok' | 'warn' | 'danger' | 'muted' | 'accent'> = {
   protected: 'ok',
   stale: 'warn',
   failing: 'danger',
+  pending: 'accent',
   unprotected: 'warn',
   excluded: 'muted',
   stateless: 'muted',
@@ -24,8 +26,9 @@ const protectionTones: Record<ProtectionStatus, 'ok' | 'warn' | 'danger' | 'mute
 const protectionHints: Record<ProtectionStatus, string> = {
   protected: 'Covered by a healthy plan',
   stale: 'Covered, but the last successful backup is overdue',
-  failing: 'Covered, but the last backup failed',
-  unprotected: 'No scheduled backup plan covers this data yet (manual backups don\'t count)',
+  failing: 'Covered, but the last scheduled backup failed',
+  pending: 'Covered by a new plan that has not run yet',
+  unprotected: 'No backup plan covers this data yet',
   excluded: 'Deliberately not backed up',
   stateless: 'Holds no persistent data: nothing to back up',
 }

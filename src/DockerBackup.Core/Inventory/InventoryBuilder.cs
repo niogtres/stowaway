@@ -10,8 +10,15 @@ public static partial class InventoryBuilder
     public const string ComposeWorkingDirLabel = "com.docker.compose.project.working_dir";
     public const string ComposeConfigFilesLabel = "com.docker.compose.project.config_files";
 
-    public static InventorySnapshot Build(RawInventory raw, SizeIndex sizes, long version, DateTimeOffset capturedAt)
+    /// <param name="protection">Resolves (item id, holds data) to a status; null treats everything with data as unprotected.</param>
+    public static InventorySnapshot Build(
+        RawInventory raw,
+        SizeIndex sizes,
+        long version,
+        DateTimeOffset capturedAt,
+        Func<string, bool, ProtectionStatus>? protection = null)
     {
+        protection ??= static (_, hasData) => hasData ? ProtectionStatus.Unprotected : ProtectionStatus.Stateless;
         var localOnlyImages = raw.Images
             .Where(IsLocallyBuilt)
             .Select(i => i.Id)
@@ -23,7 +30,7 @@ public static partial class InventoryBuilder
 
         var apps = containers
             .GroupBy(c => AppKey(c.Raw), StringComparer.Ordinal)
-            .Select(g => BuildApp(g.Key, g.Select(x => x.Raw).ToList(), g.Select(x => x.Info).ToList()))
+            .Select(g => BuildApp(g.Key, g.Select(x => x.Raw).ToList(), g.Select(x => x.Info).ToList(), protection))
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -32,10 +39,19 @@ public static partial class InventoryBuilder
             .GroupBy(x => x.Volume, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)g.Select(x => x.Name).Distinct().Order(StringComparer.OrdinalIgnoreCase).ToList(), StringComparer.Ordinal);
 
+        var appStatusByContainer = apps
+            .SelectMany(a => a.Containers.Select(c => (c.Name, a.Protection)))
+            .GroupBy(x => x.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Protection, StringComparer.Ordinal);
+
         var volumes = raw.Volumes
             .Select(v =>
             {
                 var users = usedBy.GetValueOrDefault(v.Name) ?? [];
+                var size = sizes.Volumes.TryGetValue(v.Name, out var s) ? s : (long?)null;
+                var status = users.Count == 0
+                    ? protection(Plans.ProtectionEvaluator.VolumeItemId(v.Name), size is not 0)
+                    : appStatusByContainer.GetValueOrDefault(users[0], ProtectionStatus.Unprotected);
                 return new VolumeInfo
                 {
                     Name = v.Name,
@@ -45,8 +61,8 @@ public static partial class InventoryBuilder
                     Orphaned = users.Count == 0,
                     ComposeProject = v.Labels.GetValueOrDefault(ComposeProjectLabel),
                     UsedBy = users,
-                    SizeBytes = sizes.Volumes.TryGetValue(v.Name, out var size) ? size : null,
-                    Protection = ProtectionStatus.Unprotected,
+                    SizeBytes = size,
+                    Protection = status,
                 };
             })
             .OrderBy(v => v.Orphaned)
@@ -79,7 +95,7 @@ public static partial class InventoryBuilder
             ? $"compose:{project}"
             : $"container:{c.Name}";
 
-    private static AppInfo BuildApp(string key, IReadOnlyList<RawContainer> raws, IReadOnlyList<ContainerInfo> containers)
+    private static AppInfo BuildApp(string key, IReadOnlyList<RawContainer> raws, IReadOnlyList<ContainerInfo> containers, Func<string, bool, ProtectionStatus> protection)
     {
         var isCompose = key.StartsWith("compose:", StringComparison.Ordinal);
         var labels = raws[0].Labels;
@@ -97,8 +113,7 @@ public static partial class InventoryBuilder
             Containers = containers.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList(),
             DataBytes = bytes,
             SizeIncomplete = incomplete,
-            // Plans arrive in M3; until then anything holding data is unprotected.
-            Protection = hasData ? ProtectionStatus.Unprotected : ProtectionStatus.Stateless,
+            Protection = protection(key, hasData),
         };
     }
 
@@ -255,6 +270,10 @@ public static partial class InventoryBuilder
             LocalOnlyImages = allContainers.Where(c => c.ImageIsLocalOnly).Select(c => c.ImageId).Distinct().Count(),
             UnprotectedItems = apps.Count(a => a.Protection == ProtectionStatus.Unprotected)
                 + volumes.Count(v => v.Orphaned && v.Protection == ProtectionStatus.Unprotected),
+            FailingItems = apps.Count(a => a.Protection == ProtectionStatus.Failing)
+                + volumes.Count(v => v.Orphaned && v.Protection == ProtectionStatus.Failing),
+            StaleItems = apps.Count(a => a.Protection == ProtectionStatus.Stale)
+                + volumes.Count(v => v.Orphaned && v.Protection == ProtectionStatus.Stale),
             DataBytes = dataBytes,
             ProtectedBytes = protectedBytes,
         };

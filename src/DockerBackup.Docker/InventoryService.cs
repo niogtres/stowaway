@@ -5,6 +5,7 @@ using Docker.DotNet;
 using Docker.DotNet.Models;
 using DockerBackup.Core.Engine;
 using DockerBackup.Core.Inventory;
+using DockerBackup.Core.Plans;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -36,7 +37,8 @@ public sealed class InventoryService(
     DockerEngineMonitor engine,
     IOptions<InventoryOptions> options,
     TimeProvider time,
-    ILogger<InventoryService> logger) : BackgroundService, IInventoryProvider
+    ILogger<InventoryService> logger,
+    IProtectionSource? protection = null) : BackgroundService, IInventoryProvider
 {
     private static readonly JsonSerializerOptions FingerprintJson = new() { WriteIndented = false };
 
@@ -64,6 +66,11 @@ public sealed class InventoryService(
     {
         engine.StatusChanged += OnEngineStatusChanged;
         stoppingToken.Register(() => engine.StatusChanged -= OnEngineStatusChanged);
+        if (protection is not null)
+        {
+            protection.Changed += Rebuild;
+            stoppingToken.Register(() => protection.Changed -= Rebuild);
+        }
 
         RequestRefresh();
         return Task.WhenAll(
@@ -255,7 +262,8 @@ public sealed class InventoryService(
             var sizes = new SizeIndex(
                 new Dictionary<string, long>(_volumeSizes, StringComparer.Ordinal),
                 new Dictionary<string, long>(_pathSizes, StringComparer.OrdinalIgnoreCase));
-            var candidate = InventoryBuilder.Build(_lastRaw, sizes, _version + 1, time.GetUtcNow());
+            var now = time.GetUtcNow();
+            var candidate = InventoryBuilder.Build(_lastRaw, sizes, _version + 1, now, protection?.CreateResolver(now));
             var fingerprint = JsonSerializer.Serialize(candidate with { Version = 0, CapturedAt = default }, FingerprintJson);
             if (fingerprint == _fingerprint)
             {

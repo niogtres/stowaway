@@ -4,13 +4,13 @@
 
 Scheduled backup and restore for everything Docker holds on a Windows 10/11 host: containers, compose stacks, volumes and bind mounts. It runs as a Windows Service and is managed from a web UI at **https://localhost:8484**.
 
-> Status: **M2 (backup core)**. Live inventory, encrypted and deduplicated backups (restic) to local folders or SMB shares, *Back up now* with live or stop-and-start consistency, and activity history. Scheduling and retention (M3) come next. See [docs/DESIGN.md](docs/DESIGN.md).
+> Status: **M3 (usable MVP)**. Live inventory; scheduled, encrypted, deduplicated backups (restic) to local folders or SMB shares; retention, weekly repository maintenance, protection status per app, and email/webhook/ntfy alerts. Restore (M4) comes next. See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Install
 Run `DockerBackup-<version>-x64.msi` (from CI artifacts or Releases). It installs the `DockerBackup` service (LocalSystem, delayed auto-start) and a Start-menu link to the UI. Data lives in `%ProgramData%\DockerBackup` (access restricted to SYSTEM and Administrators).
 
 ## Build
-Requirements: .NET SDK 10.0.1xx, Node.js 24.
+Requirements: .NET SDK 10.0.1xx, Node.js 24. Restore local tools once with `dotnet tool restore`.
 
 ```powershell
 ./build.ps1 -Version 0.1.0      # web UI -> tests -> self-contained publish -> artifacts/*.msi

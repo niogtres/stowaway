@@ -34,7 +34,7 @@ The dev machine (Docker Desktop 29.5, Linux engine, `npipe:////./pipe/dockerDesk
 │  Browser ──HTTPS──►  DockerBackup Service  (Windows Service, .NET 10)  │
 │  (React SPA)         ├─ Kestrel: REST API + SignalR + static SPA       │
 │                      ├─ Discovery   (Docker API + events stream)       │
-│                      ├─ Scheduler   (Quartz.NET, persistent)           │
+│                      ├─ Scheduler   (Cronos, plans in SQLite)          │
 │                      ├─ Job engine  (plans → steps → runner)           │
 │                      ├─ Store       (SQLite: config, history, catalog) │
 │                      └─ Secrets     (DPAPI, LocalMachine scope)        │
@@ -89,7 +89,7 @@ This makes **"restore the whole stack on a fresh machine"** possible, not just "
 
 ### 3.6 Scheduling, retention, verification
 - **Plan** = selection (apps/volumes/tags, including *"all apps matching rule"* so new containers are picked up automatically) + strategy + destination + schedule + retention + notifications.
-- Schedules: presets (hourly/daily/weekly) or cron, with a plain-language preview and "next 5 runs" shown in the UI. Quartz misfire policy: run once on startup if a run was missed (e.g. the PC was off).
+- Schedules: presets (hourly/daily/weekly) or cron, with a plain-language preview and "next 5 runs" shown in the UI. A missed run (e.g. the PC was off) is caught up once at startup, not once per missed occurrence.
 - Retention: GFS (`keep-last`, `-hourly`, `-daily`, `-weekly`, `-monthly`, `-yearly`) applied with `restic forget --prune`, scheduled separately from backups.
 - **Integrity:** weekly `restic check --read-data-subset=5%`.
 - **Restore drills** *(differentiator)*: on a schedule, restore the latest snapshot into a scratch volume, start a throwaway DB container on dumps, run a probe query, then tear it down. The dashboard shows "last verified restorable: 2 days ago".
@@ -109,7 +109,7 @@ Email (SMTP), webhook (generic JSON), Teams/Slack/Discord, ntfy, and the Windows
 |---|---|---|
 | Service | **.NET 10 (LTS)** Worker + ASP.NET Core, `UseWindowsService()` | First-class Windows Service support, self-contained single-file publish, no runtime prerequisite, the SDK is already on the dev box |
 | Docker API | **Docker.DotNet** (named pipe), thin wrapper of our own for gaps | Native npipe support, streams, events |
-| Scheduler | **Quartz.NET** with persistent store | Cron, misfire handling, durable jobs |
+| Scheduler | **Cronos** (cron parsing) + own scheduler over the plans table | Cron, catch-up of missed runs, no second persistence model (see §10 #7) |
 | Store | **SQLite** + EF Core | Zero-admin, in `%ProgramData%\DockerBackup` |
 | Live updates | **SignalR** | Progress, logs, inventory changes |
 | Logging | Serilog → rolling file + Event Log | Supportability |
@@ -192,6 +192,13 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Strategies:** *Live*, or *Stop & start*. Stop & start stops dependents first (from the `com.docker.compose.depends_on` label) and always restarts in dependency order, even on failure or cancel. Downtime is recorded per run.
   - **Queue:** one backup at a time. Interrupted runs are marked failed at startup.
   - **Persistence:** SQLite through EF Core with migrations (`dotnet ef migrations add <Name> --project src/DockerBackup.Data --startup-project src/DockerBackup.Data`).
+- **M3 (done):** plans and protection.
+  - **Plans:** *All apps* (including future apps, minus exclusions) or *Selected*, optionally with unowned volumes (each backed up as its own `volume:<name>` item). Strategy *Auto* (stop & start only for apps running a database), *Live* or *Stop & start*. Five-field cron in host local time.
+  - **Retention:** a GFS policy applied after each scheduled backup with `restic forget`, filtered by `app=<id>,plan=<id>` tags, so manual snapshots and other plans are never touched. `--keep-last` is always at least 1.
+  - **Scheduling:** the scheduler ticks every 30 s and catches up a missed occurrence once. While the engine is down, runs wait in the queue ("waiting for Docker") instead of failing. Scheduled items already pending are not queued twice.
+  - **Maintenance:** weekly `prune` + `check --read-data-subset=5%` per destination, in the 01:00–06:00 window (any time once a day overdue), plus a manual button.
+  - **Protection status:** Protected (last success within 2× the plan's longest gap between runs), Pending (new plan, not run yet), Stale, Failing (last scheduled run failed), Unprotected, Stateless (no data or empty). The score is the share of bytes in Protected items.
+  - **Notifications:** email (MailKit), webhook (generic JSON or Slack-compatible) and ntfy, for failure / recovery / every success. Settings are DPAPI-protected, and secrets are never returned to the UI (blank on edit means keep).
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 
@@ -204,4 +211,5 @@ M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworth
 | 3 | Backup engine | **restic** (BSD-2-Clause, bundled). The service already owns scheduling, policy and UI, and restic is a minimal, scriptable engine with JSON output, `--stdin` support for DB dumps and a stable repo format. Kopia would duplicate our UI/server/policy layers. All engine calls go through an `IBackupEngine` abstraction so it can be swapped later. |
 | 4 | Container platforms | v1: Linux containers only. Windows-containers engine in phase 2. |
 | 5 | Remote access | Localhost only for the MVP. |
+| 7 | Scheduler | **Cronos + own scheduler** instead of Quartz.NET (decided during M3). Plans already live in our SQLite database. Quartz's persistent store would add a second persistence model with about a dozen tables, and the behaviour we need is small: compute the next run, catch up once, wait for the engine. |
 | 6 | Multi-host | Planned for later. v1 manages one host, but the data model carries an `EngineEndpoint` id from day one so adding hosts later needs no migration. |

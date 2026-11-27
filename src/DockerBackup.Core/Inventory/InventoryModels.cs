@@ -29,6 +29,9 @@ public enum ProtectionStatus
     /// <summary>Covered, but the last run failed.</summary>
     Failing,
 
+    /// <summary>Covered by a new plan that hasn't run yet.</summary>
+    Pending,
+
     /// <summary>Holds data that no plan covers.</summary>
     Unprotected,
 
@@ -159,6 +162,12 @@ public sealed record InventoryTotals
 
     /// <summary>Items (apps and orphaned volumes) that hold data no plan covers.</summary>
     public int UnprotectedItems { get; init; }
+
+    /// <summary>Covered items whose latest scheduled backup failed.</summary>
+    public int FailingItems { get; init; }
+
+    /// <summary>Covered items whose latest successful backup is overdue.</summary>
+    public int StaleItems { get; init; }
 
     /// <summary>Bytes in included mounts and orphaned volumes whose size is known.</summary>
     public long DataBytes { get; init; }

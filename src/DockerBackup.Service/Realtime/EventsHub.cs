@@ -13,6 +13,7 @@ public sealed class EventsHub : Hub
     public const string BackupUpdated = "backupUpdated";
     public const string BackupProgress = "backupProgress";
     public const string DestinationsChanged = "destinationsChanged";
+    public const string PlansChanged = "plansChanged";
 }
 
 /// <summary>Pushes backup and destination changes to browsers.</summary>
@@ -23,6 +24,8 @@ public sealed class SignalRBackupEvents(IHubContext<EventsHub> hub, ILogger<Sign
     public void Progress(Core.Backups.BackupProgress progress) => Send(EventsHub.BackupProgress, progress);
 
     public void DestinationsChanged() => Send(EventsHub.DestinationsChanged, new { });
+
+    public void PlansChanged() => Send(EventsHub.PlansChanged, new { });
 
     private void Send(string method, object payload) =>
         _ = hub.Clients.All.SendAsync(method, payload).ContinueWith(

@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { Copy, Eye, FolderClosed, HardDrive, KeyRound, Network, Plus, RefreshCw, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
+import { Copy, Eye, FolderClosed, HardDrive, KeyRound, Network, Plus, RefreshCw, ShieldCheck, Trash2, TriangleAlert, Wrench } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Button, Dialog, Field, TextInput } from '@/components/forms'
 import { Badge, Card, Skeleton, Stat, StatusDot } from '@/components/ui'
@@ -9,6 +9,7 @@ import {
   useCreateDestination,
   useDeleteDestination,
   useDestinations,
+  useRunMaintenance,
   type Destination,
   type DestinationKind,
 } from '@/lib/api'
@@ -62,6 +63,7 @@ export function Destinations() {
 function DestinationCard({ destination: d }: { destination: Destination }) {
   const check = useCheckDestination()
   const remove = useDeleteDestination()
+  const maintenance = useRunMaintenance()
   const [showKey, setShowKey] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const status = d.status
@@ -94,6 +96,15 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
           <Button variant="ghost" onClick={() => check.mutate(d.id)} disabled={check.isPending} title="Check now" aria-label="Check now">
             <RefreshCw className={cn('size-4', check.isPending && 'animate-spin')} />
           </Button>
+          <Button
+            variant="ghost"
+            onClick={() => maintenance.mutate(d.id)}
+            disabled={maintenance.isPending}
+            title="Run maintenance now (prune + integrity check). Runs weekly on its own."
+            aria-label="Run maintenance"
+          >
+            <Wrench className="size-4" />
+          </Button>
           <Button variant="ghost" onClick={() => setShowKey(true)} title="Recovery key" aria-label="Show recovery key">
             <KeyRound className="size-4" />
           </Button>
@@ -103,6 +114,8 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
         </div>
       </div>
 
+      {maintenance.isSuccess && <p className="mt-3 text-xs text-muted">Maintenance queued. Follow it on the Activity page.</p>}
+      {maintenance.error && <p className="mt-3 text-xs text-danger">{maintenance.error.message}</p>}
       {status && !status.reachable && (
         <div className="mt-4 flex items-start gap-2 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {status.error}

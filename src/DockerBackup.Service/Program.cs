@@ -6,6 +6,7 @@ using DockerBackup.Docker;
 using DockerBackup.Docker.Backups;
 using DockerBackup.Service.Api;
 using DockerBackup.Service.Hosting;
+using DockerBackup.Service.Notifications;
 using DockerBackup.Service.Realtime;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Serilog;
@@ -58,6 +59,12 @@ builder.Services.AddDockerBackupData(Path.Combine(paths.Root, "dockerbackup.db")
 builder.Services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
 builder.Services.AddSingleton<IBackupEvents, SignalRBackupEvents>();
 builder.Services.AddBackupEngine(builder.Configuration);
+builder.Services.AddHttpClient("notifications", c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<INotificationSender, EmailSender>();
+builder.Services.AddSingleton<INotificationSender, WebhookSender>();
+builder.Services.AddSingleton<INotificationSender, NtfySender>();
+builder.Services.AddSingleton<NotificationService>();
+builder.Services.AddSingleton<IRunObserver>(sp => sp.GetRequiredService<NotificationService>());
 builder.Services.AddProblemDetails();
 // Malformed request bodies are the client's fault: answer 400 in every environment, never 500.
 builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = false);
@@ -73,7 +80,7 @@ app.UseRequestOriginGuard();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGroup("/api").MapSystemEndpoints().MapInventoryEndpoints().MapBackupEndpoints();
+app.MapGroup("/api").MapSystemEndpoints().MapInventoryEndpoints().MapBackupEndpoints().MapPlanEndpoints();
 app.MapHub<EventsHub>(EventsHub.Path);
 app.MapFallback("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html");

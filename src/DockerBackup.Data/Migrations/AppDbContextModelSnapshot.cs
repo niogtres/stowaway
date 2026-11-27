@@ -54,8 +54,16 @@ namespace DockerBackup.Data.Migrations
                     b.Property<long?>("FinishedAt")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Log")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PlanId")
                         .HasColumnType("TEXT");
 
                     b.Property<long>("QueuedAt")
@@ -63,6 +71,9 @@ namespace DockerBackup.Data.Migrations
 
                     b.Property<string>("SnapshotId")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("SnapshotsForgotten")
+                        .HasColumnType("INTEGER");
 
                     b.Property<long?>("StartedAt")
                         .HasColumnType("INTEGER");
@@ -85,6 +96,8 @@ namespace DockerBackup.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DestinationId");
+
+                    b.HasIndex("PlanId");
 
                     b.HasIndex("QueuedAt");
 
@@ -141,12 +154,154 @@ namespace DockerBackup.Data.Migrations
                     b.ToTable("Destinations");
                 });
 
+            modelBuilder.Entity("DockerBackup.Core.Notifications.NotificationChannel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("OnFailure")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("OnRecovery")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("OnSuccess")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ProtectedSettings")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("NotificationChannels");
+                });
+
+            modelBuilder.Entity("DockerBackup.Core.Plans.BackupPlan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("AppIds")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Cron")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("DestinationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.PrimitiveCollection<string>("ExcludedAppIds")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IncludeOrphanedVolumes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("LastTriggeredAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Selection")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Strategy")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DestinationId");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Plans");
+                });
+
             modelBuilder.Entity("DockerBackup.Core.Backups.BackupRun", b =>
                 {
                     b.HasOne("DockerBackup.Core.Backups.Destination", null)
                         .WithMany()
                         .HasForeignKey("DestinationId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DockerBackup.Core.Plans.BackupPlan", b =>
+                {
+                    b.HasOne("DockerBackup.Core.Backups.Destination", null)
+                        .WithMany()
+                        .HasForeignKey("DestinationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.OwnsOne("DockerBackup.Core.Plans.RetentionPolicy", "Retention", b1 =>
+                        {
+                            b1.Property<Guid>("BackupPlanId");
+
+                            b1.Property<int>("KeepDaily");
+
+                            b1.Property<int>("KeepHourly");
+
+                            b1.Property<int>("KeepLast");
+
+                            b1.Property<int>("KeepMonthly");
+
+                            b1.Property<int>("KeepWeekly");
+
+                            b1.Property<int>("KeepYearly");
+
+                            b1.HasKey("BackupPlanId");
+
+                            b1.ToTable("Plans");
+
+                            b1
+                                .ToJson("Retention")
+                                .HasColumnType("TEXT");
+
+                            b1.WithOwner()
+                                .HasForeignKey("BackupPlanId");
+                        });
+
+                    b.Navigation("Retention")
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

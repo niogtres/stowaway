@@ -9,6 +9,8 @@ import { useBackupProgress, useBackupRuns, useCancelBackup, useDestinations, typ
 import { runStatusLabels } from '@/lib/backups'
 import { cn, formatBytes, relativeTime } from '@/lib/utils'
 
+const triggerLabels: Record<string, string> = { schedule: 'Scheduled', 'catch-up': 'Catch-up', 'run-now': 'Plan, run now' }
+
 function duration(run: BackupRun) {
   if (!run.startedAt) return '—'
   const end = run.finishedAt ? new Date(run.finishedAt).getTime() : Date.now()
@@ -54,7 +56,8 @@ export function Activity() {
                     <div className="flex flex-wrap items-center gap-x-2">
                       <span className="font-medium">{run.appName}</span>
                       <span className="text-sm text-muted">→ {destinationNames.get(run.destinationId) ?? 'removed destination'}</span>
-                      <Badge>{run.strategy === 'stopStart' ? 'Stop & start' : 'Live'}</Badge>
+                      {run.kind === 'maintenance' ? <Badge tone="accent">Maintenance</Badge> : <Badge>{run.strategy === 'stopStart' ? 'Stop & start' : 'Live'}</Badge>}
+                      {run.trigger !== 'manual' && <Badge>{triggerLabels[run.trigger] ?? run.trigger}</Badge>}
                     </div>
                     {active ? (
                       <div className="mt-2 max-w-md">
@@ -65,6 +68,7 @@ export function Activity() {
                         {runStatusLabels[run.status]} {relativeTime(run.finishedAt ?? run.queuedAt)} · took {duration(run)}
                         {run.bytesProcessed !== null && ` · ${formatBytes(run.bytesProcessed)} scanned, ${formatBytes(run.bytesAdded)} new`}
                         {run.downtimeSeconds !== null && ` · ${run.downtimeSeconds}s downtime`}
+                        {run.snapshotsForgotten ? ` · ${run.snapshotsForgotten} old snapshot(s) expired` : ''}
                       </div>
                     )}
                     {run.error && <div className="mt-1 text-xs text-danger">{run.error}</div>}

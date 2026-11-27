@@ -1,4 +1,6 @@
 using DockerBackup.Core.Backups;
+using DockerBackup.Core.Notifications;
+using DockerBackup.Core.Plans;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -84,6 +86,121 @@ public sealed class BackupRunStore(IDbContextFactory<AppDbContext> factory) : IB
         await db.SaveChangesAsync(ct);
         return interrupted.Count;
     }
+
+    // History is small (thousands of rows), so these aggregate in memory over a bounded window.
+    private const int StateWindow = 5000;
+
+    public async Task<IReadOnlyDictionary<string, ItemRunState>> LatestStatesAsync(CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        var finished = await db.BackupRuns.AsNoTracking()
+            .Where(r => r.Kind == RunKind.Backup && (r.Status == RunStatus.Succeeded || r.Status == RunStatus.Failed))
+            .OrderByDescending(r => r.QueuedAt)
+            .Take(StateWindow)
+            .Select(r => new { r.AppId, r.PlanId, r.Status, r.FinishedAt })
+            .ToListAsync(ct);
+
+        return finished
+            .GroupBy(r => r.AppId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => new ItemRunState(
+                    g.FirstOrDefault(r => r.PlanId is not null)?.Status,
+                    g.Where(r => r.Status == RunStatus.Succeeded).Select(r => r.FinishedAt).FirstOrDefault()),
+                StringComparer.Ordinal);
+    }
+
+    public async Task<BackupRun?> PreviousAsync(BackupRun run, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        var candidates = await db.BackupRuns.AsNoTracking()
+            .Where(r => r.AppId == run.AppId && r.Kind == run.Kind && r.PlanId == run.PlanId && r.Id != run.Id
+                && (r.Status == RunStatus.Succeeded || r.Status == RunStatus.Failed))
+            .OrderByDescending(r => r.QueuedAt)
+            .Take(20)
+            .ToListAsync(ct);
+        return candidates.FirstOrDefault(r => r.QueuedAt < run.QueuedAt);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, DateTimeOffset>> LastMaintenanceAsync(CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        var done = await db.BackupRuns.AsNoTracking()
+            .Where(r => r.Kind == RunKind.Maintenance && r.Status == RunStatus.Succeeded && r.FinishedAt != null)
+            .Select(r => new { r.DestinationId, r.FinishedAt })
+            .ToListAsync(ct);
+        return done.GroupBy(r => r.DestinationId).ToDictionary(g => g.Key, g => g.Max(r => r.FinishedAt!.Value));
+    }
+}
+
+public sealed class PlanStore(IDbContextFactory<AppDbContext> factory) : IPlanStore
+{
+    public async Task<IReadOnlyList<BackupPlan>> ListAsync(CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.Plans.AsNoTracking().OrderBy(p => p.Name).ToListAsync(ct);
+    }
+
+    public async Task<BackupPlan?> GetAsync(Guid id, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.Plans.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
+    }
+
+    public async Task AddAsync(BackupPlan plan, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        db.Plans.Add(plan);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateAsync(BackupPlan plan, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        db.Plans.Update(plan);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.Plans.Where(p => p.Id == id).ExecuteDeleteAsync(ct) > 0;
+    }
+}
+
+public sealed class NotificationStore(IDbContextFactory<AppDbContext> factory) : INotificationStore
+{
+    public async Task<IReadOnlyList<NotificationChannel>> ListAsync(CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.NotificationChannels.AsNoTracking().OrderBy(c => c.Name).ToListAsync(ct);
+    }
+
+    public async Task<NotificationChannel?> GetAsync(Guid id, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.NotificationChannels.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, ct);
+    }
+
+    public async Task AddAsync(NotificationChannel channel, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        db.NotificationChannels.Add(channel);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateAsync(NotificationChannel channel, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        db.NotificationChannels.Update(channel);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.NotificationChannels.Where(c => c.Id == id).ExecuteDeleteAsync(ct) > 0;
+    }
 }
 
 public static class DataServiceCollectionExtensions
@@ -93,6 +210,8 @@ public static class DataServiceCollectionExtensions
         services.AddDbContextFactory<AppDbContext>(o => o.UseSqlite($"Data Source={databasePath};Pooling=False"));
         services.AddSingleton<IDestinationStore, DestinationStore>();
         services.AddSingleton<IBackupRunStore, BackupRunStore>();
+        services.AddSingleton<IPlanStore, PlanStore>();
+        services.AddSingleton<INotificationStore, NotificationStore>();
         return services;
     }
 

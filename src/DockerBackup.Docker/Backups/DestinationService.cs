@@ -11,6 +11,7 @@ public interface IBackupEvents
     void RunUpdated(BackupRun run);
     void Progress(BackupProgress progress);
     void DestinationsChanged();
+    void PlansChanged();
 }
 
 public sealed record CreateDestinationRequest(

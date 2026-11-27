@@ -4,7 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Runtime -->
+    <PackageVersion Include="Cronos" Version="0.13.0" />
     <PackageVersion Include="Docker.DotNet.Enhanced" Version="4.4.1" />
+    <PackageVersion Include="MailKit" Version="5.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />

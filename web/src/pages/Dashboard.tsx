@@ -4,7 +4,7 @@ import { ArrowRight, Boxes, CheckCircle2, Circle, Cpu, Database, HeartPulse, Lay
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
 import { ProtectionRing } from '@/components/ProtectionRing'
 import { Badge, Card, CardHeader, Skeleton, Stat, StatusDot } from '@/components/ui'
-import { useDestinations, useInventory, useSystemInfo, type InventorySnapshot, type SystemInfo } from '@/lib/api'
+import { useDestinations, useInventory, usePlans, useSystemInfo, type InventorySnapshot, type SystemInfo } from '@/lib/api'
 import { cn, formatBytes, formatNumber } from '@/lib/utils'
 
 const rise = {
@@ -21,6 +21,7 @@ export function Dashboard() {
   const { data, isPending } = useSystemInfo()
   const inventory = useInventory()
   const destinations = useDestinations()
+  const plans = usePlans()
   const snapshot = inventory.data?.snapshot ?? null
   const score = snapshot?.totals.protectionScore ?? null
 
@@ -50,7 +51,7 @@ export function Dashboard() {
         </motion.div>
 
         <motion.div variants={rise} initial="hidden" animate="show" custom={3}>
-          <GettingStarted engineConnected={data?.engine.reachable ?? false} discovered={snapshot !== null} hasDestination={(destinations.data?.length ?? 0) > 0} />
+          <GettingStarted engineConnected={data?.engine.reachable ?? false} discovered={snapshot !== null} hasDestination={(destinations.data?.length ?? 0) > 0} hasPlan={(plans.data?.length ?? 0) > 0} />
         </motion.div>
 
         {snapshot && (
@@ -67,7 +68,7 @@ function scoreCaption(snapshot: InventorySnapshot | null) {
   if (!snapshot) return 'Shows the share of your Docker data covered by a healthy backup plan.'
   const t = snapshot.totals
   if (t.protectionScore === null) return 'Measuring your data…'
-  if (t.protectedBytes === 0) return `None of the ${formatBytes(t.dataBytes)} found is backed up yet. Backup plans arrive in an upcoming release.`
+  if (t.protectedBytes === 0) return `None of the ${formatBytes(t.dataBytes)} found is covered by a healthy plan yet.`
   return `${formatBytes(t.protectedBytes)} of ${formatBytes(t.dataBytes)} is covered by a healthy plan.`
 }
 
@@ -144,12 +145,12 @@ function DataCard({ snapshot, loading }: { snapshot: InventorySnapshot | null; l
   )
 }
 
-function GettingStarted({ engineConnected, discovered, hasDestination }: { engineConnected: boolean; discovered: boolean; hasDestination: boolean }) {
+function GettingStarted({ engineConnected, discovered, hasDestination, hasPlan }: { engineConnected: boolean; discovered: boolean; hasDestination: boolean; hasPlan: boolean }) {
   const steps = [
     { label: 'Connect to Docker', done: engineConnected },
     { label: 'Discover containers and volumes', done: discovered },
     { label: 'Add a backup destination', done: hasDestination },
-    { label: 'Create your first plan', done: false },
+    { label: 'Create your first plan', done: hasPlan },
   ]
   return (
     <Card className="h-full">
@@ -189,6 +190,14 @@ function attentionItems(snapshot: InventorySnapshot): AttentionItem[] {
       detail: unhealthy.map((c) => c.name).join(', '),
     })
 
+  const failing = [...snapshot.apps.filter((a) => a.protection === 'failing').map((a) => a.name), ...snapshot.volumes.filter((v) => v.orphaned && v.protection === 'failing').map((v) => v.name)]
+  if (failing.length > 0)
+    items.push({ tone: 'danger', icon: ShieldAlert, title: `${plural(failing.length, 'backup')} failing`, detail: failing.join(', ') })
+
+  const stale = snapshot.apps.filter((a) => a.protection === 'stale')
+  if (stale.length > 0)
+    items.push({ tone: 'warn', icon: ShieldAlert, title: `${plural(stale.length, 'app')} overdue`, detail: `No recent successful backup: ${stale.map((a) => a.name).join(', ')}` })
+
   const unprotectedApps = snapshot.apps.filter((a) => a.protection === 'unprotected')
   if (unprotectedApps.length > 0)
     items.push({
@@ -198,7 +207,8 @@ function attentionItems(snapshot: InventorySnapshot): AttentionItem[] {
       detail: `${formatBytes(unprotectedApps.reduce((sum, a) => sum + a.dataBytes, 0))} of data with no plan covering it.`,
     })
 
-  const orphans = snapshot.volumes.filter((v) => v.orphaned)
+  // Empty unowned volumes hold nothing worth keeping (they count as stateless).
+  const orphans = snapshot.volumes.filter((v) => v.orphaned && v.protection !== 'stateless')
   if (orphans.length > 0)
     items.push({
       tone: 'warn',

@@ -22,8 +22,13 @@ export function useRealtime(): RealtimeState {
 
     connection.on('inventoryUpdated', () => queryClient.invalidateQueries({ queryKey: queryKeys.inventory }))
     connection.on('destinationsChanged', () => queryClient.invalidateQueries({ queryKey: queryKeys.destinations }))
+    connection.on('plansChanged', () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.plans })
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory })
+    })
     connection.on('backupUpdated', (update: { id: string; status: string }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.backups })
+      queryClient.invalidateQueries({ queryKey: queryKeys.plans })
       if (update.status !== 'running' && update.status !== 'queued') {
         queryClient.setQueryData<Record<string, BackupProgress>>(queryKeys.progress, (current = {}) => {
           const rest = { ...current }

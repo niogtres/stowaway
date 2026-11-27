@@ -6,6 +6,7 @@ import {
   useBackupProgress,
   useBackupRuns,
   useDestinations,
+  usePlans,
   useStartBackup,
   type AppInfo,
   type BackupProgress,
@@ -157,7 +158,9 @@ function progressPercent(progress: BackupProgress | undefined) {
 /** Last backup and live progress for one app, shown on its inventory card. */
 export function AppBackupStatus({ app, onBackup }: { app: AppInfo; onBackup: () => void }) {
   const runs = useBackupRuns()
+  const plans = usePlans()
   const { data: progress } = useBackupProgress()
+  const coveringPlans = (plans.data ?? []).filter((p) => p.enabled && p.coveredItemIds.includes(app.id))
   const appRuns = (runs.data ?? []).filter((r) => r.appId === app.id)
   const active = appRuns.find((r) => r.status === 'running' || r.status === 'queued')
   const lastDone = appRuns.find((r) => r.status === 'succeeded')
@@ -180,6 +183,12 @@ export function AppBackupStatus({ app, onBackup }: { app: AppInfo; onBackup: () 
               </>
             ) : (
               'Never backed up'
+            )}
+            {coveringPlans.length > 0 && (
+              <span className="block">
+                {coveringPlans.map((p) => p.name).join(', ')}
+                {coveringPlans[0].nextRunAt && ` · next ${relativeTime(coveringPlans[0].nextRunAt)}`}
+              </span>
             )}
           </div>
           <Button variant="secondary" className="px-3 py-1.5 text-xs" onClick={onBackup}>

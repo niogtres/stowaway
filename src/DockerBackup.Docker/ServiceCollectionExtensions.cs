@@ -1,6 +1,8 @@
 using DockerBackup.Core.Engine;
 using DockerBackup.Core.Inventory;
+using DockerBackup.Core.Plans;
 using DockerBackup.Docker.Backups;
+using DockerBackup.Docker.Plans;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -35,6 +37,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<BackupService>();
         services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
         services.AddHostedService<DestinationMonitor>();
+
+        services.AddSingleton<ProtectionTracker>();
+        services.AddSingleton<IProtectionSource>(sp => sp.GetRequiredService<ProtectionTracker>());
+        services.AddSingleton<IRunObserver>(sp => sp.GetRequiredService<ProtectionTracker>());
+        services.AddHostedService(sp => sp.GetRequiredService<ProtectionTracker>());
+        services.AddSingleton<PlanService>();
+        services.AddHostedService<PlanScheduler>();
+        services.AddHostedService<MaintenanceScheduler>();
         return services;
     }
 }

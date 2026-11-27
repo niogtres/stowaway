@@ -59,9 +59,37 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         return ResticOutputParser.ParseStats(result.StdOutText);
     }
 
+    /// <summary>
+    /// Applies a retention policy to the snapshots carrying ALL of <paramref name="tags"/> (restic treats a
+    /// comma-separated tag list as AND). Doesn't prune; maintenance does that. Returns how many were removed.
+    /// </summary>
+    public async Task<int> ForgetAsync(Destination destination, IReadOnlyList<string> tags, IReadOnlyList<string> retentionArgs, CancellationToken ct)
+    {
+        var args = new List<string> { "forget", "--json", "--group-by", "host", "--tag", string.Join(',', tags) };
+        args.AddRange(retentionArgs);
+        var result = await RunAsync(destination, null, args, [], new Dictionary<string, byte[]>(), null, "forget", ct);
+        EnsureSuccess(result);
+        return ResticOutputParser.CountForgotten(result.StdOutText);
+    }
+
+    /// <summary>Removes data no snapshot references any more. Can take a while on big repositories.</summary>
+    public async Task PruneAsync(Destination destination, Action<string> onLog, CancellationToken ct)
+    {
+        var result = await RunAsync(destination, null, ["prune"], [], new Dictionary<string, byte[]>(), (line, _) => onLog(line), "prune", ct);
+        EnsureSuccess(result);
+    }
+
+    /// <summary>Verifies repository structure and re-reads a random sample of the stored data.</summary>
+    public async Task CheckAsync(Destination destination, int readDataPercent, Action<string> onLog, CancellationToken ct)
+    {
+        var result = await RunAsync(destination, null, ["check", $"--read-data-subset={readDataPercent}%"], [], new Dictionary<string, byte[]>(),
+            (line, _) => onLog(line), "check", ct);
+        EnsureSuccess(result);
+    }
+
     public async Task<ResticSummary> BackupAsync(
         Destination destination,
-        BackupPlan plan,
+        RunnerPlan plan,
         IReadOnlyDictionary<string, byte[]> files,
         string host,
         Action<ResticStatus> onProgress,

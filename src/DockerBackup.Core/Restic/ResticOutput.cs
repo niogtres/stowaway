@@ -108,6 +108,21 @@ public static class ResticOutputParser
     public static ResticStats? ParseStats(string json) =>
         JsonSerializer.Deserialize<ResticStats>(json);
 
+    /// <summary>Counts snapshots listed under "remove" in <c>restic forget --json</c> output.</summary>
+    public static int CountForgotten(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return 0;
+        }
+
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.ValueKind != JsonValueKind.Array
+            ? 0
+            : doc.RootElement.EnumerateArray()
+                .Sum(group => group.TryGetProperty("remove", out var remove) && remove.ValueKind == JsonValueKind.Array ? remove.GetArrayLength() : 0);
+    }
+
     private static string ErrorText(JsonElement root)
     {
         var item = Str(root, "item");
