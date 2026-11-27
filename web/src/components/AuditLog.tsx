@@ -3,7 +3,7 @@ import { useAudit } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card, Skeleton } from './ui'
 
-/** Settings → Audit log: sign-in events and every change made through DockerBackup, newest first. */
+/** Settings → Audit log: sign-in events and every change made through Stowaway, newest first. */
 export function AuditLogSection() {
   const audit = useAudit()
 
@@ -11,7 +11,7 @@ export function AuditLogSection() {
     <section>
       <div className="mb-3">
         <h2 className="font-semibold tracking-tight">Audit log</h2>
-        <p className="mt-1 text-sm text-muted">Sign-ins from other computers and every change made through DockerBackup, kept for 180 days.</p>
+        <p className="mt-1 text-sm text-muted">Sign-ins from other computers and every change made through Stowaway, kept for 180 days.</p>
       </div>
       {audit.isPending ? (
         <Skeleton className="h-32 rounded-2xl" />

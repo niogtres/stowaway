@@ -33,7 +33,7 @@ Thumbs.db
 .idea/
 .claude/settings.local.json
 
-src/DockerBackup.Service/wwwroot/
+src/Stowaway.Service/wwwroot/
 
 # Local, never committed (owner-supplied configs etc.)
 /ignore/

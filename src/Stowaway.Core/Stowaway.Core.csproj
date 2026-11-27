@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Cronos" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Stowaway.Tests" />
+  </ItemGroup>
+</Project>

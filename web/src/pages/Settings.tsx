@@ -231,7 +231,7 @@ function ChannelDialog({ open, onClose, channel }: { open: boolean; onClose: () 
                 <TextInput type="password" value={f.password} onChange={set('password')} autoComplete="new-password" />
               </Field>
               <Field label="From">
-                <TextInput required value={f.from} onChange={set('from')} placeholder="dockerbackup@example.com" />
+                <TextInput required value={f.from} onChange={set('from')} placeholder="stowaway@example.com" />
               </Field>
               <Field label="To" hint="Separate several with commas">
                 <TextInput required value={f.to} onChange={set('to')} placeholder="you@example.com" />

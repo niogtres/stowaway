@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds DockerBackup end to end: web UI -> tests -> self-contained service -> MSI.
+  Builds Stowaway end to end: web UI -> tests -> self-contained service -> MSI.
 .EXAMPLE
   ./build.ps1                      # version 0.1.0-dev, runs tests
   ./build.ps1 -Version 0.2.0       # release version
@@ -8,7 +8,7 @@
   ./build.ps1 -Version 0.2.0 -SignThumbprint 0123ABCD...   # sign with a certificate from your store (e.g. on a token)
 .NOTES
   Code signing (optional): pass -SignThumbprint for a certificate in CurrentUser\My or LocalMachine\My, or set
-  DOCKERBACKUP_SIGN_PFX (base64 of a .pfx) and DOCKERBACKUP_SIGN_PFX_PASSWORD (CI). Without either, the build is unsigned.
+  STOWAWAY_SIGN_PFX (base64 of a .pfx) and STOWAWAY_SIGN_PFX_PASSWORD (CI). Without either, the build is unsigned.
   The service executable is signed before it goes into the MSI, then the MSI itself.
 #>
 [CmdletBinding()]
@@ -39,10 +39,10 @@ function Get-SigningCertificate {
         if (-not $cert) { throw "No certificate with a private key and thumbprint $SignThumbprint in CurrentUser\My or LocalMachine\My." }
         return $cert
     }
-    if ($env:DOCKERBACKUP_SIGN_PFX) {
-        $bytes = [Convert]::FromBase64String($env:DOCKERBACKUP_SIGN_PFX)
+    if ($env:STOWAWAY_SIGN_PFX) {
+        $bytes = [Convert]::FromBase64String($env:STOWAWAY_SIGN_PFX)
         return [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
-            $bytes, $env:DOCKERBACKUP_SIGN_PFX_PASSWORD,
+            $bytes, $env:STOWAWAY_SIGN_PFX_PASSWORD,
             [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet)
     }
     return $null
@@ -82,7 +82,7 @@ if (-not $SkipTests) {
 
 if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 Invoke-Step 'dotnet publish' {
-    dotnet publish (Join-Path $root 'src\DockerBackup.Service') `
+    dotnet publish (Join-Path $root 'src\Stowaway.Service') `
         --configuration $Configuration --runtime win-x64 --self-contained `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:Version=$Version --output $publishDir
@@ -90,16 +90,16 @@ Invoke-Step 'dotnet publish' {
 
 if ($signingCertificate) {
     Write-Host '==> sign service executable' -ForegroundColor Cyan
-    Invoke-Sign $signingCertificate @(Join-Path $publishDir 'DockerBackup.Service.exe')
+    Invoke-Sign $signingCertificate @(Join-Path $publishDir 'Stowaway.Service.exe')
 }
 
 Invoke-Step 'installer' {
-    dotnet build (Join-Path $root 'installer\DockerBackup.Installer.wixproj') `
+    dotnet build (Join-Path $root 'installer\Stowaway.Installer.wixproj') `
         --configuration $Configuration -p:ProductVersion=$Version -p:PublishDir="$publishDir\" `
         -p:OutputPath="$outDir\"
 }
 
-$msi = Join-Path $outDir "DockerBackup-$Version-x64.msi"
+$msi = Join-Path $outDir "Stowaway-$Version-x64.msi"
 if ($signingCertificate) {
     Write-Host '==> sign installer' -ForegroundColor Cyan
     Invoke-Sign $signingCertificate @($msi)

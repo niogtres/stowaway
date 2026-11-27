@@ -14,5 +14,5 @@ export const destinationKinds: { id: DestinationKind; label: string; icon: Lucid
 export const kindLabel = (kind: DestinationKind) => destinationKinds.find((k) => k.id === kind)?.label ?? kind
 export const kindIcon = (kind: DestinationKind) => destinationKinds.find((k) => k.id === kind)?.icon ?? FolderClosed
 
-/** Database kinds DockerBackup can dump while they run (mirrors DatabaseDumps.Supported). */
+/** Database kinds Stowaway can dump while they run (mirrors DatabaseDumps.Supported). */
 export const dumpableDatabases = new Set(['postgreSql', 'mySql', 'mariaDb', 'mongoDb', 'redis'])

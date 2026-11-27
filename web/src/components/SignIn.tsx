@@ -33,7 +33,8 @@ export function SignIn() {
       <div className="aurora pointer-events-none fixed inset-0 -z-10" aria-hidden />
       <form onSubmit={submit} className="glass w-full max-w-sm rounded-2xl p-8">
         <img src={logoMark} alt="" className="mx-auto mb-4 size-12" />
-        <h1 className="text-center text-lg font-semibold tracking-tight">Sign in to DockerBackup</h1>
+        <h1 className="text-center text-lg font-semibold tracking-tight">Sign in to Stowaway</h1>
+        <p className="text-center text-xs text-muted">Sensible Docker backup management</p>
         <p className="mb-6 mt-1 text-center text-sm text-muted">Remote access to {window.location.hostname}</p>
 
         <div className="space-y-4">

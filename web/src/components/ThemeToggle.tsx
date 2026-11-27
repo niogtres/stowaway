@@ -1,7 +1,7 @@
 import { Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-const storageKey = 'dockerbackup.theme'
+const storageKey = 'stowaway.theme'
 type Theme = 'dark' | 'light'
 
 function initialTheme(): Theme {

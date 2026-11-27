@@ -1,4 +1,4 @@
-DOCKERBACKUP: IMAGERY REQUESTS
+STOWAWAY: IMAGERY REQUESTS
 ================================
 Drop finished files into:  assets/brand/   (create it; keep the file names below)
 Claude converts formats (ICO, BMP, favicon sizes) from your masters, so you only need to supply the PNG/SVG masters.

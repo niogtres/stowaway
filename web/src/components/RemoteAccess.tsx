@@ -39,7 +39,7 @@ export function RemoteAccessSection() {
       <div className="mb-3">
         <h2 className="font-semibold tracking-tight">Remote access</h2>
         <p className="mt-1 text-sm text-muted">
-          Manage DockerBackup from other computers on your network. Off unless you switch it on. People signing in from elsewhere use a DockerBackup account with a
+          Manage Stowaway from other computers on your network. Off unless you switch it on. People signing in from elsewhere use a Stowaway account with a
           password and an authenticator app; recovery keys can only be shown on this computer.
         </p>
       </div>
@@ -78,7 +78,7 @@ function StatusCard({ view }: { view: RemoteAccessView }) {
               ? view.urls.join(' · ')
               : view.restartRequired
                 ? 'Your changes are saved and take effect when the service restarts.'
-                : `Only this computer can open DockerBackup (https://localhost:${view.port}).`)}
+                : `Only this computer can open Stowaway (https://localhost:${view.port}).`)}
         </div>
         {error && <div className="mt-1 text-xs text-danger">{error}</div>}
       </div>
@@ -107,7 +107,7 @@ function StatusCard({ view }: { view: RemoteAccessView }) {
             <RefreshCw className={cn('size-4', restarting && 'animate-spin')} /> {restarting ? 'Restarting…' : 'Restart service'}
           </Button>
         ) : (
-          <span className="text-xs text-muted">Restart DockerBackup to apply.</span>
+          <span className="text-xs text-muted">Restart Stowaway to apply.</span>
         ))}
     </Card>
   )
@@ -145,7 +145,7 @@ function SettingsForm({ view, readyAccounts }: { view: RemoteAccessView; readyAc
           <span>
             <span className="block text-sm font-medium">Allow access from other computers</span>
             <span className="block text-xs text-muted">
-              {readyAccounts === 0 ? 'Add an account below first.' : `DockerBackup will also listen on port ${view.port} on your network.`}
+              {readyAccounts === 0 ? 'Add an account below first.' : `Stowaway will also listen on port ${view.port} on your network.`}
             </span>
           </span>
         </label>
@@ -170,7 +170,7 @@ function SettingsForm({ view, readyAccounts }: { view: RemoteAccessView; readyAc
 
         <Field
           label="Reverse proxy (optional)"
-          hint="The IPv4 address of a proxy such as nginx in front of DockerBackup. Then only the proxy may connect, and the visitor address it forwards (X-Forwarded-For) is used for lockouts, rate limits and the audit log."
+          hint="The IPv4 address of a proxy such as nginx in front of Stowaway. Then only the proxy may connect, and the visitor address it forwards (X-Forwarded-For) is used for lockouts, rate limits and the audit log."
         >
           <TextInput value={proxies} onChange={(e) => setProxies(e.target.value)} placeholder="192.168.1.10" className="font-mono" />
         </Field>
@@ -181,7 +181,7 @@ function SettingsForm({ view, readyAccounts }: { view: RemoteAccessView; readyAc
             <Choice
               checked={f.certificateSource === 'selfSigned'}
               onSelect={() => setF({ ...f, certificateSource: 'selfSigned', certificateThumbprint: null })}
-              title="Issued by DockerBackup"
+              title="Issued by Stowaway"
               text="Browsers warn until you trust it on each computer you use."
             />
             <Choice
@@ -480,8 +480,8 @@ function AuthenticatorDialog({ setup, onClose }: { setup: AccountSetup | null; o
                 </Button>
                 <a
                   className="inline-flex items-center gap-1 rounded-xl px-2 py-1 text-xs text-muted transition hover:bg-accent-soft hover:text-fg"
-                  href={`data:text/plain;charset=utf-8,${encodeURIComponent(`DockerBackup recovery codes for ${setup.account.userName}\n\n${codes}\n`)}`}
-                  download={`dockerbackup-recovery-${setup.account.userName}.txt`}
+                  href={`data:text/plain;charset=utf-8,${encodeURIComponent(`Stowaway recovery codes for ${setup.account.userName}\n\n${codes}\n`)}`}
+                  download={`stowaway-recovery-${setup.account.userName}.txt`}
                 >
                   <Download className="size-3.5" /> Save
                 </a>

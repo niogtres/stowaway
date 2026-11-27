@@ -1,4 +1,4 @@
-# DockerBackup — Design
+# Stowaway — Design
 
 Status: **v0.3: M0–M5 implemented; M6 in progress.** Decisions are in §10. Sections 3–8 describe the system as built; the per-milestone notes in §9 have the details. · Updated: 2026-11-27
 
@@ -31,7 +31,7 @@ The dev machine (Docker Desktop 29.5, Linux engine, `npipe:////./pipe/dockerDesk
 ```
 ┌──────────────────────────── Windows host ─────────────────────────────┐
 │                                                                        │
-│  Browser ──HTTPS──►  DockerBackup Service  (Windows Service, .NET 10)  │
+│  Browser ──HTTPS──►  Stowaway Service  (Windows Service, .NET 10)  │
 │  (React SPA)         ├─ Kestrel: REST API + SignalR + static SPA       │
 │                      ├─ Discovery   (Docker API + events stream)       │
 │                      ├─ Scheduler   (Cronos, plans in SQLite)          │
@@ -58,7 +58,7 @@ A single self-contained process hosts the API, UI, scheduler and engine, so ther
 
 ### 3.2 Backup engine: restic, run inside a runner container
 - **restic** gives deduplication, encryption (AES-256), compression, many backends (native plus rclone), `forget/prune` retention, `check` integrity, and file-level restore. Its repository format is mature and well documented, so users are never locked in to us.
-- Backups run in an **ephemeral runner container** (`dockerbackup/runner:<hash>`, built locally on first use from the pinned `restic/restic` image plus rclone and socat; see M5a). We mount the target volumes read-only at `/data/<container>/<mountpath>`. This approach:
+- Backups run in an **ephemeral runner container** (`stowaway/runner:<hash>`, built locally on first use from the pinned `restic/restic` image plus rclone and socat; see M5a). We mount the target volumes read-only at `/data/<container>/<mountpath>`. This approach:
   - works the same for named, anonymous and bind mounts, and on Docker Desktop and native dockerd
   - gives file-level snapshots, so the UI can browse and restore single files
   - needs no host access to `/var/lib/docker` (which doesn't exist on Windows with Desktop)
@@ -72,10 +72,10 @@ A single self-contained process hosts the API, UI, scheduler and engine, so ther
 4. **Hooks** *(not built yet)*: pre/post commands (exec in container or on host) for anything custom.
 
 ### 3.4 What a "backup" contains
-For each app (compose project or standalone container), one restic snapshot tagged `dockerbackup`, `app=<id>`, `run=<id>` (and `plan=<id>` for scheduled runs) holding:
+For each app (compose project or standalone container), one restic snapshot tagged `stowaway`, `app=<id>`, `run=<id>` (and `plan=<id>` for scheduled runs) holding:
 - `/data/<container>/<mount path>`: volume and bind contents (per policy)
 - `/data/_dumps/`: database dumps
-- `/data/_dockerbackup/`: `app.json`, `run.json`, `docker inspect` JSON per container, the compose file(s) and `.env` (found from the `com.docker.compose.project.config_files` / `working_dir` labels)
+- `/data/_stowaway/`: `app.json`, `run.json`, `docker inspect` JSON per container, the compose file(s) and `.env` (found from the `com.docker.compose.project.config_files` / `working_dir` labels)
 - *Not built yet:* `docker save` of locally built images. Today the recreate tells you to rebuild them from the saved compose files.
 
 This makes **"restore the whole stack on a fresh machine"** possible, not just "put files back".
@@ -110,7 +110,7 @@ Email (SMTP), webhook (generic JSON or Slack-compatible, which also covers Disco
 | Service | **.NET 10 (LTS)** Worker + ASP.NET Core, `UseWindowsService()` | First-class Windows Service support, self-contained single-file publish, no runtime prerequisite, the SDK is already on the dev box |
 | Docker API | **Docker.DotNet.Enhanced** (named pipe), thin wrapper of our own for gaps (`/system/df`) | Native npipe support, streams, events |
 | Scheduler | **Cronos** (cron parsing) + own scheduler over the plans table | Cron, catch-up of missed runs, no second persistence model (see §10 #7) |
-| Store | **SQLite** + EF Core | Zero-admin, in `%ProgramData%\DockerBackup` |
+| Store | **SQLite** + EF Core | Zero-admin, in `%ProgramData%\Stowaway` |
 | Live updates | **SignalR** | Progress, logs, inventory changes |
 | Logging | Serilog → rolling file (Event Log planned for M6) | Supportability |
 | Backup | **restic** (pinned) + **rclone** in a locally built runner image | See §3.2 |
@@ -135,7 +135,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 ## 6. Security
 
 - Kestrel binds to **localhost only** over HTTPS. A per-install self-signed certificate is created by the service and added to LocalMachine\Root when it runs as a service. Host filtering blocks DNS rebinding; a request-origin guard blocks cross-site WebSocket and CSRF attempts. *M6b:* opt-in remote access (off by default), with a self-issued or an installed certificate; see the M6b notes.
-- **Auth** *(M6a)*: Windows Negotiate (members of local `Administrators` or a `DockerBackup Operators` group). *M6b:* remote-access accounts (password + TOTP) for other computers. Managing remote access, restarting the service and revealing recovery keys stay local-only.
+- **Auth** *(M6a)*: Windows Negotiate (members of local `Administrators` or a `Stowaway Operators` group). *M6b:* remote-access accounts (password + TOTP) for other computers. Managing remote access, restarting the service and revealing recovery keys stay local-only.
 - Repository passwords and cloud keys are encrypted with **DPAPI in the service account's (LocalSystem's) user scope** in SQLite. *LocalMachine* scope is deliberately not used: any local user could decrypt it. Each destination's recovery key can be revealed (and the reveal is logged): *lose it and backups are unrecoverable*.
 - The service runs as **LocalSystem** (it needs access to the Docker pipe). *M6c:* every API change and every remote sign-in event is in the audit log.
 - Runner containers get read-only source mounts, `no-new-privileges`, and no network for local and SMB destinations. Secrets arrive as files inside the container, never in its configuration.
@@ -148,17 +148,17 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 | Bind mounts to huge drives | Whole drives are excluded by default and sized only when included. *Not built yet:* per-mount include/exclude overrides. |
 | DB credential discovery fails | The dump fails the run (alerting), files are still copied live; use Stop & start for that app. *Not built yet:* a credential override form. |
 | Windows-containers engine | v1 targets Linux containers (the vast majority). The Windows engine path is phase 2 (§3.2 fallback). |
-| restic repo lock left behind by a crash | A run that hits a lock checks who holds it. Locks held only by our own runners (hostname `dockerbackup-*`) are stale by construction, since runs on one repository are serialised, so they're removed and the command retried once. Any other holder fails the run with a clear "locked" message. |
-| **"Docker" is a trademark of Docker, Inc.** Their brand guidelines restrict its use in product names and logos | Fine while private. Choose a distinct product name before any public release ("for Docker" phrasing is the usual safe form). Artwork must never use the whale or Docker logos. |
+| restic repo lock left behind by a crash | A run that hits a lock checks who holds it. Locks held only by our own runners (hostname `stowaway-*`) are stale by construction, since runs on one repository are serialised, so they're removed and the command retried once. Any other holder fails the run with a clear "locked" message. |
+| **"Docker" is a trademark of Docker, Inc.** Their brand guidelines restrict its use in product names and logos | Resolved: the product is **Stowaway** (decision 8). "Docker" appears only descriptively, as in the tagline. Artwork must never use the whale or Docker logos. |
 
 ## 8. Repository layout
 
 ```
 /src
-  DockerBackup.Service/        ASP.NET Core host, API, SignalR, notifications, Windows Service, tray app (--tray)
-  DockerBackup.Core/           domain: inventory, plans, backups, restore, restic output parsing
-  DockerBackup.Docker/         Docker access, discovery, runner (restic) orchestration, dumps, restore, drills
-  DockerBackup.Data/           EF Core / SQLite, migrations
+  Stowaway.Service/        ASP.NET Core host, API, SignalR, notifications, Windows Service, tray app (--tray)
+  Stowaway.Core/           domain: inventory, plans, backups, restore, restic output parsing
+  Stowaway.Docker/         Docker access, discovery, runner (restic) orchestration, dumps, restore, drills
+  Stowaway.Data/           EF Core / SQLite, migrations
 /web                           React SPA (Vite) → built into the Service's wwwroot
 /installer                     WiX v5 project
 /tests                         xUnit v3: unit + real-engine integration
@@ -184,13 +184,13 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 - **M0 (done):** service host, HTTPS on loopback, engine monitor, UI shell, MSI, CI.
 - **M1 (done):** discovery. Apps are grouped by compose project. Bind sources are mapped back to Windows paths (`/run/desktop/mnt/host/x/...` → `X:\...`). Sockets, tmpfs, system paths and whole drives are excluded by default. Volume sizes come from `/system/df` (raw HTTP over the pipe, because the client library lacks it); bind sizes come from a budgeted walk of the host filesystem. Engine events trigger debounced rescans, and changes are pushed to the UI over SignalR. "Locally built image" = no registry digest **or** Compose build labels: with the containerd image store, local builds have digests too. A request-origin guard protects hub and write endpoints against cross-site WebSocket and CSRF attacks.
 - **M2 (done):** backup core.
-  - **Runner:** `restic/restic:0.19.1` (pinned), in ephemeral containers labelled `dockerbackup.runner`. Leftovers are removed at startup. No network for local/SMB destinations, `no-new-privileges`, and a persistent `dockerbackup-restic-cache` volume.
+  - **Runner:** `restic/restic:0.19.1` (pinned), in ephemeral containers labelled `stowaway.runner`. Leftovers are removed at startup. No network for local/SMB destinations, `no-new-privileges`, and a persistent `stowaway-restic-cache` volume.
   - **Repository password:** placed as a file inside the container before start (not in env, so never visible in `docker inspect`).
   - **SMB destinations:** a CIFS volume (`local` driver, `type=cifs`) created per run and removed afterwards, so share credentials only exist on the engine during a run. Commas in credentials are doubled for the CIFS option parser. *Only verified by unit tests so far: no SMB share was available on the dev host.*
-  - **Snapshot layout:** `/data/<container>/<mount path>` plus `/data/_dockerbackup/` (app.json, run.json, container inspect JSON, compose files and `.env`). Tags: `dockerbackup`, `app=<id>`, `run=<id>`; host = machine name.
+  - **Snapshot layout:** `/data/<container>/<mount path>` plus `/data/_stowaway/` (app.json, run.json, container inspect JSON, compose files and `.env`). Tags: `stowaway`, `app=<id>`, `run=<id>`; host = machine name.
   - **Strategies:** *Live*, or *Stop & start*. Stop & start stops dependents first (from the `com.docker.compose.depends_on` label) and always restarts in dependency order, even on failure or cancel. Downtime is recorded per run.
   - **Queue:** one backup at a time. Interrupted runs are marked failed at startup.
-  - **Persistence:** SQLite through EF Core with migrations (`dotnet ef migrations add <Name> --project src/DockerBackup.Data --startup-project src/DockerBackup.Data`).
+  - **Persistence:** SQLite through EF Core with migrations (`dotnet ef migrations add <Name> --project src/Stowaway.Data --startup-project src/Stowaway.Data`).
 - **M3 (done):** plans and protection.
   - **Plans:** *All apps* (including future apps, minus exclusions) or *Selected*, optionally with unowned volumes (each backed up as its own `volume:<name>` item). Strategy *Auto* (stop & start only for apps running a database; since M5a, only for databases that can't be dumped), *Live* or *Stop & start*. Five-field cron in host local time.
   - **Retention:** a GFS policy applied after each scheduled backup with `restic forget`, filtered by `app=<id>,plan=<id>` tags, so manual snapshots and other plans are never touched. `--keep-last` is always at least 1.
@@ -207,8 +207,8 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Preview and confirmation:** the impact is shown before anything changes, and an in-place restore requires typing the app's name.
   - **Execution:** restores run in the same queue as backups, so they never race a backup on the same repository.
 - **M5a (done):** database dumps and cloud destinations.
-  - **Runner image:** `dockerbackup/runner:<hash>`, built locally on first use as `FROM restic/restic:<pin>` plus `rclone` and `socat` from Alpine. No registry publishing is needed. If the build fails, it falls back to the plain restic image (everything works except Dropbox).
-  - **Secrets in runners:** all restic and cloud variables are written to `/run/dockerbackup/env` inside the container before it starts, then sourced by an `sh` entrypoint wrapper. Nothing secret is in the container config, so nothing shows in `docker inspect`.
+  - **Runner image:** `stowaway/runner:<hash>`, built locally on first use as `FROM restic/restic:<pin>` plus `rclone` and `socat` from Alpine. No registry publishing is needed. If the build fails, it falls back to the plain restic image (everything works except Dropbox).
+  - **Secrets in runners:** all restic and cloud variables are written to `/run/stowaway/env` inside the container before it starts, then sourced by an `sh` entrypoint wrapper. Nothing secret is in the container config, so nothing shows in `docker inspect`.
   - **Dumps:**
     - **Engines:** Postgres (`pg_dumpall`), MySQL/MariaDB (`mysqldump`/`mariadb-dump`, all databases, single transaction), MongoDB (`mongodump --archive`) and Redis (`redis-cli --rdb -`). Credentials come from the official images' environment variables.
     - **How it runs:** inside the database's own container via `exec`. Its stdout streams through the service into a "sink" runner (`cat > /dumps/<name>`) on a temporary volume. That volume is backed up at `/data/_dumps` and removed afterwards.
@@ -235,25 +235,25 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
     - **Scheduling:** weekly per plan item (plan option `VerifyRestores`, default on for new plans), in the night window, and only when there's a newer snapshot to verify. Also available on demand ("Verify restore").
     - **Results:** a failed drill fails the run and alerts. The snapshot shows "Verified restorable …".
 - **M6a (done):** sign-in and hardening.
-  - **Windows sign-in:** Negotiate (Kerberos/NTLM) on every API and hub request; Edge and Chrome sign in silently because localhost is in the Local intranet zone. Allowed: local `Administrators` and members of an optional local group `DockerBackup Operators`.
+  - **Windows sign-in:** Negotiate (Kerberos/NTLM) on every API and hub request; Edge and Chrome sign in silently because localhost is in the Local intranet zone. Allowed: local `Administrators` and members of an optional local group `Stowaway Operators`.
     - Loopback NTLM tokens can be filtered so the Administrators SID is missing entirely, so membership falls back to a machine-account lookup (`System.DirectoryServices.AccountManagement`, recursive, cached 5 minutes).
     - Anonymous: `/api/health` and the static UI shell (it holds no data). The UI shows "Sign-in required" or "No access" screens.
-    - `DockerBackup:Auth:Mode` = `Windows` (default) or `None` (development and tests only).
+    - `Stowaway:Auth:Mode` = `Windows` (default) or `None` (development and tests only).
   - **Stale locks:** see §7.
-  - **Event Log:** as a service, warnings and errors also go to the Application log under source `DockerBackup`.
-  - **Tray app:** `DockerBackup.Service.exe --tray`, started for every user at logon (HKLM `Run`). Polls `/api/inventory` with the user's Windows credentials; shows the protection status; balloon when the failing count rises.
-  - **Uninstall cleanup:** a deferred custom action runs `--uninstall-cleanup` on full uninstall (not upgrades): removes our certificate from LocalMachine\Root and the event source. `%ProgramData%\DockerBackup` is kept on purpose: it holds the repository keys.
+  - **Event Log:** as a service, warnings and errors also go to the Application log under source `Stowaway`.
+  - **Tray app:** `Stowaway.Service.exe --tray`, started for every user at logon (HKLM `Run`). Polls `/api/inventory` with the user's Windows credentials; shows the protection status; balloon when the failing count rises.
+  - **Uninstall cleanup:** a deferred custom action runs `--uninstall-cleanup` on full uninstall (not upgrades): removes our certificate from LocalMachine\Root and the event source. `%ProgramData%\Stowaway` is kept on purpose: it holds the repository keys.
 - **M6b (done):** remote access, code signing, winget, user guide.
   - **Remote access** (`remote-access.json` in the data directory; applied at service start because it changes the listeners):
     - **Listening:** loopback only by default. When on, Kestrel listens on all interfaces on the same port. SNI-independent certificate selection: loopback connections keep the locally trusted certificate; others get the remote one (self-issued for the configured names, 825 days, downloadable as `.cer`; or a LocalMachine\My certificate by thumbprint). A missing or invalid certificate keeps remote access off and says why.
     - **Host names** are added to `AllowedHosts` (DNS-rebinding defence) and count as allowed `https` origins for the origin guard. Requests from non-loopback addresses are refused outright while remote access is off (defence in depth).
-    - **Firewall:** as a service, an inbound rule "DockerBackup remote access" (program + port, chosen profiles; Domain and Private by default) is added at start and removed when off or on uninstall.
-    - **Auth:** a policy scheme forwards loopback requests to Negotiate and remote ones to a cookie (`__Host-DockerBackup`, Secure, HttpOnly, SameSite=Strict, 12 h absolute). Cookie keys: ASP.NET Data Protection in `keys/`, DPAPI (service account). Each request revalidates the account and its security stamp, so deleting an account or resetting its password or authenticator ends its sessions.
+    - **Firewall:** as a service, an inbound rule "Stowaway remote access" (program + port, chosen profiles; Domain and Private by default) is added at start and removed when off or on uninstall.
+    - **Auth:** a policy scheme forwards loopback requests to Negotiate and remote ones to a cookie (`__Host-Stowaway`, Secure, HttpOnly, SameSite=Strict, 12 h absolute). Cookie keys: ASP.NET Data Protection in `keys/`, DPAPI (service account). Each request revalidates the account and its security stamp, so deleting an account or resetting its password or authenticator ends its sessions.
     - **Accounts** (SQLite `RemoteAccounts`): PBKDF2-SHA256 (600k iterations) password: 8+ characters with upper and lower case and a digit or symbol (moderate on purpose: TOTP is mandatory, plus rate limits and lockouts); user names may be email addresses; TOTP secret (RFC 6238, SHA-1, 30 s, 6 digits, ±1 step) protected with DPAPI; a code is accepted once (last step stored); 10 one-time recovery codes, stored as SHA-256. Unconfirmed until a first code is entered.
     - **Sign-in:** one request with user name, password and code; every failure looks the same (unknown users cost the same PBKDF2 time). 5 failures lock the account for 15 minutes; 10 attempts per minute per address (rate limiter). Failures and lockouts go to the Event Log.
     - **Local-only** (policy `LocalOnly`): `/api/remote/**`, `/api/system/restart`, and the recovery-key reveal. Enabling requires at least one confirmed account; the last confirmed account can't be deleted while it's on.
     - **Restart from the UI:** a detached `cmd /c "net stop … & net start …"` (a service can't start itself once stopped).
-  - **Code signing:** `build.ps1 -SignThumbprint` (certificate in a store, including hardware tokens) or `DOCKERBACKUP_SIGN_PFX`/`_PASSWORD` (release workflow secrets). `Set-AuthenticodeSignature` (no Windows SDK needed) signs the service executable before it goes into the MSI, then the MSI; RFC 3161 timestamp from DigiCert by default. Cloud HSM signing (Azure Trusted Signing, KeyLocker) would need its own step.
+  - **Code signing:** `build.ps1 -SignThumbprint` (certificate in a store, including hardware tokens) or `STOWAWAY_SIGN_PFX`/`_PASSWORD` (release workflow secrets). `Set-AuthenticodeSignature` (no Windows SDK needed) signs the service executable before it goes into the MSI, then the MSI; RFC 3161 timestamp from DigiCert by default. Cloud HSM signing (Azure Trusted Signing, KeyLocker) would need its own step.
   - **winget:** `tools/New-WingetManifest.ps1` writes the version/installer/locale manifests (schema 1.9.0, MSI ProductCode, SHA-256); releases attach them with a `.sha256` file. Submission to winget-pkgs waits for public releases and the final product name.
   - **User guide:** `docs/USER-GUIDE.md`.
 - **M6c (done):** remote access over the internet, through a reverse proxy (the owner's setup: Cloudflare → nginx on another LAN host → this host).
@@ -264,7 +264,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Security events** (`ISecurityEvents`): sign-ins, failures, lockouts, recovery-code use and step-ups are logged (warnings reach the Event Log) and written to the audit log; new-address sign-ins, lockouts and recovery-code use are also sent to notification channels that report failures (`NotificationEvent.Security`).
   - **Audit log** (SQLite `AuditEntries`, 180 days): every API change (actor, client address, local/remote, method + path, status; never bodies) and the security events. `GET /api/audit`; Settings → Audit log.
   - **HSTS** on remote responses only (on localhost it would stick to every other local site).
-  - **nginx** guide: Authenticated Origin Pulls, `X-Forwarded-For $http_cf_connecting_ip`, WebSocket upgrade, optional `proxy_ssl_verify` against DockerBackup's certificate (`/api/remote/certificate?format=pem`; off in the default example, as the hop is on the LAN). Cloudflare Access recommended as an independent first gate.
+  - **nginx** guide: Authenticated Origin Pulls, `X-Forwarded-For $http_cf_connecting_ip`, WebSocket upgrade, optional `proxy_ssl_verify` against Stowaway's certificate (`/api/remote/certificate?format=pem`; off in the default example, as the hop is on the LAN). Cloudflare Access recommended as an independent first gate.
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 
@@ -272,10 +272,11 @@ M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworth
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Repo name | Renamed to `niogtres/docker_backup` (private). |
+| 1 | Repo name | `niogtres/stowaway` (private). Created as `docker_backuup`, then `docker_backup`, renamed with the product (decision 8). |
 | 2 | License | Closed source for now. No license file. |
 | 3 | Backup engine | **restic** (BSD-2-Clause, bundled). The service already owns scheduling, policy and UI, and restic is a minimal, scriptable engine with JSON output and a stable repo format. Kopia would duplicate our UI/server/policy layers. *Correction:* restic calls are concentrated in `ResticRepository`, but a formal `IBackupEngine` interface was not introduced; add one if a second engine is ever needed. |
 | 4 | Container platforms | v1: Linux containers only. Windows-containers engine in phase 2. |
-| 5 | Remote access | Localhost only for the MVP. *M6b:* opt-in remote access, approved with the M6b scope. Off by default, switched on only from this computer, and only with Windows sign-in on. Remote users need a DockerBackup account with password and authenticator. |
+| 5 | Remote access | Localhost only for the MVP. *M6b:* opt-in remote access, approved with the M6b scope. Off by default, switched on only from this computer, and only with Windows sign-in on. Remote users need a Stowaway account with password and authenticator. |
 | 6 | Multi-host | Planned for later; v1 manages one host. *Correction:* the data model does **not** carry an engine id yet, so multi-host will need a migration (adding an engine id to destinations, plans and runs). |
+| 8 | Product name | **Stowaway**, tagline "Sensible Docker backup management" (2026-11-27). Renamed everywhere before the first real install: product, service (`Stowaway`), data folder (`%ProgramData%\Stowaway`), namespaces and projects, runner image, restic tags. Repository renamed to `niogtres/stowaway`. |
 | 7 | Scheduler | **Cronos + own scheduler** instead of Quartz.NET (decided during M3). Plans already live in our SQLite database. Quartz's persistent store would add a second persistence model with about a dozen tables, and the behaviour we need is small: compute the next run, catch up once, wait for the engine. |

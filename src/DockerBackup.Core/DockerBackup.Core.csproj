@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <PackageReference Include="Cronos" />
-  </ItemGroup>
-  <ItemGroup>
-    <InternalsVisibleTo Include="DockerBackup.Tests" />
-  </ItemGroup>
-</Project>

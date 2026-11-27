@@ -25,7 +25,7 @@ export function RestoreDialog({ snapshot, appName, scope, onClose, recreate = fa
   const dumpsOnly = scope.sources.every((s) => s.kind === 'dumps')
   const [target, setTarget] = useState<RestoreTarget>(scope.subPath || dumpsOnly ? 'hostFolder' : 'inPlace')
   const [volumeName, setVolumeName] = useState(`${single?.kind === 'volume' ? single.source : appName.replace(/[^a-zA-Z0-9_.-]/g, '-')}-restored-${stamp(snapshot.time)}`)
-  const [hostFolder, setHostFolder] = useState(`C:\\DockerBackup-restores\\${appName.replace(/[^a-zA-Z0-9_.-]/g, '-')}-${stamp(snapshot.time)}`)
+  const [hostFolder, setHostFolder] = useState(`C:\\Stowaway-restores\\${appName.replace(/[^a-zA-Z0-9_.-]/g, '-')}-${stamp(snapshot.time)}`)
   const [safety, setSafety] = useState(true)
   const [confirmText, setConfirmText] = useState('')
   const [preview, setPreview] = useState<RestorePreview | null>(null)

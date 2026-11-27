@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Stowaway.Core/Stowaway.Core.csproj" />
+    <Project Path="src/Stowaway.Data/Stowaway.Data.csproj" />
+    <Project Path="src/Stowaway.Docker/Stowaway.Docker.csproj" />
+    <Project Path="src/Stowaway.Service/Stowaway.Service.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Stowaway.Tests/Stowaway.Tests.csproj" />
+  </Folder>
+</Solution>

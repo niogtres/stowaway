@@ -5,15 +5,15 @@
   Submitting to winget-pkgs needs an installer URL anyone can download, so it waits until releases are public
   (and the product has its final name). Until then the release workflow attaches these files to each release.
 .EXAMPLE
-  ./tools/New-WingetManifest.ps1 -Version 0.6.0 -Msi artifacts/DockerBackup-0.6.0-x64.msi `
-      -InstallerUrl https://github.com/niogtres/docker_backup/releases/download/v0.6.0/DockerBackup-0.6.0-x64.msi
+  ./tools/New-WingetManifest.ps1 -Version 0.6.0 -Msi artifacts/Stowaway-0.6.0-x64.msi `
+      -InstallerUrl https://github.com/niogtres/stowaway/releases/download/v0.6.0/Stowaway-0.6.0-x64.msi
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $Msi,
     [Parameter(Mandatory)] [string] $InstallerUrl,
-    [string] $PackageIdentifier = 'Niogtres.DockerBackup',
+    [string] $PackageIdentifier = 'Niogtres.Stowaway',
     [string] $OutDir = 'artifacts/winget'
 )
 
@@ -74,9 +74,9 @@ PackageIdentifier: $PackageIdentifier
 PackageVersion: $Version
 PackageLocale: en-US
 Publisher: niogtres
-PackageName: DockerBackup
+PackageName: Stowaway
 License: Proprietary
-ShortDescription: Scheduled, encrypted backup and restore for Docker containers, volumes and bind mounts on Windows.
+ShortDescription: Sensible Docker backup management. Scheduled, encrypted backup and restore for Docker containers, volumes and bind mounts on Windows.
 Description: |-
   Runs as a Windows service, discovers every container, compose stack, volume and bind mount, and backs them up on a
   schedule with restic (local folders, SMB shares, S3-compatible storage, Backblaze B2, Azure, SFTP, Dropbox).

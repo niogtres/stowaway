@@ -11,7 +11,7 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   build: {
-    outDir: '../src/DockerBackup.Service/wwwroot',
+    outDir: '../src/Stowaway.Service/wwwroot',
     emptyOutDir: true,
     // Served from localhost, so a single bundle is fine; revisit with route-level splitting as pages grow.
     chunkSizeWarningLimit: 1000,

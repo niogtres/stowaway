@@ -381,7 +381,7 @@ export function setFreshCodePrompt(prompt: (() => Promise<boolean>) | null) {
 async function request<T>(method: Method, path: string, body?: unknown, retried = false): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   // Required by the server for state-changing calls (anti-CSRF; see RequestOriginGuard).
-  if (method !== 'GET') headers['X-DockerBackup-Request'] = '1'
+  if (method !== 'GET') headers['X-Stowaway-Request'] = '1'
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   const response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   if (response.status === 428 && !retried && freshCodePrompt && (await freshCodePrompt())) {

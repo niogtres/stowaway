@@ -132,7 +132,7 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         title={`Remove ${d.name}?`}
-        description="DockerBackup forgets this destination. The backup data at the location is not deleted. You can reconnect later with its recovery key."
+        description="Stowaway forgets this destination. The backup data at the location is not deleted. You can reconnect later with its recovery key."
         footer={
           <>
             <Button onClick={() => setConfirmDelete(false)}>Keep it</Button>

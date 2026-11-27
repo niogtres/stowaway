@@ -32,11 +32,11 @@ jobs:
 
       - name: Build, test and package
         shell: pwsh
-        run: ./build.ps1 -Version "0.1.${{ github.run_number }}"
+        run: ./build.ps1 -Version "0.7.${{ github.run_number }}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DockerBackup-msi
+          name: Stowaway-msi
           path: artifacts/*.msi
           if-no-files-found: error
           retention-days: 14

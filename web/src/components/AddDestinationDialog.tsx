@@ -242,7 +242,7 @@ export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
                 </p>
               ) : (
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-muted">Sign in to Dropbox and allow access. DockerBackup only keeps the access it is given.</p>
+                  <p className="text-sm text-muted">Sign in to Dropbox and allow access. Stowaway only keeps the access it is given.</p>
                   <Button variant="primary" onClick={connectDropbox} disabled={dropboxStarting}>
                     <ExternalLink className="size-4" /> {dropboxStarting ? 'Starting…' : 'Connect Dropbox'}
                   </Button>
@@ -251,14 +251,14 @@ export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
               {dropbox?.state === 'failed' && <p className="mt-2 text-sm text-danger">{dropbox.error}</p>}
             </div>
             <Field label="Folder in Dropbox">
-              <TextInput value={val('prefix')} onChange={set('prefix')} className="font-mono" placeholder="DockerBackup" />
+              <TextInput value={val('prefix')} onChange={set('prefix')} className="font-mono" placeholder="Stowaway" />
             </Field>
           </>
         )}
 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={connectExisting} onChange={(e) => setConnectExisting(e.target.checked)} className="accent-[var(--accent)]" />
-          This location already has DockerBackup backups (connect with its recovery key)
+          This location already has Stowaway backups (connect with its recovery key)
         </label>
         {connectExisting && (
           <Field label="Recovery key">

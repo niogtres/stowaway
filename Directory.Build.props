@@ -7,8 +7,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <Version>0.1.0</Version>
-    <Product>DockerBackup</Product>
-    <Company>DockerBackup</Company>
-    <Copyright>Copyright © DockerBackup. All rights reserved.</Copyright>
+    <Product>Stowaway</Product>
+    <Company>Stowaway</Company>
+    <Copyright>Copyright © Stowaway. All rights reserved.</Copyright>
   </PropertyGroup>
 </Project>

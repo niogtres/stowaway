@@ -41,7 +41,7 @@ def main() -> None:
     logo = Image.open(BRAND / "logo-mark-1024.png").convert("RGBA")
 
     print("Icons")
-    write_ico(logo, ROOT / "src" / "DockerBackup.Service" / "app.ico", ICO_SIZES)
+    write_ico(logo, ROOT / "src" / "Stowaway.Service" / "app.ico", ICO_SIZES)
     write_ico(logo, ROOT / "web" / "public" / "favicon.ico", FAVICON_SIZES)
     shutil.copyfile(BRAND / "logo-mark.svg", ROOT / "web" / "public" / "favicon.svg")
     shutil.copyfile(BRAND / "logo-mark.svg", ROOT / "web" / "src" / "assets" / "logo-mark.svg")

@@ -1,20 +1,20 @@
-# DockerBackup: maintainer notes
+# Stowaway: maintainer notes
 
 Design and decisions: [docs/DESIGN.md](docs/DESIGN.md). Read §10 (decisions) before changing scope.
 
 ## Layout
-- `src/DockerBackup.Service`: ASP.NET Core host, Windows Service, API (`/api/*`), serves SPA from `wwwroot` (generated, git-ignored).
-- `src/DockerBackup.Core`: domain types, no infrastructure dependencies.
-- `src/DockerBackup.Docker`: Docker Engine access (Docker.DotNet.Enhanced, builder API: `new DockerClientBuilder().WithEndpoint(..).Build()`).
+- `src/Stowaway.Service`: ASP.NET Core host, Windows Service, API (`/api/*`), serves SPA from `wwwroot` (generated, git-ignored).
+- `src/Stowaway.Core`: domain types, no infrastructure dependencies.
+- `src/Stowaway.Docker`: Docker Engine access (Docker.DotNet.Enhanced, builder API: `new DockerClientBuilder().WithEndpoint(..).Build()`).
 - `web/`: React 19 + Vite 8 + TS 7 + Tailwind v4. `npm run build` writes into the service's `wwwroot`.
-- `src/DockerBackup.Data`: EF Core + SQLite (destinations, runs). Add migrations with `dotnet tool restore` then `dotnet ef migrations add <Name> --project src/DockerBackup.Data --startup-project src/DockerBackup.Data`.
+- `src/Stowaway.Data`: EF Core + SQLite (destinations, runs). Add migrations with `dotnet tool restore` then `dotnet ef migrations add <Name> --project src/Stowaway.Data --startup-project src/Stowaway.Data`.
 - Backups run restic in ephemeral `restic/restic:<pinned>` containers (`ResticRunner`); bump the pin deliberately and re-run the integration tests.
 - `installer/`: WiX **v5** MSI (do not upgrade to v6+ without approval: it requires accepting the OSMF EULA).
-- `tests/DockerBackup.Tests`: xUnit v3 on Microsoft.Testing.Platform (`global.json` opts in).
+- `tests/Stowaway.Tests`: xUnit v3 on Microsoft.Testing.Platform (`global.json` opts in).
 
 ## Commands
 - Full build → MSI: `./build.ps1 [-Version x.y.z] [-SkipTests]` (output in `artifacts/`).
-- Dev: `dotnet run --project src/DockerBackup.Service` (https://localhost:8484, data in `%LOCALAPPDATA%\DockerBackup-dev`) and `npm run dev` in `web/` (http://localhost:5173, proxies `/api`).
+- Dev: `dotnet run --project src/Stowaway.Service` (https://localhost:8484, data in `%LOCALAPPDATA%\Stowaway-dev`) and `npm run dev` in `web/` (http://localhost:5173, proxies `/api`).
 - Tests: `dotnet test`. Web checks: `npm run lint`, `npm run build` (includes `tsc -b`).
 
 ## Conventions

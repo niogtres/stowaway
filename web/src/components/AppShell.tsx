@@ -48,7 +48,7 @@ export function AppShell() {
         <div className="mb-8 flex items-center gap-2.5 px-2">
           <img src={logoMark} alt="" className="size-8" />
           <div className="leading-tight">
-            <div className="font-semibold tracking-tight">DockerBackup</div>
+            <div className="font-semibold tracking-tight">Stowaway</div>
             <div className="text-[11px] text-muted">{data ? `v${displayVersion(data.version)}` : ' '}</div>
           </div>
         </div>
@@ -104,7 +104,7 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-4 px-8 pb-2 pt-6">
-          <h1 className="text-xl font-semibold tracking-tight">{current?.label ?? 'DockerBackup'}</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{current?.label ?? 'Stowaway'}</h1>
           <div className="flex items-center gap-2">
             <EngineStatusPill />
             <ThemeToggle />
@@ -128,8 +128,8 @@ function AccessDenied({ forbidden }: { forbidden: boolean }) {
         <h1 className="text-lg font-semibold tracking-tight">{forbidden ? 'No access' : 'Sign-in required'}</h1>
         <p className="mt-2 text-sm text-muted">
           {forbidden
-            ? 'DockerBackup is available to local administrators and members of the "DockerBackup Operators" group. Ask an administrator to add your Windows account to that group.'
-            : 'DockerBackup signs you in with your Windows account. If your browser asks, enter your Windows user name and password.'}
+            ? 'Stowaway is available to local administrators and members of the "Stowaway Operators" group. Ask an administrator to add your Windows account to that group.'
+            : 'Stowaway signs you in with your Windows account. If your browser asks, enter your Windows user name and password.'}
         </p>
       </div>
     </div>
