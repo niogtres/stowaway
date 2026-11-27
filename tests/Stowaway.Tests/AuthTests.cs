@@ -32,6 +32,26 @@ public sealed class OperatorRuleTests
         // A made-up account SID that isn't a member of anything on this machine.
         Assert.False(WindowsAuthorization.IsOperator(User(new Claim(ClaimTypes.PrimarySid, "S-1-5-21-1-2-3-99999"), new Claim(ClaimTypes.GroupSid, "S-1-5-32-545"))));
     }
+
+    [Fact]
+    public void An_administrator_whose_token_lacks_the_administrators_group_is_found_by_the_group_lookup()
+    {
+        // The account running the tests, minus the Administrators SID in its token: what a filtered loopback logon
+        // of an administrator can look like. The lookup must still find it (directly or via a group in the token).
+        using var me = WindowsIdentity.GetCurrent();
+        var claims = me.Claims.ToList();
+        Assert.SkipUnless(claims.Any(c => c.Value == Admins) || IsLocalAdministrator(me.User!.Value), "The account running the tests isn't an administrator");
+
+        var stripped = User([.. claims.Where(c => c.Value != Admins).Select(c => new Claim(c.Type, c.Value))]);
+        Assert.True(WindowsAuthorization.IsOperator(stripped), WindowsAuthorization.Describe(stripped));
+    }
+
+    private static bool IsLocalAdministrator(string sid)
+    {
+        using var context = new System.DirectoryServices.AccountManagement.PrincipalContext(System.DirectoryServices.AccountManagement.ContextType.Machine);
+        using var user = System.DirectoryServices.AccountManagement.UserPrincipal.FindByIdentity(context, System.DirectoryServices.AccountManagement.IdentityType.Sid, sid);
+        return user?.IsMemberOf(context, System.DirectoryServices.AccountManagement.IdentityType.Sid, Admins) == true;
+    }
 }
 
 /// <summary>The service with Windows sign-in on, as installed.</summary>

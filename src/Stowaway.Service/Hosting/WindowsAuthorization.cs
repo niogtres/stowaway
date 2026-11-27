@@ -77,7 +77,8 @@ public sealed class OperatorHandler(ILogger<OperatorHandler> logger) : Authoriza
         }
         else if (context.User.Identity?.IsAuthenticated == true)
         {
-            logger.LogWarning("Denied {User}: not an administrator or a member of {Group}", context.User.Identity.Name, WindowsAuthorization.OperatorsGroup);
+            logger.LogWarning("Denied {User}: not an administrator or a member of {Group} ({Details})",
+                context.User.Identity.Name, WindowsAuthorization.OperatorsGroup, WindowsAuthorization.Describe(context.User));
         }
 
         return Task.CompletedTask;
@@ -126,31 +127,64 @@ public static class WindowsAuthorization
         }
 
         var userSid = user.FindFirst(ClaimTypes.PrimarySid)?.Value;
-        return userSid is not null && IsMemberOfAllowedGroups(userSid);
+        return userSid is not null && IsMemberOfAllowedGroups(userSid, sids);
     }
 
-    private static bool IsMemberOfAllowedGroups(string userSid)
+    /// <summary>What the access decision saw, for the log: how the user signed in and what the token and lookup said.</summary>
+    public static string Describe(ClaimsPrincipal user)
+    {
+        var admins = user.Claims.Where(c => string.Equals(c.Value, AdministratorsSid, StringComparison.OrdinalIgnoreCase)).Select(c => c.Type == DenyOnlySid ? "deny-only" : "group").FirstOrDefault() ?? "absent";
+        var userSid = user.FindFirst(ClaimTypes.PrimarySid)?.Value;
+        var kind = userSid switch
+        {
+            null => "none",
+            _ when userSid.StartsWith("S-1-12-1-", StringComparison.Ordinal) => "Entra ID",
+            _ when userSid.StartsWith("S-1-5-21-", StringComparison.Ordinal) => "local or domain",
+            _ => userSid.Split('-').Take(4).Aggregate((a, b) => a + "-" + b) + "-…",
+        };
+        var groups = user.Claims.Count(c => c.Type is ClaimTypes.GroupSid or DenyOnlySid);
+        var lookup = userSid is not null && LastLookupError.TryGetValue(userSid, out var error) ? $"group lookup failed: {error}" : "group lookup: not a member";
+        return $"auth {user.Identity?.AuthenticationType ?? "?"}, account kind {kind}, {groups} group SIDs, Administrators in token: {admins}, {lookup}";
+    }
+
+    private static readonly ConcurrentDictionary<string, string> LastLookupError = new(StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsMemberOfAllowedGroups(string userSid, IReadOnlySet<string> tokenGroups)
     {
         if (MembershipCache.TryGetValue(userSid, out var cached) && DateTimeOffset.UtcNow - cached.At < CacheFor)
         {
             return cached.Allowed;
         }
 
-        var allowed = IsMember(AdministratorsSid, userSid) || (OperatorsSid.Value is { } operators && IsMember(operators, userSid));
+        LastLookupError.TryRemove(userSid, out _);
+        var allowed = IsMember(AdministratorsSid, userSid, tokenGroups) || (OperatorsSid.Value is { } operators && IsMember(operators, userSid, tokenGroups));
         MembershipCache[userSid] = (allowed, DateTimeOffset.UtcNow);
         return allowed;
     }
 
-    private static bool IsMember(string groupSid, string userSid)
+    /// <summary>
+    /// Whether the user is in a local group: directly, or through a domain or Entra ID group that is in the user's
+    /// token. The member SIDs are read without resolving names: on Entra ID-joined PCs the Administrators group
+    /// holds cloud SIDs that name lookups can't resolve, which made the old enumeration throw for everyone.
+    /// </summary>
+    private static bool IsMember(string groupSid, string userSid, IReadOnlySet<string> tokenGroups)
     {
         try
         {
+            var members = LocalGroupMembers.Sids(new SecurityIdentifier(groupSid));
+            if (members.Contains(userSid) || members.Overlaps(tokenGroups))
+            {
+                return true;
+            }
+
+            // Local groups nested in the local group (rare): those need the full membership walk.
             using var context = new PrincipalContext(ContextType.Machine);
             using var group = GroupPrincipal.FindByIdentity(context, IdentityType.Sid, groupSid);
             return group?.GetMembers(recursive: true).Any(m => string.Equals(m.Sid?.Value, userSid, StringComparison.OrdinalIgnoreCase)) == true;
         }
-        catch (Exception ex) when (ex is PrincipalException or InvalidOperationException or System.Runtime.InteropServices.COMException)
+        catch (Exception ex) when (ex is PrincipalException or InvalidOperationException or System.Runtime.InteropServices.COMException or System.ComponentModel.Win32Exception)
         {
+            LastLookupError[userSid] = $"{ex.GetType().Name}: {ex.Message}";
             return false;
         }
     }
