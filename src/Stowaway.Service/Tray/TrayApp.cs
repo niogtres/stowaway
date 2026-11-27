@@ -20,6 +20,10 @@ public static class TrayApp
             return;
         }
 
+        // Upgrades: Windows' Restart Manager asks running apps to close (WM_QUERYENDSESSION/WM_ENDSESSION) so it can
+        // replace their files, and restarts the ones that registered for it.
+        _ = RegisterApplicationRestart("--tray", 0);
+
         var thread = new Thread(() =>
         {
             System.Windows.Forms.Application.EnableVisualStyles();
@@ -30,6 +34,9 @@ public static class TrayApp
         thread.Start();
         thread.Join();
     }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int RegisterApplicationRestart(string commandLine, int flags);
 
     private static int ReadPort()
     {
@@ -84,6 +91,9 @@ public static class TrayApp
                 Visible = true,
             };
             _icon.DoubleClick += (_, _) => Open("/");
+
+            // Close when Windows (or an installer via Restart Manager) ends the session for this app.
+            Microsoft.Win32.SystemEvents.SessionEnded += (_, _) => ExitThread();
 
             _timer = new System.Windows.Forms.Timer { Interval = (int)PollInterval.TotalMilliseconds };
             _timer.Tick += async (_, _) => await PollAsync();

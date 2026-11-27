@@ -20,7 +20,8 @@
     <Icon Id="AppIcon" SourceFile="..\src\Stowaway.Service\app.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
-    <!-- Wizard: Welcome -> install folder -> ready -> progress -> finish. No licence page (closed source, no EULA yet). -->
+    <!-- Wizard: Welcome -> install folder -> ready -> progress -> finish. The licence page is skipped: MIT needs no
+         acceptance (LICENSE.txt is installed next to the program and shown on the About page). -->
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <WixVariable Id="WixUIDialogBmp" Value="assets\dialog.bmp" />
     <WixVariable Id="WixUIBannerBmp" Value="assets\banner.bmp" />
@@ -30,6 +31,7 @@
       <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="99" />
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="OpenUi"
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="StartTray" Condition="NOT Installed" />
     </UI>
 
     <!-- Finish page: offer to open the UI (the service is already started by ServiceControl). -->
@@ -37,6 +39,10 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WixShellExecTarget" Value="https://localhost:8484/" />
     <CustomAction Id="OpenUi" BinaryRef="Wix4UtilCA_X64" DllEntry="WixShellExec" Impersonate="yes" Return="ignore" />
+
+    <!-- Finish page: start the tray for the installing user now (it otherwise starts at the next sign-in).
+         Runs in the wizard's own process, so in the user's session. Silent installs skip it. -->
+    <CustomAction Id="StartTray" FileRef="ServiceExe" ExeCommand="--tray" Execute="immediate" Impersonate="yes" Return="asyncNoWait" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Stowaway" />

@@ -29,19 +29,33 @@ public sealed class HostPathsTests
     [InlineData(@"\\.\pipe\docker_engine", @"\\.\pipe\docker_engine", "Named pipe")]
     [InlineData("/proc", "/host/proc", "System path")]
     [InlineData("/etc/localtime", "/etc/localtime", "System path")]
-    [InlineData("M:/", "/mnt/mdrive", "Entire drive")]
-    [InlineData("/run/desktop/mnt/host/u", "/mnt/u", "Entire drive")]
-    public void Plumbing_and_whole_drives_are_excluded(string source, string destination, string reasonPrefix)
+    [InlineData("M:/", "/mnt/mdrive", "Whole drive")]
+    [InlineData("/run/desktop/mnt/host/u", "/mnt/u", "Whole drive")]
+    [InlineData(@"\\nas\media", "/media", "Network share")]
+    public void Plumbing_drives_and_shares_are_excluded(string source, string destination, string reasonPrefix)
     {
-        var reason = HostPaths.BindExclusionReason(source, destination);
+        var reason = HostPaths.BindExclusionReason(source, destination, projectDir: @"X:\Dev\blog");
         Assert.NotNull(reason);
         Assert.StartsWith(reasonPrefix, reason);
     }
 
     [Theory]
-    [InlineData("/run/desktop/mnt/host/x/Dev/blog/src", "/var/www/html")]
-    [InlineData(@"X:\Dev\wiki\config", "/config")]
-    [InlineData("/srv/data", "/data")]
-    public void Ordinary_data_paths_are_included(string source, string destination) =>
-        Assert.Null(HostPaths.BindExclusionReason(source, destination));
+    [InlineData("/run/desktop/mnt/host/x/Dev/blog/src", @"X:\Dev\blog")]
+    [InlineData(@"X:\Dev\blog", @"X:\Dev\blog")]
+    [InlineData(@"x:\dev\BLOG\data\db", @"X:\Dev\blog")]
+    [InlineData("/home/me/blog/data", "/home/me/blog")]
+    public void Folders_inside_the_compose_project_belong_to_the_app(string source, string projectDir) =>
+        Assert.Null(HostPaths.BindExclusionReason(source, "/data", projectDir));
+
+    [Theory]
+    [InlineData(@"X:\Media\Movies", @"X:\Dev\blog")]
+    [InlineData(@"X:\Dev\blog-old\data", @"X:\Dev\blog")]          // a sibling with the same prefix isn't inside
+    [InlineData("/run/desktop/mnt/host/x/Dev/shared", @"X:\Dev\blog")]
+    [InlineData("/home/me/other", "/home/me/blog")]
+    public void Folders_outside_the_project_are_not_backed_up(string source, string projectDir) =>
+        Assert.Equal(HostPaths.OutsideApp, HostPaths.BindExclusionReason(source, "/data", projectDir));
+
+    [Fact]
+    public void Standalone_containers_have_no_project_folder() =>
+        Assert.Equal(HostPaths.OutsideStandalone, HostPaths.BindExclusionReason(@"X:\docker\jellyfin\config", "/config", projectDir: null));
 }

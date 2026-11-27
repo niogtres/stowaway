@@ -278,6 +278,42 @@ public sealed class AuditStore(IDbContextFactory<AppDbContext> factory) : IAudit
     }
 }
 
+public sealed class DatabaseCredentialStore(IDbContextFactory<AppDbContext> factory) : IDatabaseCredentialStore
+{
+    public async Task<IReadOnlyList<DatabaseCredential>> ListAsync(CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.DatabaseCredentials.AsNoTracking().OrderBy(c => c.ContainerName).ToListAsync(ct);
+    }
+
+    public async Task<DatabaseCredential?> GetAsync(string containerName, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.DatabaseCredentials.AsNoTracking().FirstOrDefaultAsync(c => c.ContainerName == containerName, ct);
+    }
+
+    public async Task SaveAsync(DatabaseCredential credential, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        if (await db.DatabaseCredentials.AnyAsync(c => c.ContainerName == credential.ContainerName, ct))
+        {
+            db.DatabaseCredentials.Update(credential);
+        }
+        else
+        {
+            db.DatabaseCredentials.Add(credential);
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> DeleteAsync(string containerName, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.DatabaseCredentials.Where(c => c.ContainerName == containerName).ExecuteDeleteAsync(ct) > 0;
+    }
+}
+
 public static class DataServiceCollectionExtensions
 {
     public static IServiceCollection AddStowawayData(this IServiceCollection services, string databasePath)
@@ -289,6 +325,7 @@ public static class DataServiceCollectionExtensions
         services.AddSingleton<INotificationStore, NotificationStore>();
         services.AddSingleton<IRemoteAccountStore, RemoteAccountStore>();
         services.AddSingleton<IAuditStore, AuditStore>();
+        services.AddSingleton<IDatabaseCredentialStore, DatabaseCredentialStore>();
         return services;
     }
 

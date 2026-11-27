@@ -16,6 +16,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<NotificationChannel> NotificationChannels => Set<NotificationChannel>();
     public DbSet<RemoteAccount> RemoteAccounts => Set<RemoteAccount>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<DatabaseCredential> DatabaseCredentials => Set<DatabaseCredential>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configuration)
     {
@@ -88,6 +89,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(a => a.Action).HasMaxLength(300);
             e.Property(a => a.Detail).HasMaxLength(500);
             e.HasIndex(a => a.At);
+        });
+
+        model.Entity<DatabaseCredential>(e =>
+        {
+            e.HasKey(c => c.ContainerName);
+            e.Property(c => c.ContainerName).HasMaxLength(300);
+            e.Property(c => c.AppId).HasMaxLength(300);
+            e.Property(c => c.Kind).HasConversion<string>().HasMaxLength(20);
+            e.Property(c => c.User).HasMaxLength(200);
+            e.Property(c => c.Database).HasMaxLength(200);
         });
     }
 }

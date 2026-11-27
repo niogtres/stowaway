@@ -4,7 +4,7 @@ import { useDeferredValue, useMemo, useState } from 'react'
 import emptyInventory from '@/assets/illustrations/empty-inventory.webp'
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
 import { AppBackupStatus, BackupNowDialog } from '@/components/backup'
-import { ContainerRow, MountRow, ProtectionChip } from '@/components/inventory'
+import { ContainerRow, MountRow, OutsideDataNote, ProtectionChip } from '@/components/inventory'
 import { Badge, Card, Skeleton } from '@/components/ui'
 import { useInventory, useRefreshInventory, type AppInfo, type InventorySnapshot, type MountInfo, type VolumeInfo } from '@/lib/api'
 import { cn, formatBytes, formatNumber, shortVolumeName, timeAgo } from '@/lib/utils'
@@ -236,6 +236,7 @@ function AppCard({ app }: { app: AppInfo }) {
           {mounts.map((m) => (
             <MountRow key={m.key} mount={m} sharedBy={m.count} />
           ))}
+          <OutsideDataNote mounts={mounts} />
         </div>
       )}
 
@@ -286,7 +287,15 @@ function OrphanVolumes({ volumes }: { volumes: VolumeInfo[] }) {
                 </td>
                 <td className="px-5 py-2.5 text-muted">{v.composeProject ?? '—'}</td>
                 <td className="px-5 py-2.5 text-muted">{v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '—'}</td>
-                <td className="px-5 py-2.5 text-right tabular-nums">{formatBytes(v.sizeBytes)}</td>
+                <td className="px-5 py-2.5 text-right tabular-nums">
+                  {v.exclusionReason ? (
+                    <span className="text-xs text-muted" title={v.exclusionReason}>
+                      network share, not included
+                    </span>
+                  ) : (
+                    formatBytes(v.sizeBytes)
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

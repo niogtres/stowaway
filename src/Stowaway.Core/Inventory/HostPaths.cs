@@ -2,7 +2,11 @@ using System.Text.RegularExpressions;
 
 namespace Stowaway.Core.Inventory;
 
-/// <summary>Maps engine-side bind-mount sources to Windows paths and decides which ones are backed up by default.</summary>
+/// <summary>
+/// Maps engine-side bind-mount sources to Windows paths and decides which bind mounts belong to the app.
+/// Stowaway backs up an app: its volumes, its database dumps, and folders inside its compose project folder.
+/// Anything else mapped in from the host (drives, shares, folders elsewhere) is the job of a file backup.
+/// </summary>
 public static partial class HostPaths
 {
     // Docker Desktop (WSL2) exposes Windows drives inside its VM under these prefixes.
@@ -46,10 +50,16 @@ public static partial class HostPaths
         return null;
     }
 
+    public const string OutsideApp = "Outside the app: a host folder, not part of Docker or the app's project folder. Back it up with your file backup.";
+    public const string OutsideStandalone = "Outside Docker: a host folder of a standalone container. Back it up with your file backup, or use a named volume so Stowaway includes it.";
+    public const string WholeDrive = "Whole drive: outside Docker. Back it up with your file backup.";
+    public const string NetworkShare = "Network share: the data lives on another computer. Back it up there.";
+
     /// <summary>
-    /// Returns why a bind mount should be excluded by default, or null when it holds ordinary data.
+    /// Why a bind mount isn't backed up, or null when it is: only folders inside the app's compose project folder
+    /// (<paramref name="projectDir"/>, null for standalone containers) belong to the app.
     /// </summary>
-    public static string? BindExclusionReason(string source, string destination)
+    public static string? BindExclusionReason(string source, string destination, string? projectDir)
     {
         var lowerSource = source.Replace('\\', '/').ToLowerInvariant();
         if (lowerSource.EndsWith("docker.sock", StringComparison.Ordinal) || lowerSource.EndsWith(".sock", StringComparison.Ordinal)
@@ -74,10 +84,30 @@ public static partial class HostPaths
         var windows = ToWindowsPath(source);
         if (windows is not null && IsDriveRoot(windows))
         {
-            return "Entire drive: include it explicitly if you really want to back it up";
+            return WholeDrive;
         }
 
-        return null;
+        if (source.StartsWith(@"\\", StringComparison.Ordinal) || source.StartsWith("//", StringComparison.Ordinal))
+        {
+            return NetworkShare;
+        }
+
+        if (projectDir is null)
+        {
+            return OutsideStandalone;
+        }
+
+        return IsInside(windows ?? source, ToWindowsPath(projectDir) ?? projectDir) ? null : OutsideApp;
+    }
+
+    /// <summary>True when <paramref name="path"/> is <paramref name="folder"/> or below it (Windows paths ignore case).</summary>
+    public static bool IsInside(string path, string folder)
+    {
+        var windows = folder.Length >= 2 && folder[1] == ':' || folder.StartsWith(@"\\", StringComparison.Ordinal);
+        var separator = windows ? '\\' : '/';
+        var comparison = windows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var root = folder.TrimEnd(separator);
+        return path.Equals(root, comparison) || path.StartsWith(root + separator, comparison);
     }
 
     public static bool IsDriveRoot(string windowsPath) => DriveRoot().IsMatch(windowsPath);

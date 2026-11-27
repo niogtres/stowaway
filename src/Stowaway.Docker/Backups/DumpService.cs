@@ -12,7 +12,7 @@ public sealed record DumpResult(DumpCommand Dump, long Bytes, string? Error);
 /// Streams database dumps from inside the database containers into a temporary volume, which the backup then
 /// includes. The dump runs with the database's own tools; a small "sink" runner writes the stream to disk.
 /// </summary>
-public sealed class DumpService(ResticRunner runner, ILogger<DumpService> logger)
+public sealed class DumpService(ResticRunner runner, ILogger<DumpService> logger, IDatabaseCredentialSource? credentials = null)
 {
     private const int MaxStderr = 4096;
 
@@ -78,11 +78,14 @@ public sealed class DumpService(ResticRunner runner, ILogger<DumpService> logger
                 new ContainerAttachParameters { Stream = true, Stdin = true, Stdout = true, Stderr = true }, ct);
             await client.Containers.StartContainerAsync(sink.ID, new ContainerStartParameters(), ct);
 
+            // Saved credentials travel as exec environment: never part of the container's configuration.
+            var environment = credentials is null ? [] : await credentials.EnvironmentForAsync(dump.Container.Name, ct);
             var exec = await client.Exec.CreateContainerExecAsync(dump.Container.Id, new ContainerExecCreateParameters
             {
                 AttachStdout = true,
                 AttachStderr = true,
-                Cmd = dump.Command.ToList(),
+                Cmd = DockerExec.WithExitCode(dump.Command),
+                Env = environment.Count > 0 ? environment.ToList() : null,
             }, ct);
 
             long bytes = 0;
@@ -103,24 +106,35 @@ public sealed class DumpService(ResticRunner runner, ILogger<DumpService> logger
                         await input.WriteAsync(buffer, 0, read.Count, ct);
                         bytes += read.Count;
                     }
-                    else if (stderr.Length < MaxStderr)
+                    else
                     {
                         stderr.Append(Encoding.UTF8.GetString(buffer, 0, read.Count));
+                        if (stderr.Length > MaxStderr * 2)
+                        {
+                            stderr.Remove(MaxStderr, stderr.Length - MaxStderr - 256); // keep the start and the tail (exit code)
+                        }
                     }
                 }
             }
 
-            input.CloseWrite();
-            await client.Containers.WaitContainerAsync(sink.ID, ct);
-
-            var inspect = await client.Exec.InspectContainerExecAsync(exec.ID, ct);
-            if (inspect.ExitCode is not 0)
+            var exitCode = await DockerExec.ExitCodeAsync(client, exec.ID, stderr, ct);
+            if (exitCode is not 0)
             {
                 var message = stderr.ToString().Trim();
-                return new DumpResult(dump, bytes, message.Length > 0 ? Truncate(message) : $"the dump command exited with code {inspect.ExitCode}");
+                return new DumpResult(dump, bytes, message.Length > 0 ? Truncate(message) : $"the dump command exited with code {exitCode}");
             }
 
-            return bytes == 0 ? new DumpResult(dump, 0, "the dump was empty") : new DumpResult(dump, bytes, null);
+            if (bytes == 0)
+            {
+                return new DumpResult(dump, 0, "the dump was empty");
+            }
+
+            // Normally closing stdin ends the sink. The end-of-input signal doesn't always make it through Docker's
+            // attach connection, so don't depend on it: the sink is done once it has written every byte it was sent.
+            input.CloseWrite();
+            return await SinkFinishedAsync(client, sink.ID, dump.FileName, bytes, ct)
+                ? new DumpResult(dump, bytes, null)
+                : new DumpResult(dump, bytes, "the dump couldn't be written completely");
         }
         catch (DockerApiException ex)
         {
@@ -137,6 +151,40 @@ public sealed class DumpService(ResticRunner runner, ILogger<DumpService> logger
                 logger.LogDebug(ex, "Removing dump sink failed");
             }
         }
+    }
+
+    /// <summary>
+    /// Waits for the sink to exit after its input was closed or, failing that, until its file holds all
+    /// <paramref name="bytes"/> (cat writes as it reads, so a complete file means it's done).
+    /// </summary>
+    private static async Task<bool> SinkFinishedAsync(DockerClient client, string sinkId, string fileName, long bytes, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(2);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var state = (await client.Containers.InspectContainerAsync(sinkId, ct)).State;
+            if (state is not { Running: true })
+            {
+                return state?.ExitCode == 0;
+            }
+
+            try
+            {
+                var size = await DockerExec.RunAsync(client, sinkId, ["stat", "-c", "%s", $"/dumps/{fileName}"], ct, 64);
+                if (size.ExitCode == 0 && long.TryParse(size.StdOut.Trim(), out var written) && written == bytes)
+                {
+                    return true; // complete; the sink is removed (and so stopped) by the caller
+                }
+            }
+            catch (DockerApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                continue; // it exited between the two checks: the next look at its state says how
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+        }
+
+        return false;
     }
 
     private static string Truncate(string text) => text.Length <= 500 ? text : text[..500] + "…";

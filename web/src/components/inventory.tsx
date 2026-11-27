@@ -1,6 +1,7 @@
-import { Ban, Database, FolderOpen, HardDrive, Layers, PackageOpen } from 'lucide-react'
+import { Ban, Database, FolderOpen, HardDrive, Info, Layers, PackageOpen } from 'lucide-react'
 import { databaseLabels, type ContainerInfo, type MountInfo, type ProtectionStatus } from '@/lib/api'
 import { cn, formatBytes, shortVolumeName } from '@/lib/utils'
+import { DatabaseLoginButton } from './DatabaseLogin'
 import { Badge, StatusDot } from './ui'
 
 const protectionLabels: Record<ProtectionStatus, string> = {
@@ -77,6 +78,7 @@ export function ContainerRow({ container }: { container: ContainerInfo }) {
             </span>
           )}
           {container.health === 'unhealthy' && <Badge tone="danger">Unhealthy</Badge>}
+          <DatabaseLoginButton container={container} />
         </div>
         <div className="mt-0.5 truncate font-mono text-[11px] text-muted" title={container.image}>
           {container.image} · {container.statusText}
@@ -108,7 +110,26 @@ export function MountRow({ mount, sharedBy = 1 }: { mount: MountInfo; sharedBy?:
           </span>
         )}
       </div>
-      <span className="tabular-nums text-muted">{mount.included ? formatBytes(mount.sizeBytes) : 'excluded'}</span>
+      <span className="tabular-nums text-muted">{mount.included ? formatBytes(mount.sizeBytes) : 'not included'}</span>
     </div>
+  )
+}
+
+/**
+ * Says plainly which mapped-in data isn't backed up: Stowaway backs up an app (its volumes, database dumps and
+ * its compose project folder), not host folders, drives or shares that happen to be mapped into it.
+ */
+export function OutsideDataNote({ mounts }: { mounts: MountInfo[] }) {
+  const outside = mounts.filter((m) => !m.included && (m.kind === 'bind' || m.kind === 'volume'))
+  if (outside.length === 0) return null
+  const what = outside.length === 1 ? 'One mapped folder or share isn’t' : `${outside.length} mapped folders or shares aren’t`
+  return (
+    <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-muted" title={[...new Set(outside.map((m) => m.exclusionReason))].join('\n')}>
+      <Info className="mt-px size-3 shrink-0" />
+      <span>
+        {what} included: {outside.length === 1 ? 'it lives' : 'they live'} outside the app, on the host or another computer. Back{' '}
+        {outside.length === 1 ? 'it' : 'them'} up with your file backup.
+      </span>
+    </p>
   )
 }
