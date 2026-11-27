@@ -4,6 +4,9 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+- **Dropbox:** a new Dropbox destination with no folder now goes in a folder named `Stowaway` instead of the root of your Dropbox (the field only showed "Stowaway" as a hint). Existing destinations are unchanged. The field now explains that Dropbox shows the encrypted backup data (`data`, `index`, `keys`, `snapshots`), not your files.
+
 ## [0.10.0] - 2026-11-27
 
 ### Added
