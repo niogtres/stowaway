@@ -6,6 +6,8 @@
 
 Stowaway backs up the apps you run in Docker on a Windows computer (their volumes, their databases and their compose project folders) on a schedule, and restores them when you need to. It runs as a Windows service and you manage it from a web page at **https://localhost:8484**.
 
+[![Build](https://img.shields.io/github/actions/workflow/status/niogtres/stowaway/ci.yml?branch=main&label=build&logo=github)](https://github.com/niogtres/stowaway/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/niogtres/stowaway?label=release&color=orange)](https://github.com/niogtres/stowaway/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## What it does
