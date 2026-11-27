@@ -170,13 +170,14 @@ public sealed class InventoryBuilderTests
         var raw = Sample() with
         {
             Containers = [.. Sample().Containers, Container("stowaway-runner-1", "stowaway/runner:abc", own, new RawMount("volume", "stowaway-dump-1", "", "/dumps", true))],
-            Volumes = [.. Sample().Volumes, new RawVolume("stowaway-dump-1", "local", null, own), new RawVolume(InventoryBuilder.OwnCacheVolume, "local", null, NoLabels)],
+            Volumes = [.. Sample().Volumes, new RawVolume("stowaway-dump-1", "local", null, own), new RawVolume(InventoryBuilder.OwnCacheVolume, "local", null, NoLabels), new RawVolume(InventoryBuilder.LegacyCacheVolume, "local", null, NoLabels)],
             Images = [.. Sample().Images, new RawImage("img-runner", [], new Dictionary<string, string> { [InventoryBuilder.OwnLabel + ".image"] = "true" })],
         };
 
         var snapshot = InventoryBuilder.Build(raw, Sizes, version: 1, capturedAt: DateTimeOffset.UnixEpoch);
         Assert.DoesNotContain(snapshot.Apps, a => a.Name.StartsWith("stowaway", StringComparison.Ordinal));
         Assert.DoesNotContain(snapshot.Volumes, v => v.Name.StartsWith("stowaway", StringComparison.Ordinal));
+        Assert.DoesNotContain(snapshot.Volumes, v => v.Name == InventoryBuilder.LegacyCacheVolume); // the cache from before the rename
         Assert.Equal(Build().Totals, snapshot.Totals);
     }
 

@@ -16,6 +16,9 @@ public static partial class InventoryBuilder
     /// <summary>restic's cache volume, created implicitly by mounting it into runners (so it carries no label).</summary>
     public const string OwnCacheVolume = "stowaway-restic-cache";
 
+    /// <summary>The cache volume's name before the project was renamed to Stowaway. Hidden, and removed at startup.</summary>
+    public const string LegacyCacheVolume = "dockerbackup-restic-cache";
+
     /// <summary>
     /// The inventory without Stowaway's own temporary containers, volumes and images (runners, dump and drill
     /// scratch space, the restic cache): they're plumbing, not the user's data.
@@ -23,7 +26,7 @@ public static partial class InventoryBuilder
     public static RawInventory WithoutOwnResources(RawInventory raw) => raw with
     {
         Containers = raw.Containers.Where(c => !c.Labels.ContainsKey(OwnLabel)).ToList(),
-        Volumes = raw.Volumes.Where(v => !v.Labels.ContainsKey(OwnLabel) && v.Name != OwnCacheVolume).ToList(),
+        Volumes = raw.Volumes.Where(v => !v.Labels.ContainsKey(OwnLabel) && v.Name is not (OwnCacheVolume or LegacyCacheVolume)).ToList(),
         Images = raw.Images.Where(i => !i.Labels.ContainsKey(OwnLabel + ".image")).ToList(),
     };
 
