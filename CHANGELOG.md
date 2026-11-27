@@ -10,7 +10,7 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 - **Dropbox from another computer:** the Add destination window now shows the three steps (allow in Dropbox, copy the address of the page that can't load, paste it and choose Finish) before you start, with the current step highlighted.
 
 ### Fixed
-- **"No access" for some administrators:** membership of the local Administrators group is now read without resolving every member's name. On PCs joined to Entra ID (Azure AD) that group holds cloud entries the old lookup failed on. Membership through a domain or Entra ID group now counts too, and a refusal is logged with the reason.
+- **"No access" for some administrators:** membership of the local Administrators group is now read without resolving every member's name. One member that couldn't be looked up, such as *Domain Admins* while a domain PC is off the corporate network, or an Entra ID entry, made the old lookup refuse everyone. Membership through a domain or Entra ID group now counts too, and a refusal is logged with the reason.
 - **Empty terminal window** after setup and at sign-in: the notification-area icon opened a console window, and closing it also closed the icon. Stowaway now runs without a console window.
 
 ## [0.11.0] - 2026-11-27
