@@ -38,6 +38,8 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
 export function TextInput({ className, ...props }: ComponentProps<'input'>) {
   return (
     <input
+      // React focuses autoFocus fields on mount, but a dialog opening afterwards moves focus again; Dialog looks for this.
+      data-autofocus={props.autoFocus ? '' : undefined}
       className={cn(
         'w-full rounded-xl border border-line bg-surface-strong px-3 py-2 text-sm outline-none transition placeholder:text-muted focus:border-accent',
         className,
@@ -70,7 +72,11 @@ export function Dialog({
   useEffect(() => {
     const dialog = ref.current
     if (!dialog) return
-    if (open && !dialog.open) dialog.showModal()
+    if (open && !dialog.open) {
+      dialog.showModal()
+      // showModal() focuses the first focusable element (the close button); put the cursor where the dialog asks.
+      dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus()
+    }
     if (!open && dialog.open) dialog.close()
   }, [open])
 

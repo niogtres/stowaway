@@ -1,5 +1,5 @@
 import { Check, Copy, Download, Globe, KeyRound, Plus, RefreshCw, RotateCcw, Smartphone, Trash2, UserRound } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { encode } from 'uqr'
 import {
   restartService,
@@ -433,6 +433,7 @@ function AuthenticatorDialog({ setup, onClose }: { setup: AccountSetup | null; o
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [prevSetup, setPrevSetup] = useState<AccountSetup | null>(null)
+  const input = useRef<HTMLInputElement>(null)
 
   if (setup !== prevSetup) {
     setPrevSetup(setup)
@@ -453,6 +454,8 @@ function AuthenticatorDialog({ setup, onClose }: { setup: AccountSetup | null; o
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That code didn’t work.')
+      setCode('')
+      input.current?.focus()
     } finally {
       setBusy(false)
     }
@@ -506,7 +509,9 @@ function AuthenticatorDialog({ setup, onClose }: { setup: AccountSetup | null; o
         </div>
         <Field label="Code from the app">
           <TextInput
+            ref={input}
             required
+            autoFocus
             inputMode="numeric"
             autoComplete="one-time-code"
             pattern="[0-9 ]{6,7}"
