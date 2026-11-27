@@ -159,6 +159,7 @@ public static class UninstallCleanup
     public static int Run()
     {
         var removed = HttpsCertificate.RemoveTrusted();
+        RemoteFirewall.Remove();
         try
         {
             if (EventLog.SourceExists(ServiceOptions.ServiceName))

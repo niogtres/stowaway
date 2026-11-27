@@ -1,3 +1,4 @@
+using DockerBackup.Core.Access;
 using DockerBackup.Core.Backups;
 using DockerBackup.Core.Notifications;
 using DockerBackup.Core.Plans;
@@ -13,6 +14,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<BackupRun> BackupRuns => Set<BackupRun>();
     public DbSet<BackupPlan> Plans => Set<BackupPlan>();
     public DbSet<NotificationChannel> NotificationChannels => Set<NotificationChannel>();
+    public DbSet<RemoteAccount> RemoteAccounts => Set<RemoteAccount>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configuration)
     {
@@ -65,6 +67,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(c => c.Name).HasMaxLength(100);
             e.HasIndex(c => c.Name).IsUnique();
             e.Property(c => c.Kind).HasConversion<string>().HasMaxLength(20);
+        });
+
+        model.Entity<RemoteAccount>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.Property(a => a.UserName).HasMaxLength(64).UseCollation("NOCASE");
+            e.HasIndex(a => a.UserName).IsUnique();
+            e.Property(a => a.PasswordHash).HasMaxLength(200);
+            e.Property(a => a.SecurityStamp).HasMaxLength(64);
+            e.Property(a => a.CreatedBy).HasMaxLength(200);
         });
     }
 }

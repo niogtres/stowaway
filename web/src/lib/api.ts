@@ -404,9 +404,118 @@ export const queryKeys = {
   snapshots: ['snapshots'] as const,
 }
 
-export function useMe() {
-  return useQuery({ queryKey: ['me'], queryFn: () => getJson<{ name: string; signInRequired: boolean }>('/api/me'), staleTime: Infinity, retry: false })
+export interface Me {
+  name: string
+  signInRequired: boolean
+  method: 'windows' | 'account' | 'none'
+  remote: boolean
 }
+
+export function useMe() {
+  return useQuery({ queryKey: ['me'], queryFn: () => getJson<Me>('/api/me'), staleTime: Infinity, retry: false })
+}
+
+// ---- Sign-in and remote access ----------------------------------------------
+
+export function useAuthMode(enabled: boolean) {
+  return useQuery({
+    queryKey: ['authMode'],
+    queryFn: () => getJson<{ remote: boolean; signIn: 'windows' | 'account' | 'none' }>('/api/auth/mode'),
+    enabled,
+    staleTime: Infinity,
+    retry: false,
+  })
+}
+
+export const signIn = (userName: string, password: string, code: string) => request<void>('POST', '/api/auth/login', { userName, password, code })
+export const signOut = () => request<void>('POST', '/api/auth/logout')
+
+export type FirewallProfile = 'domain' | 'private' | 'public'
+export type RemoteCertificateSource = 'selfSigned' | 'store'
+
+export interface RemoteAccessSettings {
+  enabled: boolean
+  hostNames: string[]
+  certificateSource: RemoteCertificateSource
+  certificateThumbprint: string | null
+  firewallProfiles: FirewallProfile[]
+}
+
+export interface StoreCertificate {
+  thumbprint: string
+  subject: string
+  notAfter: string
+  names: string[]
+}
+
+export interface RemoteAccessView {
+  settings: RemoteAccessSettings
+  active: boolean
+  restartRequired: boolean
+  canRestart: boolean
+  problem: string | null
+  port: number
+  urls: string[]
+  suggestedHostNames: string[]
+  certificates: StoreCertificate[]
+  hasSelfSignedCertificate: boolean
+}
+
+export interface RemoteAccount {
+  id: string
+  userName: string
+  ready: boolean
+  createdAt: string
+  createdBy: string
+  lastSignInAt: string | null
+  lockedUntil: string | null
+  locked: boolean
+  recoveryCodesLeft: number
+}
+
+export interface AccountSetup {
+  account: RemoteAccount
+  setup: { setupUri: string; secret: string; recoveryCodes: string[] }
+}
+
+const remoteKey = ['remoteAccess'] as const
+const accountsKey = ['remoteAccounts'] as const
+
+/** Remote access is managed only on this computer; from elsewhere the API answers 403 and the section hides. */
+export function useRemoteAccess() {
+  return useQuery({ queryKey: remoteKey, queryFn: () => getJson<RemoteAccessView>('/api/remote'), retry: false })
+}
+
+export function useSaveRemoteAccess() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (settings: RemoteAccessSettings) => request<RemoteAccessView>('PUT', '/api/remote', settings),
+    onSuccess: (view) => queryClient.setQueryData(remoteKey, view),
+  })
+}
+
+export function useRemoteAccounts(enabled: boolean) {
+  return useQuery({ queryKey: accountsKey, queryFn: () => getJson<RemoteAccount[]>('/api/remote/accounts'), enabled })
+}
+
+export function useAccountActions() {
+  const queryClient = useQueryClient()
+  const refresh = () => Promise.all([queryClient.invalidateQueries({ queryKey: accountsKey }), queryClient.invalidateQueries({ queryKey: remoteKey })])
+  const after = async <T>(promise: Promise<T>) => {
+    const result = await promise
+    await refresh()
+    return result
+  }
+  return {
+    create: (userName: string, password: string) => after(request<AccountSetup>('POST', '/api/remote/accounts', { userName, password })),
+    confirm: (id: string, code: string) => after(request<void>('POST', `/api/remote/accounts/${id}/confirm`, { code })),
+    resetAuthenticator: (id: string) => after(request<AccountSetup>('POST', `/api/remote/accounts/${id}/authenticator`)),
+    setPassword: (id: string, password: string) => after(request<void>('PUT', `/api/remote/accounts/${id}/password`, { password })),
+    remove: (id: string) => after(request<void>('DELETE', `/api/remote/accounts/${id}`)),
+  }
+}
+
+export const restartService = () => request<void>('POST', '/api/system/restart')
 
 export function useSystemInfo() {
   return useQuery({

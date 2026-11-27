@@ -91,7 +91,8 @@ public static class BackupEndpoints
             {
                 return Results.NotFound();
             }
-        });
+        })
+            .RequireAuthorization(DockerBackup.Service.Hosting.AccessPolicies.LocalOnly); // recovery keys never leave this computer
 
         destinations.MapDelete("/{id:guid}", async (Guid id, DestinationService service, CancellationToken ct) =>
             await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound());

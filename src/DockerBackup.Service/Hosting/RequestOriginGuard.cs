@@ -9,15 +9,25 @@ namespace DockerBackup.Service.Hosting;
 /// <item>State-changing API calls must carry <see cref="HeaderName"/>. A cross-site page can only add a custom
 /// header after a CORS preflight, which this server never approves. Foreign Origins are refused outright.</item>
 /// </list>
-/// Host filtering (AllowedHosts) separately blocks DNS-rebinding attacks.
+/// Host filtering (AllowedHosts) separately blocks DNS-rebinding attacks. With remote access on, the configured
+/// host names count as our own origins too (HTTPS only); with it off, requests from other computers are refused.
 /// </summary>
 public static class RequestOriginGuard
 {
     public const string HeaderName = "X-DockerBackup-Request";
 
-    public static IApplicationBuilder UseRequestOriginGuard(this IApplicationBuilder app) =>
-        app.Use(async (context, next) =>
+    public static IApplicationBuilder UseRequestOriginGuard(this IApplicationBuilder app)
+    {
+        var remote = app.ApplicationServices.GetRequiredService<RemoteAccess>();
+        return app.Use(async (context, next) =>
         {
+            // Defence in depth: Kestrel only listens beyond loopback when remote access is on.
+            if (!remote.Applied.Enabled && RemoteAccess.IsRemote(context))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
             var request = context.Request;
             var isHub = request.Path.StartsWithSegments("/hubs");
             var isApiWrite = request.Path.StartsWithSegments("/api")
@@ -26,7 +36,7 @@ public static class RequestOriginGuard
             if (isHub || isApiWrite)
             {
                 var origin = request.Headers.Origin.ToString();
-                if (origin.Length > 0 && !IsLoopbackOrigin(origin))
+                if (origin.Length > 0 && !IsLoopbackOrigin(origin) && !(Uri.TryCreate(origin, UriKind.Absolute, out var uri) && remote.IsAllowedRemoteOrigin(uri)))
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     return;
@@ -41,6 +51,7 @@ public static class RequestOriginGuard
 
             await next();
         });
+    }
 
     internal static bool IsLoopbackOrigin(string origin) =>
         Uri.TryCreate(origin, UriKind.Absolute, out var uri)

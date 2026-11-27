@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DockerBackup.Core.Backups;
@@ -8,6 +9,11 @@ using DockerBackup.Service.Api;
 using DockerBackup.Service.Hosting;
 using DockerBackup.Service.Notifications;
 using DockerBackup.Service.Realtime;
+using System.Net;
+using System.Threading.RateLimiting;
+using DockerBackup.Service.Access;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HostFiltering;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Serilog;
 using Serilog.Events;
@@ -42,6 +48,11 @@ builder.Services.AddSingleton(paths);
 builder.Services.AddSingleton(serviceOptions);
 
 var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
+builder.Services.AddSingleton(authOptions);
+
+// Remote access is opt-in and needs Windows sign-in (remote users get their own accounts with an authenticator).
+var remoteAccess = new RemoteAccess(paths.Root, allowed: authOptions.Mode == AuthMode.Windows);
+builder.Services.AddSingleton(remoteAccess);
 
 builder.Services.AddSerilog(log =>
 {
@@ -72,9 +83,63 @@ builder.WebHost.ConfigureKestrel(kestrel =>
         HttpsCertificate.TrustOnMachine(certificate, logger);
     }
 
-    // Loopback only. Remote access is a deliberate, later opt-in.
-    kestrel.ListenLocalhost(serviceOptions.Port, listen => listen.UseHttps(certificate));
+    var remoteCertificate = remoteAccess.Applied.Enabled ? RemoteCertificate(remoteAccess.Applied, logger) : null;
+    if (remoteCertificate is null)
+    {
+        // Loopback only: the default.
+        kestrel.ListenLocalhost(serviceOptions.Port, listen => listen.UseHttps(certificate));
+        return;
+    }
+
+    // Remote access: all interfaces. Loopback connections keep the locally trusted certificate.
+    kestrel.ListenAnyIP(serviceOptions.Port, listen => listen.UseHttps(https => https.ServerCertificateSelector = (connection, _) =>
+        connection?.RemoteEndPoint is IPEndPoint { Address: var ip } && IPAddress.IsLoopback(ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip)
+            ? certificate
+            : remoteCertificate));
 });
+
+X509Certificate2? RemoteCertificate(RemoteAccessSettings settings, Microsoft.Extensions.Logging.ILogger logger)
+{
+    try
+    {
+        var found = settings.CertificateSource == RemoteCertificateSource.Store
+            ? HttpsCertificate.FromStore(settings.CertificateThumbprint ?? "", DateTimeOffset.UtcNow)
+            : HttpsCertificate.GetOrCreateRemote(paths.Certificates, settings.HostNames, TimeProvider.System, logger);
+        if (found is null)
+        {
+            remoteAccess.Disable("The certificate picked for remote access is missing, expired or has no private key. Remote access is off until that's fixed.");
+            logger.LogError("Remote access stays off: certificate {Thumbprint} not found in LocalMachine\\My (or expired, or no private key)", settings.CertificateThumbprint);
+        }
+
+        return found;
+    }
+    catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException or IOException)
+    {
+        remoteAccess.Disable($"The remote-access certificate couldn't be loaded: {ex.Message}");
+        logger.LogError(ex, "Remote access stays off: certificate could not be loaded");
+        return null;
+    }
+}
+
+if (remoteAccess.Applied.Enabled)
+{
+    // Host filtering (DNS-rebinding defence) also admits the names remote users connect with.
+    builder.Services.PostConfigure<HostFilteringOptions>(o => o.AllowedHosts = [.. o.AllowedHosts, .. remoteAccess.Applied.HostNames]);
+}
+
+// Session cookies for remote accounts are encrypted with keys kept in the data directory (DPAPI, service account).
+builder.Services.AddDataProtection()
+    .SetApplicationName("DockerBackup")
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(paths.Root, "keys")))
+    .ProtectKeysWithDpapi();
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.AddPolicy(AccessEndpoints.SignInRateLimit, context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
+builder.Services.AddSingleton<AccountService>();
 
 builder.Services.AddDockerEngine(builder.Configuration);
 builder.Services.AddDockerBackupData(Path.Combine(paths.Root, "dockerbackup.db"));
@@ -104,21 +169,28 @@ app.UseDefaultFiles();
 app.UseStaticFiles(); // the UI shell holds no data, so it's served before sign-in
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
-app.MapGroup("/api").MapSystemEndpoints().MapInventoryEndpoints().MapBackupEndpoints().MapPlanEndpoints().MapRestoreEndpoints();
+app.MapGroup("/api").MapSystemEndpoints().MapAccessEndpoints().MapInventoryEndpoints().MapBackupEndpoints().MapPlanEndpoints().MapRestoreEndpoints();
 app.MapHub<EventsHub>(EventsHub.Path);
-app.MapGet("/api/me", (HttpContext context) => new
-{
-    Name = context.User.Identity?.Name ?? Environment.UserName,
-    SignInRequired = authOptions.Mode == AuthMode.Windows,
-});
 app.MapFallback("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html").AllowAnonymous();
 
 app.Lifetime.ApplicationStarted.Register(() =>
+{
     app.Logger.LogInformation(
         "DockerBackup {Version} listening on https://localhost:{Port} (service: {IsService}, data: {DataDirectory})",
-        SystemEndpoints.ProductVersion, serviceOptions.Port, isService, paths.Root));
+        SystemEndpoints.ProductVersion, serviceOptions.Port, isService, paths.Root);
+    if (remoteAccess.Applied.Enabled)
+    {
+        app.Logger.LogWarning("Remote access is on for {Names}", string.Join(", ", remoteAccess.Applied.HostNames));
+    }
+
+    if (isService)
+    {
+        RemoteFirewall.Apply(remoteAccess.Applied, serviceOptions.Port, app.Logger);
+    }
+});
 
 await app.Services.MigrateDatabaseAsync();
 await app.RunAsync();

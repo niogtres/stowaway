@@ -1,9 +1,10 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
-import { Activity, Boxes, CalendarClock, HardDrive, History, LayoutDashboard, Settings, type LucideIcon } from 'lucide-react'
+import { Activity, Boxes, CalendarClock, HardDrive, History, LayoutDashboard, LogOut, Settings, type LucideIcon } from 'lucide-react'
 import logoMark from '@/assets/logo-mark.svg'
-import { ApiError, displayVersion, useMe, useSystemInfo } from '@/lib/api'
+import { ApiError, displayVersion, signOut, useAuthMode, useMe, useSystemInfo } from '@/lib/api'
 import { useRealtime } from '@/lib/realtime'
 import { EngineStatusPill } from './EngineStatusPill'
+import { SignIn } from './SignIn'
 import { ThemeToggle } from './ThemeToggle'
 import { StatusDot } from './ui'
 
@@ -29,9 +30,13 @@ export function AppShell() {
   const { data, error } = useSystemInfo()
   const me = useMe()
   const realtime = useRealtime()
+  const blocked = error instanceof ApiError && (error.status === 401 || error.status === 403) ? error.status : null
+  const mode = useAuthMode(blocked !== null)
 
-  if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-    return <AccessDenied forbidden={error.status === 403} />
+  if (blocked !== null) {
+    if (mode.isPending) return <div className="aurora pointer-events-none fixed inset-0 -z-10" aria-hidden />
+    if (blocked === 401 && mode.data?.signIn === 'account') return <SignIn />
+    return <AccessDenied forbidden={blocked === 403} />
   }
 
   return (
@@ -68,7 +73,27 @@ export function AppShell() {
               <div>{data.runningAsService ? 'Windows Service' : 'Console mode'}</div>
             </>
           )}
-          {me.data?.signInRequired && <div className="truncate" title="Signed in with Windows">{me.data.name}</div>}
+          {me.data?.signInRequired && (
+            <div className="flex items-center gap-1">
+              <span className="truncate" title={me.data.method === 'account' ? 'Signed in remotely' : 'Signed in with Windows'}>
+                {me.data.name}
+              </span>
+              {me.data.method === 'account' && (
+                <button
+                  type="button"
+                  className="ml-auto rounded p-0.5 transition hover:text-fg"
+                  title="Sign out"
+                  aria-label="Sign out"
+                  onClick={async () => {
+                    await signOut()
+                    window.location.reload()
+                  }}
+                >
+                  <LogOut className="size-3.5" />
+                </button>
+              )}
+            </div>
+          )}
           <div className="mt-2 flex items-center gap-1.5" title="Live updates from the service">
             <StatusDot tone={realtime === 'live' ? 'ok' : realtime === 'connecting' ? 'warn' : 'muted'} />
             {realtime === 'live' ? 'Live' : realtime === 'connecting' ? 'Connecting…' : 'Offline'}

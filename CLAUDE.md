@@ -20,7 +20,7 @@ Design and decisions: [docs/DESIGN.md](docs/DESIGN.md). Read §10 (decisions) be
 ## Conventions
 - Package versions live only in `Directory.Packages.props`; .NET packages stay on the **10.x** line (net10.0 LTS).
 - Warnings are errors. Keep `oxlint --deny-warnings` clean.
-- Loopback-only HTTPS and `AllowedHosts` (DNS-rebinding defence) are security features: don't widen them without an explicit decision.
+- Loopback-only HTTPS and `AllowedHosts` (DNS-rebinding defence) are security features: don't widen them without an explicit decision. Remote access (M6b) is the one opt-in exception: off by default, configured only from this computer, remote users need password + TOTP. Keep `LocalOnly` on anything that manages access or reveals secrets.
 - Secrets use DPAPI **CurrentUser** scope of the service account (LocalSystem), never LocalMachine scope.
 - Never stop, modify or back up the owner's real containers in tests; use throwaway containers.
 - Work on a branch and open a PR; CI (`.github/workflows/ci.yml`) must be green. Releases come from tags `vX.Y.Z`.

@@ -134,8 +134,8 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 
 ## 6. Security
 
-- Kestrel binds to **localhost only** over HTTPS. A per-install self-signed certificate is created by the service and added to LocalMachine\Root when it runs as a service. Host filtering blocks DNS rebinding; a request-origin guard blocks cross-site WebSocket and CSRF attempts. *M6b:* opt-in remote access with your own certificate.
-- **Auth** *(M6a)*: Windows Negotiate (members of local `Administrators` or a `DockerBackup Operators` group). *M6b:* optional local accounts with TOTP for remote use.
+- Kestrel binds to **localhost only** over HTTPS. A per-install self-signed certificate is created by the service and added to LocalMachine\Root when it runs as a service. Host filtering blocks DNS rebinding; a request-origin guard blocks cross-site WebSocket and CSRF attempts. *M6b:* opt-in remote access (off by default), with a self-issued or an installed certificate; see the M6b notes.
+- **Auth** *(M6a)*: Windows Negotiate (members of local `Administrators` or a `DockerBackup Operators` group). *M6b:* remote-access accounts (password + TOTP) for other computers. Managing remote access, restarting the service and revealing recovery keys stay local-only.
 - Repository passwords and cloud keys are encrypted with **DPAPI in the service account's (LocalSystem's) user scope** in SQLite. *LocalMachine* scope is deliberately not used: any local user could decrypt it. Each destination's recovery key can be revealed (and the reveal is logged): *lose it and backups are unrecoverable*.
 - The service runs as **LocalSystem** (it needs access to the Docker pipe). *Not built yet:* audit logging of every API call.
 - Runner containers get read-only source mounts, `no-new-privileges`, and no network for local and SMB destinations. Secrets arrive as files inside the container, never in its configuration.
@@ -178,7 +178,7 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 | M3 | Scheduling | Plans wizard, schedules (Cronos), retention/prune, history, notifications |
 | M4 | Restore | Volume / new volume / file-level / host folder; snapshot browser and timeline |
 | M5 | App-aware and cloud | DB dumps, S3/B2/Azure/SFTP and **Dropbox**, stack recreate, restore drills |
-| M6 | Polish and ship | M6a: Windows sign-in, stale-lock recovery, Event Log, tray app, uninstall cleanup. M6b: remote access + TOTP, code signing, winget, user guide |
+| M6 | Polish and ship | M6a: Windows sign-in, stale-lock recovery, Event Log, tray app, uninstall cleanup. M6b: remote access + TOTP, code signing, winget manifests, user guide |
 
 ### Implementation notes
 - **M0 (done):** service host, HTTPS on loopback, engine monitor, UI shell, MSI, CI.
@@ -243,6 +243,19 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
   - **Event Log:** as a service, warnings and errors also go to the Application log under source `DockerBackup`.
   - **Tray app:** `DockerBackup.Service.exe --tray`, started for every user at logon (HKLM `Run`). Polls `/api/inventory` with the user's Windows credentials; shows the protection status; balloon when the failing count rises.
   - **Uninstall cleanup:** a deferred custom action runs `--uninstall-cleanup` on full uninstall (not upgrades): removes our certificate from LocalMachine\Root and the event source. `%ProgramData%\DockerBackup` is kept on purpose: it holds the repository keys.
+- **M6b (done):** remote access, code signing, winget, user guide.
+  - **Remote access** (`remote-access.json` in the data directory; applied at service start because it changes the listeners):
+    - **Listening:** loopback only by default. When on, Kestrel listens on all interfaces on the same port. SNI-independent certificate selection: loopback connections keep the locally trusted certificate; others get the remote one (self-issued for the configured names, 825 days, downloadable as `.cer`; or a LocalMachine\My certificate by thumbprint). A missing or invalid certificate keeps remote access off and says why.
+    - **Host names** are added to `AllowedHosts` (DNS-rebinding defence) and count as allowed `https` origins for the origin guard. Requests from non-loopback addresses are refused outright while remote access is off (defence in depth).
+    - **Firewall:** as a service, an inbound rule "DockerBackup remote access" (program + port, chosen profiles; Domain and Private by default) is added at start and removed when off or on uninstall.
+    - **Auth:** a policy scheme forwards loopback requests to Negotiate and remote ones to a cookie (`__Host-DockerBackup`, Secure, HttpOnly, SameSite=Strict, 12 h absolute). Cookie keys: ASP.NET Data Protection in `keys/`, DPAPI (service account). Each request revalidates the account and its security stamp, so deleting an account or resetting its password or authenticator ends its sessions.
+    - **Accounts** (SQLite `RemoteAccounts`): PBKDF2-SHA256 (600k iterations) password, minimum 12 characters; TOTP secret (RFC 6238, SHA-1, 30 s, 6 digits, ±1 step) protected with DPAPI; a code is accepted once (last step stored); 10 one-time recovery codes, stored as SHA-256. Unconfirmed until a first code is entered.
+    - **Sign-in:** one request with user name, password and code; every failure looks the same (unknown users cost the same PBKDF2 time). 5 failures lock the account for 15 minutes; 10 attempts per minute per address (rate limiter). Failures and lockouts go to the Event Log.
+    - **Local-only** (policy `LocalOnly`): `/api/remote/**`, `/api/system/restart`, and the recovery-key reveal. Enabling requires at least one confirmed account; the last confirmed account can't be deleted while it's on.
+    - **Restart from the UI:** a detached `cmd /c "net stop … & net start …"` (a service can't start itself once stopped).
+  - **Code signing:** `build.ps1 -SignThumbprint` (certificate in a store, including hardware tokens) or `DOCKERBACKUP_SIGN_PFX`/`_PASSWORD` (release workflow secrets). `Set-AuthenticodeSignature` (no Windows SDK needed) signs the service executable before it goes into the MSI, then the MSI; RFC 3161 timestamp from DigiCert by default. Cloud HSM signing (Azure Trusted Signing, KeyLocker) would need its own step.
+  - **winget:** `tools/New-WingetManifest.ps1` writes the version/installer/locale manifests (schema 1.9.0, MSI ProductCode, SHA-256); releases attach them with a `.sha256` file. Submission to winget-pkgs waits for public releases and the final product name.
+  - **User guide:** `docs/USER-GUIDE.md`.
 
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 
@@ -254,6 +267,6 @@ M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworth
 | 2 | License | Closed source for now. No license file. |
 | 3 | Backup engine | **restic** (BSD-2-Clause, bundled). The service already owns scheduling, policy and UI, and restic is a minimal, scriptable engine with JSON output and a stable repo format. Kopia would duplicate our UI/server/policy layers. *Correction:* restic calls are concentrated in `ResticRepository`, but a formal `IBackupEngine` interface was not introduced; add one if a second engine is ever needed. |
 | 4 | Container platforms | v1: Linux containers only. Windows-containers engine in phase 2. |
-| 5 | Remote access | Localhost only for the MVP. |
+| 5 | Remote access | Localhost only for the MVP. *M6b:* opt-in remote access, approved with the M6b scope. Off by default, switched on only from this computer, and only with Windows sign-in on. Remote users need a DockerBackup account with password and authenticator. |
 | 6 | Multi-host | Planned for later; v1 manages one host. *Correction:* the data model does **not** carry an engine id yet, so multi-host will need a migration (adding an engine id to destinations, plans and runs). |
 | 7 | Scheduler | **Cronos + own scheduler** instead of Quartz.NET (decided during M3). Plans already live in our SQLite database. Quartz's persistent store would add a second persistence model with about a dozen tables, and the behaviour we need is small: compute the next run, catch up once, wait for the engine. |

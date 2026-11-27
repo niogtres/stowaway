@@ -4,7 +4,7 @@
 
 Scheduled backup and restore for everything Docker holds on a Windows 10/11 host: containers, compose stacks, volumes and bind mounts. It runs as a Windows Service and is managed from a web UI at **https://localhost:8484**.
 
-> Status: **M6a**. Live inventory; scheduled, encrypted, deduplicated backups (restic) to local folders, SMB shares, S3-compatible storage, Backblaze B2, Azure Blob, SFTP and Dropbox; consistent database dumps (Postgres, MySQL/MariaDB, MongoDB, Redis) with no downtime; retention, maintenance, protection status, alerts; snapshot browser and restore; full app recreation after a disaster; weekly restore drills that prove backups restore; Windows sign-in, a tray app. Next: M6b (remote access, signing, winget). See [docs/DESIGN.md](docs/DESIGN.md).
+> Status: **M6b**. Live inventory; scheduled, encrypted, deduplicated backups (restic) to local folders, SMB shares, S3-compatible storage, Backblaze B2, Azure Blob, SFTP and Dropbox; consistent database dumps (Postgres, MySQL/MariaDB, MongoDB, Redis) with no downtime; retention, maintenance, protection status, alerts; snapshot browser and restore; full app recreation after a disaster; weekly restore drills that prove backups restore; Windows sign-in, a tray app; opt-in remote access with password + authenticator app. **Using it:** [docs/USER-GUIDE.md](docs/USER-GUIDE.md). Design: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Install
 Run `DockerBackup-<version>-x64.msi` (from CI artifacts or Releases). It installs the `DockerBackup` service (LocalSystem, delayed auto-start) and a Start-menu link to the UI. Data lives in `%ProgramData%\DockerBackup` (access restricted to SYSTEM and Administrators).
@@ -23,7 +23,10 @@ Requirements: .NET SDK 10.0.1xx, Node.js 24. Restore local tools once with `dotn
 
 ```powershell
 ./build.ps1 -Version 0.1.0      # web UI -> tests -> self-contained publish -> artifacts/*.msi
+./build.ps1 -Version 0.1.0 -SignThumbprint <thumbprint>   # also Authenticode-sign the exe and the MSI
 ```
+
+Releases (tags `vX.Y.Z`) are signed when the repository secrets `DOCKERBACKUP_SIGN_PFX` (base64 .pfx) and `DOCKERBACKUP_SIGN_PFX_PASSWORD` are set, and carry winget manifests and a SHA-256 file.
 
 ## Develop
 ```powershell

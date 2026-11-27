@@ -1,3 +1,4 @@
+using DockerBackup.Core.Access;
 using DockerBackup.Core.Backups;
 using DockerBackup.Core.Notifications;
 using DockerBackup.Core.Plans;
@@ -214,6 +215,47 @@ public sealed class NotificationStore(IDbContextFactory<AppDbContext> factory) :
     }
 }
 
+public sealed class RemoteAccountStore(IDbContextFactory<AppDbContext> factory) : IRemoteAccountStore
+{
+    public async Task<IReadOnlyList<RemoteAccount>> ListAsync(CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.RemoteAccounts.AsNoTracking().OrderBy(a => a.UserName).ToListAsync(ct);
+    }
+
+    public async Task<RemoteAccount?> GetAsync(Guid id, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.RemoteAccounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
+    }
+
+    public async Task<RemoteAccount?> FindByUserNameAsync(string userName, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.RemoteAccounts.AsNoTracking().FirstOrDefaultAsync(a => a.UserName == userName, ct);
+    }
+
+    public async Task AddAsync(RemoteAccount account, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        db.RemoteAccounts.Add(account);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateAsync(RemoteAccount account, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        db.RemoteAccounts.Update(account);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.RemoteAccounts.Where(a => a.Id == id).ExecuteDeleteAsync(ct) > 0;
+    }
+}
+
 public static class DataServiceCollectionExtensions
 {
     public static IServiceCollection AddDockerBackupData(this IServiceCollection services, string databasePath)
@@ -223,6 +265,7 @@ public static class DataServiceCollectionExtensions
         services.AddSingleton<IBackupRunStore, BackupRunStore>();
         services.AddSingleton<IPlanStore, PlanStore>();
         services.AddSingleton<INotificationStore, NotificationStore>();
+        services.AddSingleton<IRemoteAccountStore, RemoteAccountStore>();
         return services;
     }
 
