@@ -44,6 +44,21 @@ public static class CloudRepositories
 {
     public const string SecretsDir = "/run/stowaway";
 
+    /// <summary>The Dropbox folder used when none is given, so a new repository never lands in the Dropbox root by accident.</summary>
+    public const string DefaultDropboxFolder = "Stowaway";
+
+    /// <summary>
+    /// Fills in defaults for a destination that is being created. Applied only at creation: changing what an empty
+    /// setting means for existing destinations would point them at a different repository. "/" keeps the Dropbox root.
+    /// </summary>
+    public static void ApplyCreationDefaults(DestinationKind kind, IDictionary<string, string> settings)
+    {
+        if (kind == DestinationKind.Dropbox && (!settings.TryGetValue(DestinationKeys.Prefix, out var folder) || string.IsNullOrWhiteSpace(folder)))
+        {
+            settings[DestinationKeys.Prefix] = DefaultDropboxFolder;
+        }
+    }
+
     public static bool IsCloud(DestinationKind kind) => kind is DestinationKind.S3 or DestinationKind.B2 or DestinationKind.Azure or DestinationKind.Sftp or DestinationKind.Dropbox;
 
     public static RepositoryConnection Connect(DestinationKind kind, IReadOnlyDictionary<string, string> settings, IReadOnlyDictionary<string, string> secrets)

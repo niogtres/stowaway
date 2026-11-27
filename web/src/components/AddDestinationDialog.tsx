@@ -250,7 +250,10 @@ export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
               )}
               {dropbox?.state === 'failed' && <p className="mt-2 text-sm text-danger">{dropbox.error}</p>}
             </div>
-            <Field label="Folder in Dropbox">
+            <Field
+              label="Folder in Dropbox"
+              hint="Left empty, backups go in a folder named Stowaway. They're encrypted, so in Dropbox you see restic's folders (data, index, keys, snapshots), not your files. Restore them with Stowaway."
+            >
               <TextInput value={val('prefix')} onChange={set('prefix')} className="font-mono" placeholder="Stowaway" />
             </Field>
           </>

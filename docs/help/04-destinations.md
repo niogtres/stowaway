@@ -16,6 +16,8 @@ Backups are **encrypted** before they leave your computer. Each destination has 
 
 > **Save the recovery key somewhere safe, away from this computer.** If this computer is lost, you need it (and the destination) to get your data back. Without it, nobody can read the backups, including you.
 
+Because the data is encrypted, you won't see your own files at the destination. In a folder or in Dropbox you'll see a `config` file and the folders `data`, `index`, `keys`, `locks` and `snapshots`. That is the backup. Browse and restore it from Stowaway. For Dropbox, backups go in a folder named `Stowaway` unless you name another (enter `/` to use the root). The destination list shows where each one is.
+
 You can show it again later with the key button on the destination. It can only be shown on this computer, never through remote access.
 
 **See also:** [Backup plans](05-plans.md), [Restore](07-restore.md)

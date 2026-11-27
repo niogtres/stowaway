@@ -79,6 +79,7 @@ public sealed class DestinationService(
                 cloudSecrets[DestinationKeys.Token] = dropbox.TakeToken(session) ?? throw new ValidationException("The Dropbox sign-in isn't complete. Connect again.");
             }
 
+            CloudRepositories.ApplyCreationDefaults(request.Kind, settings);
             try
             {
                 path = CloudRepositories.Describe(request.Kind, settings, cloudSecrets);

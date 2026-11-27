@@ -83,6 +83,26 @@ public sealed class CloudRepositoryTests
             CloudRepositories.Describe(DestinationKind.S3, D(("endpoint", "https://s3.amazonaws.com"), ("bucket", "good-bucket"), ("prefix", "x")), D(("accessKeyId", "a"), ("secretAccessKey", "b"))));
     }
 
+    [Theory]
+    [InlineData("", "rclone:dropbox:Stowaway")]
+    [InlineData("  ", "rclone:dropbox:Stowaway")]
+    [InlineData("Backups/docker", "rclone:dropbox:Backups/docker")]
+    [InlineData("/", "rclone:dropbox:")] // the root only when asked for explicitly
+    public void New_dropbox_destinations_get_a_folder_unless_one_is_given(string folder, string repository)
+    {
+        var settings = new Dictionary<string, string> { ["prefix"] = folder };
+        CloudRepositories.ApplyCreationDefaults(DestinationKind.Dropbox, settings);
+        Assert.Equal(repository, CloudRepositories.Connect(DestinationKind.Dropbox, settings, D(("token", "t"))).Repository);
+    }
+
+    [Fact]
+    public void Creation_defaults_leave_other_destinations_alone()
+    {
+        var settings = new Dictionary<string, string>();
+        CloudRepositories.ApplyCreationDefaults(DestinationKind.S3, settings);
+        Assert.Empty(settings);
+    }
+
     [Fact]
     public void Env_file_values_are_shell_quoted()
     {
