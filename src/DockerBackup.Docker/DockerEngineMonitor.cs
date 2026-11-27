@@ -21,6 +21,12 @@ public sealed class DockerEngineMonitor(
 
     public EngineStatus Current => _current;
 
+    /// <summary>The endpoint that answered the last probe, or null while the engine is unreachable.</summary>
+    public Uri? ActiveEndpoint => _current.Reachable ? _lastGood : null;
+
+    /// <summary>Raised when reachability or the active endpoint changes.</summary>
+    public event Action<EngineStatus>? StatusChanged;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(_options.ProbeInterval, time);
@@ -30,6 +36,10 @@ public sealed class DockerEngineMonitor(
             var next = await ProbeAsync(stoppingToken);
             _current = next;
             LogTransition(previous, next);
+            if (previous.Reachable != next.Reachable || previous.Endpoint != next.Endpoint)
+            {
+                StatusChanged?.Invoke(next);
+            }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }

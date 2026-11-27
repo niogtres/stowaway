@@ -181,6 +181,10 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 | M5 | App-aware and cloud | DB dumps, S3/B2/Azure/SFTP, stack recreate, restore drills |
 | M6 | Polish and ship | Tray app, code signing, winget, remote access + TOTP, docs site |
 
+### Implementation notes
+- **M0 (done):** service host, HTTPS on loopback, engine monitor, UI shell, MSI, CI.
+- **M1 (done):** discovery. Apps are grouped by compose project. Bind sources are mapped back to Windows paths (`/run/desktop/mnt/host/x/...` → `X:\...`). Sockets, tmpfs, system paths and whole drives are excluded by default. Volume sizes come from `/system/df` (raw HTTP over the pipe, because the client library lacks it); bind sizes come from a budgeted walk of the host filesystem. Engine events trigger debounced rescans, and changes are pushed to the UI over SignalR. "Locally built image" = no registry digest **or** Compose build labels: with the containerd image store, local builds have digests too. A request-origin guard protects hub and write endpoints against cross-site WebSocket and CSRF attacks.
+
 M0–M3 is a usable MVP ("set it and forget it backups"). M4 makes it trustworthy, and M5 makes it best in class.
 
 ## 10. Decisions (2026-11-27)

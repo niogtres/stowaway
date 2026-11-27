@@ -1,10 +1,11 @@
 import { motion } from 'motion/react'
-import { CheckCircle2, Circle, Cpu, ServerCog, ShieldCheck } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { ArrowRight, Boxes, CheckCircle2, Circle, Cpu, Database, HeartPulse, Layers, PackageOpen, ShieldAlert, ShieldCheck, TriangleAlert } from 'lucide-react'
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
 import { ProtectionRing } from '@/components/ProtectionRing'
 import { Badge, Card, CardHeader, Skeleton, Stat, StatusDot } from '@/components/ui'
-import { displayVersion, useSystemInfo, type SystemInfo } from '@/lib/api'
-import { formatDuration, formatNumber } from '@/lib/utils'
+import { useInventory, useSystemInfo, type InventorySnapshot, type SystemInfo } from '@/lib/api'
+import { cn, formatBytes, formatNumber } from '@/lib/utils'
 
 const rise = {
   hidden: { opacity: 0, y: 12 },
@@ -18,6 +19,9 @@ function greeting() {
 
 export function Dashboard() {
   const { data, isPending } = useSystemInfo()
+  const inventory = useInventory()
+  const snapshot = inventory.data?.snapshot ?? null
+  const score = snapshot?.totals.protectionScore ?? null
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -28,12 +32,10 @@ export function Dashboard() {
       <div className="grid gap-5 lg:grid-cols-3">
         <motion.div variants={rise} initial="hidden" animate="show" custom={0} className="lg:row-span-2">
           <Card className="flex h-full flex-col items-center justify-center gap-5 py-8 text-center">
-            <ProtectionRing score={null} />
+            <ProtectionRing score={score} />
             <div>
               <div className="font-medium">Protection score</div>
-              <p className="mx-auto mt-1 max-w-64 text-sm text-muted">
-                Shows the share of your Docker data covered by a healthy backup plan. Discovery arrives in the next release.
-              </p>
+              <p className="mx-auto mt-1 max-w-64 text-sm text-muted">{scoreCaption(snapshot)}</p>
             </div>
           </Card>
         </motion.div>
@@ -43,15 +45,29 @@ export function Dashboard() {
         </motion.div>
 
         <motion.div variants={rise} initial="hidden" animate="show" custom={2}>
-          <ServiceCard data={data} loading={isPending} />
+          <DataCard snapshot={snapshot} loading={inventory.isPending} />
         </motion.div>
 
         <motion.div variants={rise} initial="hidden" animate="show" custom={3}>
-          <GettingStarted engineConnected={data?.engine.reachable ?? false} />
+          <GettingStarted engineConnected={data?.engine.reachable ?? false} discovered={snapshot !== null} />
         </motion.div>
+
+        {snapshot && (
+          <motion.div variants={rise} initial="hidden" animate="show" custom={4} className="lg:col-span-3">
+            <NeedsAttention snapshot={snapshot} />
+          </motion.div>
+        )}
       </div>
     </div>
   )
+}
+
+function scoreCaption(snapshot: InventorySnapshot | null) {
+  if (!snapshot) return 'Shows the share of your Docker data covered by a healthy backup plan.'
+  const t = snapshot.totals
+  if (t.protectionScore === null) return 'Measuring your data…'
+  if (t.protectedBytes === 0) return `None of the ${formatBytes(t.dataBytes)} found is backed up yet. Backup plans arrive in an upcoming release.`
+  return `${formatBytes(t.protectedBytes)} of ${formatBytes(t.dataBytes)} is covered by a healthy plan.`
 }
 
 function EngineCard({ data, loading }: { data?: SystemInfo; loading: boolean }) {
@@ -103,26 +119,34 @@ function EngineCard({ data, loading }: { data?: SystemInfo; loading: boolean }) 
   )
 }
 
-function ServiceCard({ data, loading }: { data?: SystemInfo; loading: boolean }) {
+function DataCard({ snapshot, loading }: { snapshot: InventorySnapshot | null; loading: boolean }) {
   return (
     <Card className="h-full">
-      <CardHeader title="Service" icon={<ServerCog className="size-4" />} />
-      {loading || !data ? (
+      <CardHeader
+        title="Data discovered"
+        icon={<Boxes className="size-4" />}
+        action={
+          <Link to="/inventory" className="flex items-center gap-1 text-xs text-muted transition hover:text-fg">
+            Inventory <ArrowRight className="size-3" />
+          </Link>
+        }
+      />
+      {loading || !snapshot ? (
         <Skeleton className="h-16" />
       ) : (
         <div className="grid grid-cols-2 gap-4">
-          <Stat label="Version" value={displayVersion(data.version)} hint={data.runningAsService ? 'Windows Service' : 'Console mode'} />
-          <Stat label="Uptime" value={formatDuration(data.startedAt)} hint={data.machineName} />
+          <Stat label="Total" value={formatBytes(snapshot.totals.dataBytes)} hint={`${snapshot.totals.apps} apps`} />
+          <Stat label="Volumes" value={formatNumber(snapshot.totals.volumes)} hint={`${snapshot.totals.bindMounts} bind mounts`} />
         </div>
       )}
     </Card>
   )
 }
 
-function GettingStarted({ engineConnected }: { engineConnected: boolean }) {
+function GettingStarted({ engineConnected, discovered }: { engineConnected: boolean; discovered: boolean }) {
   const steps = [
     { label: 'Connect to Docker', done: engineConnected },
-    { label: 'Discover containers and volumes', done: false },
+    { label: 'Discover containers and volumes', done: discovered },
     { label: 'Add a backup destination', done: false },
     { label: 'Create your first plan', done: false },
   ]
@@ -137,6 +161,96 @@ function GettingStarted({ engineConnected }: { engineConnected: boolean }) {
           </li>
         ))}
       </ol>
+    </Card>
+  )
+}
+
+interface AttentionItem {
+  tone: 'warn' | 'danger' | 'accent'
+  icon: typeof TriangleAlert
+  title: string
+  detail: string
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+function attentionItems(snapshot: InventorySnapshot): AttentionItem[] {
+  const t = snapshot.totals
+  const containers = snapshot.apps.flatMap((a) => a.containers)
+  const items: AttentionItem[] = []
+
+  const unhealthy = containers.filter((c) => c.health === 'unhealthy')
+  if (unhealthy.length > 0)
+    items.push({
+      tone: 'danger',
+      icon: HeartPulse,
+      title: plural(unhealthy.length, 'unhealthy container'),
+      detail: unhealthy.map((c) => c.name).join(', '),
+    })
+
+  const unprotectedApps = snapshot.apps.filter((a) => a.protection === 'unprotected')
+  if (unprotectedApps.length > 0)
+    items.push({
+      tone: 'warn',
+      icon: ShieldAlert,
+      title: `${plural(unprotectedApps.length, 'app')} not backed up`,
+      detail: `${formatBytes(unprotectedApps.reduce((sum, a) => sum + a.dataBytes, 0))} of data with no plan covering it.`,
+    })
+
+  const orphans = snapshot.volumes.filter((v) => v.orphaned)
+  if (orphans.length > 0)
+    items.push({
+      tone: 'warn',
+      icon: Layers,
+      title: plural(orphans.length, 'unowned volume'),
+      detail: `${formatBytes(orphans.reduce((sum, v) => sum + (v.sizeBytes ?? 0), 0))} that no container uses. Review before anything cleans them up.`,
+    })
+
+  if (t.localOnlyImages > 0)
+    items.push({
+      tone: 'accent',
+      icon: PackageOpen,
+      title: plural(t.localOnlyImages, 'locally built image'),
+      detail: "These can't be pulled from a registry after a disaster, so include the images in backups.",
+    })
+
+  if (t.databases > 0)
+    items.push({
+      tone: 'accent',
+      icon: Database,
+      title: `${plural(t.databases, 'database')} detected`,
+      detail: 'Copying live database files can give a corrupt backup. These will get consistent, dump-based backups.',
+    })
+
+  return items
+}
+
+const toneText = { warn: 'text-warn', danger: 'text-danger', accent: 'text-accent' } as const
+
+function NeedsAttention({ snapshot }: { snapshot: InventorySnapshot }) {
+  const items = attentionItems(snapshot)
+  return (
+    <Card>
+      <CardHeader title="Needs attention" icon={<TriangleAlert className="size-4" />} />
+      {items.length === 0 ? (
+        <p className="text-sm text-muted">Nothing needs your attention right now.</p>
+      ) : (
+        <ul className="grid gap-3 md:grid-cols-2">
+          {items.map(({ tone, icon: Icon, title, detail }) => (
+            <li key={title}>
+              <Link to="/inventory" className="flex gap-3 rounded-xl p-2 transition hover:bg-accent-soft">
+                <span className={cn('mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft', toneText[tone])}>
+                  <Icon className="size-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">{title}</span>
+                  <span className="block text-xs text-muted">{detail}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   )
 }

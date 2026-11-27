@@ -4,7 +4,7 @@
 
 Scheduled backup and restore for everything Docker holds on a Windows 10/11 host: containers, compose stacks, volumes and bind mounts. It runs as a Windows Service and is managed from a web UI at **https://localhost:8484**.
 
-> Status: **M0 (skeleton)**. The service, UI shell, engine detection and MSI are in place; discovery (M1) comes next. See [docs/DESIGN.md](docs/DESIGN.md).
+> Status: **M1 (discovery)**. Live inventory of apps, containers, volumes, bind mounts and orphans with sizes and protection status. Backups (M2) come next. See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Install
 Run `DockerBackup-<version>-x64.msi` (from CI artifacts or Releases). It installs the `DockerBackup` service (LocalSystem, delayed auto-start) and a Start-menu link to the UI. Data lives in `%ProgramData%\DockerBackup` (access restricted to SYSTEM and Administrators).

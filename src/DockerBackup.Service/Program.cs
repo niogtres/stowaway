@@ -1,6 +1,9 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using DockerBackup.Docker;
 using DockerBackup.Service.Api;
 using DockerBackup.Service.Hosting;
+using DockerBackup.Service.Realtime;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Serilog;
 using Serilog.Events;
@@ -48,15 +51,20 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 
 builder.Services.AddDockerEngine(builder.Configuration);
 builder.Services.AddProblemDetails();
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
+builder.Services.AddSignalR().AddJsonProtocol(o => o.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
+builder.Services.AddHostedService<EventsBroadcaster>();
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseSecurityHeaders();
+app.UseRequestOriginGuard();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGroup("/api").MapSystemEndpoints();
+app.MapGroup("/api").MapSystemEndpoints().MapInventoryEndpoints();
+app.MapHub<EventsHub>(EventsHub.Path);
 app.MapFallback("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html");
 

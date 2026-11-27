@@ -31,4 +31,7 @@ public sealed record EngineStatus
 public interface IEngineStatusProvider
 {
     EngineStatus Current { get; }
+
+    /// <summary>Raised when reachability or the active endpoint changes.</summary>
+    event Action<EngineStatus>? StatusChanged;
 }

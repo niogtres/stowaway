@@ -2,8 +2,10 @@ import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { Activity, Boxes, CalendarClock, HardDrive, History, LayoutDashboard, Settings, type LucideIcon } from 'lucide-react'
 import logoMark from '@/assets/logo-mark.svg'
 import { displayVersion, useSystemInfo } from '@/lib/api'
+import { useRealtime } from '@/lib/realtime'
 import { EngineStatusPill } from './EngineStatusPill'
 import { ThemeToggle } from './ThemeToggle'
+import { StatusDot } from './ui'
 
 interface NavItem {
   to: string
@@ -25,6 +27,7 @@ export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const current = navItems.find((item) => (item.to === '/' ? pathname === '/' : pathname.startsWith(item.to)))
   const { data } = useSystemInfo()
+  const realtime = useRealtime()
 
   return (
     <div className="relative flex h-full">
@@ -60,6 +63,10 @@ export function AppShell() {
               <div>{data.runningAsService ? 'Windows Service' : 'Console mode'}</div>
             </>
           )}
+          <div className="mt-2 flex items-center gap-1.5" title="Live updates from the service">
+            <StatusDot tone={realtime === 'live' ? 'ok' : realtime === 'connecting' ? 'warn' : 'muted'} />
+            {realtime === 'live' ? 'Live' : realtime === 'connecting' ? 'Connecting…' : 'Offline'}
+          </div>
         </div>
       </aside>
 

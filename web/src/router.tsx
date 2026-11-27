@@ -1,23 +1,15 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
-import { Activity, Boxes, CalendarClock, HardDrive, History, Settings } from 'lucide-react'
+import { Activity, CalendarClock, HardDrive, History, Settings } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
 import { ComingSoon } from '@/pages/ComingSoon'
 import { Dashboard } from '@/pages/Dashboard'
-import emptyInventory from '@/assets/illustrations/empty-inventory.webp'
+import { Inventory } from '@/pages/Inventory'
 import emptyPlans from '@/assets/illustrations/empty-plans.webp'
 import emptySnapshots from '@/assets/illustrations/empty-snapshots.webp'
 
 const rootRoute = createRootRoute({ component: AppShell })
 
 const placeholders = [
-  {
-    path: '/inventory',
-    icon: Boxes,
-    title: 'Inventory',
-    milestone: 'M1',
-    illustration: emptyInventory,
-    description: 'Every compose stack, container, volume and bind mount on this host, with its protection status at a glance.',
-  },
   {
     path: '/plans',
     icon: CalendarClock,
@@ -59,6 +51,7 @@ const placeholders = [
 
 const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: Dashboard }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/inventory', component: Inventory }),
   ...placeholders.map(({ path, ...props }) =>
     createRoute({ getParentRoute: () => rootRoute, path, component: () => <ComingSoon {...props} /> }),
   ),

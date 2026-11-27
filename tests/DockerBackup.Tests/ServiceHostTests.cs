@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using DockerBackup.Core.Engine;
+using DockerBackup.Core.Inventory;
 using DockerBackup.Service.Api;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -36,12 +37,35 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
             services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>();
             services.RemoveAll<IEngineStatusProvider>();
             services.AddSingleton<IEngineStatusProvider>(new StaticEngineStatus(FakeEngine));
+            services.RemoveAll<IInventoryProvider>();
+            services.AddSingleton<IInventoryProvider>(Inventory);
         });
+    }
+
+    public FakeInventory Inventory { get; } = new();
+
+    public sealed class FakeInventory : IInventoryProvider
+    {
+        public int RefreshRequests;
+
+        public InventorySnapshot? Current { get; } = InventoryBuilder.Build(
+            new RawInventory(
+                [new RawContainer("id1", "web", "nginx", "img1", "running", "Up", null, DateTimeOffset.UnixEpoch,
+                    new Dictionary<string, string> { [InventoryBuilder.ComposeProjectLabel] = "site" }, [])],
+                [],
+                []),
+            SizeIndex.Empty, 1, DateTimeOffset.UnixEpoch);
+
+        public event Action<InventorySnapshot>? Changed { add { } remove { } }
+
+        public void RequestRefresh() => Interlocked.Increment(ref RefreshRequests);
     }
 
     private sealed class StaticEngineStatus(EngineStatus status) : IEngineStatusProvider
     {
         public EngineStatus Current => status;
+
+        public event Action<EngineStatus>? StatusChanged { add { } remove { } }
     }
 }
 
@@ -81,6 +105,41 @@ public sealed class ServiceHostTests(ServiceFactory factory) : IClassFixture<Ser
         request.Headers.Host = "attacker.example";
         var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Inventory_is_served_with_string_enums()
+    {
+        var json = await _client.GetStringAsync("/api/inventory", TestContext.Current.CancellationToken);
+        Assert.Contains("\"engineReachable\":true", json);
+        Assert.Contains("\"kind\":\"compose\"", json);
+        Assert.Contains("\"protection\":\"stateless\"", json);
+    }
+
+    [Theory]
+    [InlineData(null, null, HttpStatusCode.Forbidden)]                     // missing custom header
+    [InlineData("1", null, HttpStatusCode.Accepted)]
+    [InlineData("1", "https://localhost:8484", HttpStatusCode.Accepted)]
+    [InlineData("1", "http://localhost:5173", HttpStatusCode.Accepted)]  // Vite dev server
+    [InlineData("1", "https://attacker.example", HttpStatusCode.Forbidden)]
+    public async Task Api_writes_require_header_and_loopback_origin(string? header, string? origin, HttpStatusCode expected)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/inventory/refresh");
+        if (header is not null) request.Headers.Add("X-DockerBackup-Request", header);
+        if (origin is not null) request.Headers.Add("Origin", origin);
+        var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(expected, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("https://attacker.example", HttpStatusCode.Forbidden)]
+    [InlineData("https://localhost:8484", HttpStatusCode.OK)]
+    public async Task Hub_connections_from_foreign_origins_are_refused(string origin, HttpStatusCode expected)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/hubs/events/negotiate?negotiateVersion=1");
+        request.Headers.Add("Origin", origin);
+        var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(expected, response.StatusCode);
     }
 
     [Fact]
