@@ -4,6 +4,8 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-27
+
 ### Changed
 - **Dropbox from another computer:** the Add destination window now shows the three steps (allow in Dropbox, copy the address of the page that can't load, paste it and choose Finish) before you start, with the current step highlighted.
 
@@ -94,7 +96,8 @@ Since the internal 0.7.x builds:
 - Dialogs with fields closed when clicking outside them, losing what was typed.
 - A database dump could hang the backup when Docker didn't pass on the end of the dump stream, and could fail with "No such exec instance" when Docker removed a finished command before its exit code was read.
 
-[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/niogtres/stowaway/releases/tag/v0.11.1
 [0.11.0]: https://github.com/niogtres/stowaway/releases/tag/v0.11.0
 [0.10.1]: https://github.com/niogtres/stowaway/releases/tag/v0.10.1
 [0.10.0]: https://github.com/niogtres/stowaway/releases/tag/v0.10.0
