@@ -65,11 +65,23 @@ public sealed class SnapshotCatalog(IDestinationStore destinations, DestinationS
             sources.Add(new SnapshotSource(dumps, DumpsKind, "_dumps", "Database dumps", "databases", "/", null));
         }
 
-        sources.Add(new SnapshotSource(BackupPlanner.MetadataDirOf(paths), DefinitionKind, "_stowaway", "App definition", "compose files and container settings", "/", null));
+        sources.Add(new SnapshotSource(BackupPlanner.MetadataDirOf(paths), DefinitionKind, "_stowaway", "App definition",
+            DefinitionDescription(app), "/", null));
 
         var contents = new SnapshotContents(app, sources);
         _contents[key] = contents;
         return contents;
+    }
+
+    /// <summary>"compose files and container settings", plus what app profiles add (e.g. a restore script).</summary>
+    private static string DefinitionDescription(AppInfo app)
+    {
+        var extras = app.Containers
+            .Select(c => Stowaway.Core.Profiles.AppProfiles.Of(c.Product)?.DefinitionDescription)
+            .OfType<string>()
+            .Distinct()
+            .ToList();
+        return extras.Count == 0 ? "compose files and container settings" : $"container settings and {string.Join(", ", extras)}";
     }
 
     /// <summary>The <c>docker inspect</c> documents saved with the snapshot, one per container.</summary>

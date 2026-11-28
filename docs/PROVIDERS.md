@@ -1,6 +1,6 @@
 # Writing a provider
 
-Stowaway backs up databases and writes to destinations through **providers**: one class per database family or destination type, behind a small interface. This guide explains those interfaces, when Stowaway calls each method, and what a new provider needs before it can be merged.
+Stowaway backs up databases and writes to destinations through **providers**: one class per database family or destination type, behind a small interface. **App profiles** add what Stowaway knows about one product that runs in containers, such as Business Central. This guide explains those interfaces, when Stowaway calls each method, and what a new one needs before it can be merged.
 
 You'll need C# and a working [development setup](../.github/CONTRIBUTING.md#development-setup). Read [DESIGN.md](DESIGN.md) §3 (architecture) first if you haven't.
 
@@ -10,13 +10,13 @@ Providers are compiled into Stowaway and registered with dependency injection. S
 
 If an extension ever has to live outside this repository, it will run as a separate program that Stowaway talks to. Nothing like that exists yet; open an issue if you need it.
 
-| | Database providers | Destination providers |
-|---|---|---|
-| Interface | `IDatabaseProvider` | `IDestinationProvider` |
-| Code | `src/Stowaway.Docker/Databases/` | `src/Stowaway.Docker/Destinations/` |
-| Shared types (no Docker) | `src/Stowaway.Core/Databases/` | `src/Stowaway.Core/Destinations/` |
-| Registration | `AddDatabaseProviders` in `src/Stowaway.Docker/ServiceCollectionExtensions.cs` | `AddDestinationProviders` (same file) and `DestinationProviders.BuiltIn` |
-| Guard tests | `DatabaseProviderTests` | `DestinationProviderTests` |
+| | Database providers | Destination providers | App profiles |
+|---|---|---|---|
+| Interface | `IDatabaseProvider` | `IDestinationProvider` | `IAppProfile` |
+| Code | `src/Stowaway.Docker/Databases/` | `src/Stowaway.Docker/Destinations/` | `src/Stowaway.Core/Profiles/` (pure: no Docker, no I/O) |
+| Shared types (no Docker) | `src/Stowaway.Core/Databases/` | `src/Stowaway.Core/Destinations/` | same folder |
+| Registration | `AddDatabaseProviders` in `src/Stowaway.Docker/ServiceCollectionExtensions.cs` | `AddDestinationProviders` (same file) and `DestinationProviders.BuiltIn` | `AppProfiles.BuiltIn` |
+| Guard tests | `DatabaseProviderTests` | `DestinationProviderTests` | `AppProfileTests` |
 
 ---
 
@@ -239,10 +239,95 @@ Types that aren't network services, such as `LocalFolderProvider` and `SmbProvid
 
 ---
 
+## App profiles
+
+A database provider knows how to back up one kind of database. An app profile knows one **product**: how to recognize its containers, which of its host folders belong to it, and what to store with a snapshot so it can be brought back. Write a profile when the generic rules back up the right data but miss product knowledge; write a database provider when Stowaway can't get at the data at all.
+
+| Question | Answer it with |
+|---|---|
+| "Stowaway can't dump this database." | a database provider |
+| "Stowaway backs up the data, but leaves out a folder this product always needs." | a profile (`Bind`) |
+| "The snapshot has the data, but I can't get the app running again from it." | a profile (`DefinitionFiles`, `RecreateWarning`) |
+| "The card should say what this is." | a profile (`Detect`) |
+
+### The interface
+
+```csharp
+public interface IAppProfile
+{
+    string Id { get; }                                    // stored in snapshots: never change it
+    AppProduct? Detect(IReadOnlyDictionary<string, string> labels);
+    (string? Reason, string? Note) Bind(string defaultReason, string windowsSource, string destination);
+    IReadOnlyDictionary<string, string> DefinitionFiles(ContainerDefinition container, DateTimeOffset backedUpAt);
+    string? DefinitionDescription { get; }
+    string? RecreateWarning(string containerName);
+}
+```
+
+| Member | Called by | When |
+|---|---|---|
+| `Detect` | `InventoryBuilder` | every inventory scan, per container. The labels include the image's. The first profile that answers wins. The returned `AppProduct` (name, version, country, a note for the card) is kept in `app.json` with every snapshot. |
+| `Bind` | `InventoryBuilder.DecideBind` (inventory, sizing and backups all use it) | only for bind mounts the generic rule leaves out **and** the owner could include (`HostPaths.CanInclude`). Return a null reason plus a note to include the folder, or a clearer reason to keep it out. Drives, system folders, shares and sockets never reach a profile. |
+| `DefinitionFiles` | `BackupService` while it writes the app definition | every backup, per recognized container. `ContainerDefinition` is the container's saved `docker inspect`: environment, memory, DNS, ports, bind mounts. The files go to the snapshot's *App definition*, next to the container settings. |
+| `DefinitionDescription` | `SnapshotCatalog` | shown where the snapshot lists its contents ("container settings and …"). |
+| `RecreateWarning` | `RestoreService` preview | before **Recreate app** brings back a container of this product. |
+
+Profiles are pure functions over data Stowaway already has. That makes them testable without Docker, and they can't stop, change or slow down anything. It's also why they live in `Stowaway.Core`, not next to the providers.
+
+### Rules for app profiles
+
+- **Add to the generic rules, never replace them.** The database provider still backs up the database. A profile can include only folders the owner could include anyway; `DecideBind` enforces this, and `AppProfileTests` checks it with a profile that tries to take everything.
+- **Recognize by what the vendor sets, not by names.** Use labels from the vendor's image (they survive renames and private registries). Never use container names: those belong to the owner.
+- **Explain every exclusion.** A folder you deliberately leave out gets a reason that says what it is and where to back it up instead.
+- **The environment holds secrets.** `ContainerDefinition.Env` is the container's real environment. Pick the settings you need by name and never copy anything else into a file, note or log. Strip tokens from URLs. A test must check that known secret values don't appear in your output.
+- **Generated scripts are run by people.** Say at the top what the script does and how to run it. Make it stop with a clear message when the input isn't what it expects, never guess.
+- **Ids are forever.** `Id` is stored in snapshots. If a profile is later removed, its snapshots are shown without a product (`AppProfiles.Of` returns null).
+
+### Worked example: Business Central
+
+This is how the Business Central profile (`BusinessCentralProfile`, `BusinessCentralScript`) came about, with the decisions along the way. It's the reference for the next profile.
+
+**The situation.** Business Central runs in Windows containers made with BcContainerHelper. The SQL Server provider already backs up the database inside the container: a `.bak` while it runs, or the database files while it's stopped. Inventory still got three things wrong:
+
+1. The card said "SQL Server", nothing more.
+2. All four host folders were left out, including the container's own `my` folder (setup scripts, certificates).
+3. A restore brought back the database, but no running Business Central. **Recreate app** recreates the container from its saved settings, so it starts from the artifact again with a fresh database, and the backup is never loaded.
+
+**Decision 1: a profile, not a database provider.** Stowaway could already get at all the data, so a new `IDatabaseProvider` would have duplicated the SQL Server one. What was missing was product knowledge, so this became a new kind of extension. *Rule applied:* add to the generic rules, don't replace them.
+
+**Decision 2: recognize it from the image labels.** We asked for a real container's labels (read-only `docker inspect`, with secret-looking values blanked) before writing any code. Microsoft's images carry `maintainer: Dynamics SMB`, plus `version`, `country`, `cu` and `nav`. A container counts as Business Central when the maintainer matches and a version is present; versions below 13 are shown as Dynamics NAV. The image name was rejected as the signal, because it changes between registries and tags. *Rule applied:* recognize by what the vendor sets.
+
+**Decision 3: which folders.** BcContainerHelper maps four folders into every container:
+
+| Folder (container path) | Decision | Why |
+|---|---|---|
+| `…\Extensions\<name>\my` (`C:\run\my`) | **included** by default | It belongs to this one container: its setup scripts and certificates. It's small. |
+| `C:\bcartifacts.cache` (`C:\dl`) | left out, with its own reason | It's a download cache that refills itself, and it can be many GB. The owner can still choose **Include**. |
+| `C:\ProgramData\BcContainerHelper` | left out, with its own reason | It's shared by every Business Central container on the computer, so it isn't this app's. |
+| `drivers\etc` | left out (generic rule) | It's a system folder. A profile can't include it, by design. |
+
+The profile decides by the container path (`C:\run\my`), which BcContainerHelper always uses, rather than the host path, which the owner can change.
+
+**Decision 4: a restore script instead of Recreate.** The snapshot already holds the container's full `docker inspect`, so a backup can write a script that runs `New-BcContainer` with the same artifact URL, authentication, locale, memory, DNS, ports and extra folders. The script then loads the backup:
+
+- a `.bak` (made while the container ran) goes in through `-bakFile`;
+- database files (copied while it was stopped) are attached in place of the new container's own database.
+
+It finds the backup through the `sqlserver.json` manifest the SQL Server provider writes, so the two cooperate through a file format, not through code. **Recreate app** gets a warning that points to the script.
+
+**Decision 5: what stays out of the script.** The container's environment held `securePassword`, `passwordKeyFile`, `licenseFile` and `username`. None of them is copied. The script asks for a sign-in when it runs, and takes the license as a parameter. Insider artifact URLs carry a SAS token in the query: it's cut off, and the script asks for it as `-SasToken`. A test lists the secret values and checks that none appears. *Rule applied:* the environment holds secrets.
+
+**What we got wrong first.** The first version had `if (BusinessCentral.Is(...))` checks in the inventory builder, the backup service, the restore preview, the snapshot catalog and the web client. A second product would have meant edits in all of them, and nothing stopped a product rule from including a whole drive. Moving it behind `IAppProfile` turned those checks into one lookup (`AppProfiles.Of(product)`). The drive rule moved into `DecideBind`, where it holds for every profile. The web client now shows `product.note` instead of checking for Business Central by name.
+
+**What's still open.** Unit tests cover detection, the folder rules and the script text. The script itself has not yet run against a real Business Central host, and the guide's own bar is a real round trip: back up, restore to a folder, run the script on a second machine, sign in. Until that has passed, the help topic calls the script new and asks for reports. Do the same for anything you can't test in CI.
+
+---
+
 ## Tests and the pull request
 
 - `dotnet test` runs unit tests and integration tests against your local Docker engine. Integration tests create only throwaway containers and volumes named `stowaway-test-*` and must never touch anything else on the engine.
-- Each provider needs at least one test of its own; database providers need a real dump and drill round trip.
+- Each provider needs at least one test of its own; database providers need a real dump and drill round trip. App profiles need unit tests for detection, folder decisions and every generated file, including a check that secrets stay out.
+- Test classes that start the service (`WebApplicationFactory`, e.g. `ServiceFactory` or `SignInFactory`) must be in `[Collection(ServiceHosts.Name)]`. The factories switch sign-in on and off through process-wide environment variables, so two hosts built at once see each other's settings and fail at random.
 - The pull request checklist in [CONTRIBUTING.md](../.github/CONTRIBUTING.md#before-you-open-a-pull-request) applies: no warnings, lint clean, a CHANGELOG line, and the user guide updated.
 
 Not sure whether a database or service fits? [Open an issue](https://github.com/niogtres/stowaway/issues/new/choose) first and describe how it would be backed up or reached; it's quicker to agree on the approach before the code.

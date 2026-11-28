@@ -1,3 +1,5 @@
+using Stowaway.Core.Profiles;
+
 namespace Stowaway.Core.Inventory;
 
 public enum AppKind
@@ -129,6 +131,9 @@ public sealed record ContainerInfo
     public string? ComposeDependsOn { get; init; }
     public DatabaseKind? Database { get; init; }
 
+    /// <summary>The product the container runs, when Stowaway recognizes it (e.g. Business Central).</summary>
+    public AppProduct? Product { get; init; }
+
     /// <summary>Whether a registered database provider can back up <see cref="Database"/> consistently while it runs.</summary>
     public bool DumpSupported { get; init; }
     public required IReadOnlyList<MountInfo> Mounts { get; init; }
@@ -160,6 +165,9 @@ public sealed record MountInfo
 
     /// <summary>Included because the owner chose to, not by default.</summary>
     public bool IncludedByOwner { get; init; }
+
+    /// <summary>Why a folder outside the app is included by default (e.g. a Business Central container's own folder).</summary>
+    public string? Note { get; init; }
 }
 
 public sealed record VolumeInfo

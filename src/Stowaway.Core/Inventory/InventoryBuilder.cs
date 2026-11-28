@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Stowaway.Core.Profiles;
 
 namespace Stowaway.Core.Inventory;
 
@@ -223,7 +224,10 @@ public static partial class InventoryBuilder
     }
 
     private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes,
-        IReadOnlySet<string> includedFolders) => new()
+        IReadOnlySet<string> includedFolders) => MapContainer(c, sizes, localOnlyImages, externalVolumes, includedFolders, AppProfiles.Detect(c.Labels));
+
+    private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes,
+        IReadOnlySet<string> includedFolders, AppProduct? product) => new()
     {
         Id = c.Id,
         Name = c.Name,
@@ -237,10 +241,36 @@ public static partial class InventoryBuilder
         CreatedAt = c.Created,
         ComposeService = c.Labels.GetValueOrDefault(ComposeServiceLabel),
         ComposeDependsOn = c.Labels.GetValueOrDefault(Backups.ComposeOrder.DependsOnLabel),
-        Mounts = c.Mounts.Select(m => MapMount(m, sizes, ProjectDir(c), externalVolumes, includedFolders)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
+        Product = product,
+        Mounts = c.Mounts.Select(m => MapMount(m, sizes, ProjectDir(c), product, externalVolumes, includedFolders)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
     };
 
-    private static MountInfo MapMount(RawMount m, SizeIndex sizes, string? projectDir, IReadOnlyDictionary<string, string> externalVolumes,
+    /// <summary>How a bind mount is treated.</summary>
+    /// <param name="WindowsPath">The folder's Windows path, or null when it only exists inside the engine's VM.</param>
+    /// <param name="Reason">Why it isn't backed up, or null when it is.</param>
+    /// <param name="CanInclude">Left out by default, and the owner may include it.</param>
+    /// <param name="Note">Why it's included although it's outside the app (e.g. a Business Central container's own folder).</param>
+    public sealed record BindDecision(string? WindowsPath, string? Reason, bool CanInclude, bool IncludedByOwner, string? Note);
+
+    /// <summary>
+    /// Whether a bind mount is backed up: folders inside the app's project folder, folders the container's product
+    /// keeps its own files in (<see cref="IAppProfile.Bind"/>), and folders the owner included.
+    /// </summary>
+    /// <param name="profile">The product's profile; looked up from <paramref name="product"/> when null.</param>
+    public static BindDecision DecideBind(RawMount m, string? projectDir, AppProduct? product, IReadOnlySet<string> includedFolders, IAppProfile? profile = null)
+    {
+        var windows = HostPaths.ToWindowsPath(m.Source);
+        var defaultReason = HostPaths.BindExclusionReason(m.Source, m.Destination, projectDir);
+        var (reason, note) = (profile ?? AppProfiles.Of(product)) is { } known && windows is not null && HostPaths.CanInclude(defaultReason)
+            // Profiles only decide about folders the owner could include: never drives, system folders or shares.
+            ? known.Bind(defaultReason!, windows, m.Destination)
+            : (defaultReason, null);
+        var canInclude = windows is not null && reason is not null && HostPaths.CanInclude(defaultReason);
+        var byOwner = canInclude && includedFolders.Contains(windows!);
+        return new BindDecision(windows, byOwner ? null : reason, canInclude, byOwner, note);
+    }
+
+    private static MountInfo MapMount(RawMount m, SizeIndex sizes, string? projectDir, AppProduct? product, IReadOnlyDictionary<string, string> externalVolumes,
         IReadOnlySet<string> includedFolders)
     {
         switch (m.Type.ToLowerInvariant())
@@ -266,24 +296,21 @@ public static partial class InventoryBuilder
 
             case "bind":
             {
-                var windows = HostPaths.ToWindowsPath(m.Source);
-                var defaultReason = HostPaths.BindExclusionReason(m.Source, m.Destination, projectDir);
-                var canInclude = windows is not null && HostPaths.CanInclude(defaultReason);
-                var byOwner = canInclude && includedFolders.Contains(windows!);
-                var reason = byOwner ? null : defaultReason;
+                var bind = DecideBind(m, projectDir, product, includedFolders);
                 return new MountInfo
                 {
                     Kind = MountKind.Bind,
                     Source = m.Source,
-                    DisplaySource = windows ?? m.Source,
+                    DisplaySource = bind.WindowsPath ?? m.Source,
                     Destination = m.Destination,
                     ReadOnly = !m.ReadWrite,
-                    Included = reason is null,
-                    ExclusionReason = reason,
-                    CanInclude = canInclude,
-                    IncludedByOwner = byOwner,
+                    Included = bind.Reason is null,
+                    ExclusionReason = bind.Reason,
+                    CanInclude = bind.CanInclude,
+                    IncludedByOwner = bind.IncludedByOwner,
+                    Note = bind.Note,
                     // Folders outside the app aren't measured: their size is irrelevant to the backup.
-                    SizeBytes = reason is null && windows is not null && sizes.HostPaths.TryGetValue(windows, out var size) ? size : null,
+                    SizeBytes = bind.Reason is null && bind.WindowsPath is not null && sizes.HostPaths.TryGetValue(bind.WindowsPath, out var size) ? size : null,
                 };
             }
 

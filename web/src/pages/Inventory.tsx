@@ -242,7 +242,12 @@ function AppCard({ app }: { app: AppInfo }) {
         </div>
       )}
 
-      {app.platform === 'windows' && <WindowsContainerNote sqlServer={app.containers.some((c) => c.database === 'sqlServer')} />}
+      {app.platform === 'windows' && (
+        <WindowsContainerNote
+          sqlServer={app.containers.some((c) => c.database === 'sqlServer')}
+          productNote={app.containers.find((c) => c.product?.note)?.product?.note ?? null}
+        />
+      )}
 
       <div className="mt-auto" />
       <AppBackupStatus app={app} onBackup={() => setBackingUp(true)} />

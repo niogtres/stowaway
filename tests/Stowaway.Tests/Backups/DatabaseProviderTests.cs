@@ -6,6 +6,7 @@ using Stowaway.Docker.Databases;
 namespace Stowaway.Tests.Backups;
 
 /// <summary>The providers as the real service registers them, and rules every shell definition must follow.</summary>
+[Collection(ServiceHosts.Name)]
 public sealed class DatabaseProviderTests(SignInFactory factory) : IClassFixture<SignInFactory>
 {
     [Fact]

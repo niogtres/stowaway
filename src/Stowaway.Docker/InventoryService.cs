@@ -279,16 +279,16 @@ public sealed class InventoryService(
         }
     }
 
-    /// <summary>Host folders that are backed up (inside an app's project folder, or included by the owner): the only ones worth measuring.</summary>
+    /// <summary>Host folders that are backed up (inside an app's project folder, kept by its product, or included by the owner): the only ones worth measuring.</summary>
     private IEnumerable<string> BindPaths(RawInventory raw)
     {
         var included = _included;
         return InventoryBuilder.WithoutOwnResources(raw).Containers
-            .SelectMany(c => c.Mounts.Select(m => (Mount: m, ProjectDir: InventoryBuilder.ProjectDir(c))))
-            .Where(x => x.Mount.Type == "bind")
-            .Select(x => (Path: HostPaths.ToWindowsPath(x.Mount.Source), Reason: HostPaths.BindExclusionReason(x.Mount.Source, x.Mount.Destination, x.ProjectDir)))
-            .Where(x => x.Path is not null && (x.Reason is null || HostPaths.CanInclude(x.Reason) && included.Contains(x.Path)))
-            .Select(x => x.Path!)
+            .SelectMany(c => c.Mounts
+                .Where(m => m.Type == "bind")
+                .Select(m => InventoryBuilder.DecideBind(m, InventoryBuilder.ProjectDir(c), Stowaway.Core.Profiles.AppProfiles.Detect(c.Labels), included)))
+            .Where(b => b.WindowsPath is not null && b.Reason is null)
+            .Select(b => b.WindowsPath!)
             .Distinct(StringComparer.OrdinalIgnoreCase);
     }
 

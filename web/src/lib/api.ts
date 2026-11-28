@@ -58,6 +58,19 @@ export interface MountInfo {
   /** A host folder left out by default that the owner may include. */
   canInclude: boolean
   includedByOwner: boolean
+  /** Why a folder outside the app is included by default (e.g. a Business Central container's own folder). */
+  note: string | null
+}
+
+/** The product a container runs, when Stowaway recognizes it. */
+export interface AppProduct {
+  /** The server-side app profile that recognized it, e.g. business-central. */
+  profile: string
+  name: string
+  version: string | null
+  country: string | null
+  /** What Stowaway does differently for this product, for the app's card. */
+  note: string | null
 }
 
 export interface ContainerInfo {
@@ -72,6 +85,7 @@ export interface ContainerInfo {
   createdAt: string
   composeService: string | null
   database: DatabaseKind | null
+  product: AppProduct | null
   /** Whether Stowaway can back up this database consistently while it runs (decided by the server's database providers). */
   dumpSupported: boolean
   mounts: MountInfo[]

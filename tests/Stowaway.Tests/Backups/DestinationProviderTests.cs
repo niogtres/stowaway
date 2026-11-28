@@ -7,6 +7,7 @@ using Stowaway.Docker.Destinations;
 namespace Stowaway.Tests.Backups;
 
 /// <summary>Destination providers: registration, descriptors, and that stored destinations read and write back unchanged.</summary>
+[Collection(ServiceHosts.Name)]
 public sealed class DestinationProviderTests(SignInFactory factory) : IClassFixture<SignInFactory>
 {
     private sealed class PlainProtector : ISecretProtector
