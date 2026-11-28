@@ -8,4 +8,8 @@
 - **Somewhere to keep backups:** a second disk, a network share, or cloud storage (see [section 4](04-destinations.md)). A backup on the same disk as the data doesn't protect you from that disk failing.
 - **An administrator account** to install it.
 
+![Inventory: every app with its containers, volumes and folders, what is backed up and how big it is](images/inventory.png)
+
+![A Business Central container: its own folder is backed up, three folders that need no backup are folded away](images/inventory-business-central.png)
+
 **See also:** [Install](02-install.md), [Destinations](04-destinations.md)

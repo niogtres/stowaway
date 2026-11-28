@@ -18,6 +18,7 @@ Design and decisions: [docs/DESIGN.md](docs/DESIGN.md). Read §10 (decisions) be
 - After changing NuGet or npm dependencies, run `python -I tools/generate-notices.py` and commit `THIRD-PARTY-NOTICES.txt`; new dependencies must be MIT-compatible.
 - Add user-visible changes to `CHANGELOG.md` under *Unreleased*; on a release tag, rename that section to the version and date.
 - The user guide lives in `docs/help/NN-slug.md` (one topic per file); the web client bundles the same files as its Help section. Link between topics by file name (`04-destinations.md`).
+- Help screenshots (`docs/help/images/*.png`, referenced as `images/name.png`) come from `node tools/screenshots/capture.mjs`: the built web client on made-up data (`tools/screenshots/fixtures.mjs`). Re-run it after visible UI changes; add fixture data for new screens, never real names, paths or keys.
 
 ## Commands
 - Full build → MSI: `./build.ps1 [-Version x.y.z] [-SkipTests]` (output in `artifacts/`).

@@ -2,6 +2,8 @@
 
 In **Settings → Notifications**, add a channel to hear about failed backups (and when they work again):
 
+![Settings: notification channels, and remote access below them](images/notifications.png)
+
 - **Email** (any SMTP server),
 - **Webhook** (generic JSON, or Slack-compatible for Slack, Mattermost and Discord, where you add `/slack` to the webhook address; Microsoft Teams works through a Teams workflow that accepts a webhook),
 - **ntfy** push notifications to your phone.

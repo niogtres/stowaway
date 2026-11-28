@@ -26,6 +26,7 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ### Documentation
 
+- The help pages show screenshots of the screens they describe.
 - The install guide explains the SmartScreen warning for the unsigned installer and how to check the download's checksum.
 
 ## [0.12.0] - 2026-11-28

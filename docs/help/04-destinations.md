@@ -15,11 +15,17 @@ A destination is where backups go. Open **Destinations**, choose **Add destinati
 | **Dropbox** | Your Dropbox account | Choose **Connect Dropbox** and approve access in the browser window that opens |
 | **OneDrive** | Personal OneDrive, or OneDrive for work or school | Choose **Connect OneDrive** and approve access in the browser window that opens |
 
+![Destinations: each one with its snapshots, stored size and last backup](images/destinations.png)
+
+![Add destination: pick the type, then fill in where the backups go](images/add-destination.png)
+
 Backups are **encrypted** before they leave your computer. Each destination has its own **recovery key**:
 
 > **Save the recovery key somewhere safe, away from this computer.** If this computer is lost, you need it (and the destination) to get your data back. Without it, nobody can read the backups, including you.
 
 Adding a destination ends with this step: Stowaway shows the key, with **Copy** and **Download recovery kit**. The recovery kit is a text file with the key, where the backups are, and the steps to restore them on another computer, with Stowaway or with restic alone. Keep it in a password manager, print it, or put it on a USB stick in a drawer.
+
+![The recovery key step: copy the key or download the recovery kit, then confirm it is stored elsewhere](images/recovery-key.png)
 
 Tick **I've stored this key somewhere other than this computer** and choose **Done**. Until you do, the destination shows **Recovery key not saved**, and the dashboard lists it under *Needs attention*. **Remind me later** keeps those reminders. A destination you connected by typing in its key counts as saved.
 

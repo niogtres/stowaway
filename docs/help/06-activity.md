@@ -2,6 +2,8 @@
 
 **Activity** shows backups as they run (with progress) and the history of every backup, restore and check. Open an entry to see each step and its log.
 
+![Activity: a backup in progress, and the history of backups and restore drills](images/activity.png)
+
 Once a week, in the night, Stowaway also checks a sample of each destination for damage.
 
 **See also:** [Notifications](10-notifications.md), [Troubleshooting](14-troubleshooting.md)
