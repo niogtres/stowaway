@@ -23,7 +23,7 @@ Stowaway backs up the apps you run in Docker on a Windows computer (their volume
 
 ## Install
 
-1. Download `Stowaway-<version>-x64.msi` from [Releases](https://github.com/niogtres/stowaway/releases) and run it.
+1. Download `Stowaway-<version>-x64.msi` from [Releases](https://github.com/niogtres/stowaway/releases) and run it. The installer isn't code-signed yet, so Windows may ask you to confirm (**More info** → **Run anyway**); the [install guide](docs/help/02-install.md#unsigned-installer) shows how to check the download against its `.sha256`.
 2. Open **Stowaway** from the Start menu (https://localhost:8484).
 3. Add a destination, create a backup plan, done.
 
