@@ -153,7 +153,7 @@ export interface InventoryResponse {
 
 // ---- Backups -------------------------------------------------------------
 
-export type DestinationKind = 'local' | 'smb' | 's3' | 'b2' | 'azure' | 'sftp' | 'dropbox'
+export type DestinationKind = 'local' | 'smb' | 's3' | 'b2' | 'azure' | 'sftp' | 'dropbox' | 'rest' | 'gcs' | 'oneDrive'
 export type BackupStrategy = 'live' | 'stopStart'
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type RunKind = 'backup' | 'maintenance' | 'restore' | 'drill'
@@ -185,7 +185,7 @@ export interface Destination {
 export interface DestinationField {
   key: string
   label: string
-  type: 'text' | 'password' | 'multiline' | 'number' | 'dropboxFolder'
+  type: 'text' | 'password' | 'multiline' | 'number' | 'stowawayFolder' | 'toggle'
   section: 'location' | 'credentials'
   required: boolean
   secret: boolean
@@ -203,7 +203,7 @@ export interface DestinationType {
   icon: string
   namePlaceholder: string
   fields: DestinationField[]
-  /** A browser sign-in instead of typed credentials ('dropbox'). */
+  /** A browser sign-in instead of typed credentials: the service ('dropbox', 'onedrive'). */
   signIn: string | null
   notes: string | null
 }
@@ -216,7 +216,7 @@ export interface CreateDestination {
   secrets: Record<string, string>
   existingRepositoryPassword?: string
   signInSession?: string
-  /** Reuse the credentials (e.g. the Dropbox sign-in) of this destination of the same type. */
+  /** Reuse the credentials (e.g. the Dropbox or OneDrive sign-in) of this destination of the same type. */
   credentialsFrom?: string
 }
 
@@ -732,16 +732,17 @@ export function useDeleteDestination() {
   })
 }
 
-export interface DropboxSession {
+export interface SignInSession {
   id: string
   state: 'pending' | 'ready' | 'failed'
   authUrl: string | null
   error: string | null
 }
 
-export const startDropbox = () => request<DropboxSession>('POST', '/api/dropbox/connect')
-export const pollDropbox = (id: string) => request<DropboxSession>('GET', `/api/dropbox/connect/${id}`)
-export const completeDropbox = (id: string, url: string) => request<DropboxSession>('POST', `/api/dropbox/connect/${id}/callback`, { url })
+/** Browser sign-in to a cloud service (a destination type's signIn). */
+export const startSignIn = (service: string) => request<SignInSession>('POST', `/api/${service}/connect`)
+export const pollSignIn = (service: string, id: string) => request<SignInSession>('GET', `/api/${service}/connect/${id}`)
+export const completeSignIn = (service: string, id: string, url: string) => request<SignInSession>('POST', `/api/${service}/connect/${id}/callback`, { url })
 
 export const revealRecoveryKey = (id: string) =>
   request<{ recoveryKey: string }>('POST', `/api/destinations/${id}/recovery-key`).then((r) => r.recoveryKey)

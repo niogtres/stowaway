@@ -15,7 +15,7 @@ Stowaway backs up the apps you run in Docker on a Windows computer (their volume
 - **Finds everything by itself.** Every container, compose stack, volume and bind mount, with sizes, live as Docker changes. Nothing to list by hand.
 - **Backs up on a schedule.** Encrypted and deduplicated with [restic](https://restic.net), with retention ("keep 7 daily, 4 weekly…") and weekly integrity checks.
 - **Keeps databases consistent without downtime.** PostgreSQL, MySQL/MariaDB, MongoDB and Redis are dumped with their own tools while they run, and SQL Server in Windows containers with its own `BACKUP DATABASE`. Apps it can't dump are stopped briefly, in the right order, and started again.
-- **Backs up to where you want.** A second disk, a network share (SMB), S3-compatible storage, Backblaze B2, Azure Blob, SFTP, or Dropbox.
+- **Backs up to where you want.** A second disk, a network share (SMB), S3-compatible storage, Backblaze B2, Azure Blob, Google Cloud Storage, SFTP, a restic REST server (append-only, so ransomware here can't delete the backups), Dropbox or OneDrive.
 - **Restores files, volumes or whole apps.** Restore a single file, a volume to where it was (with an undo snapshot) or to a new one, or rebuild an app's containers, networks and data after a disaster.
 - **Proves backups work.** Weekly restore drills restore into scratch space and load database dumps into throwaway containers, without touching your apps.
 - **Tells you when something's wrong.** Protection status for every app, a tray icon, and alerts by email, webhook (Slack, Discord, Mattermost, or Teams through a workflow) or ntfy.

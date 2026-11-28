@@ -478,6 +478,12 @@ public sealed class BackupService(
                 return;
             }
 
+            if (repository.IsAppendOnly(destination))
+            {
+                log.Add("Retention: skipped, the destination is append-only (remove old snapshots on the server)");
+                return;
+            }
+
             var tags = new[] { BackupPlanner.AppTagPrefix + run.AppId, PlanTag(planId) };
             run.SnapshotsForgotten = await repository.ForgetAsync(destination, tags, plan.Retention.ToResticArgs(), ct);
             log.Add($"Retention: {run.SnapshotsForgotten} old snapshot(s) forgotten (space is reclaimed by the weekly maintenance)");
@@ -699,10 +705,17 @@ public sealed class BackupService(
             var destination = await destinations.GetAsync(run.DestinationId, ct)
                 ?? throw new InvalidOperationException("The destination no longer exists.");
 
-            log.Add($"Pruning unreferenced data in {destination.Name}");
-            Report(run.Id, "pruning", null, 0, 0, 0, 0);
-            await SaveAsync(run, log);
-            await repository.PruneAsync(destination, line => log.Add(line), ct);
+            if (repository.IsAppendOnly(destination))
+            {
+                log.Add($"Not pruning {destination.Name}: it's append-only, so only the server's owner can remove data");
+            }
+            else
+            {
+                log.Add($"Pruning unreferenced data in {destination.Name}");
+                Report(run.Id, "pruning", null, 0, 0, 0, 0);
+                await SaveAsync(run, log);
+                await repository.PruneAsync(destination, line => log.Add(line), ct);
+            }
 
             log.Add($"Checking repository integrity (re-reading {CheckReadDataPercent}% of the data)");
             Report(run.Id, "checking", null, 0, 0, 0, 0);

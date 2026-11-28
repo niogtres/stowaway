@@ -13,7 +13,7 @@ public sealed class ResticException(int exitCode, string message) : Exception(me
 }
 
 /// <summary>restic operations against one destination's repository, executed in runner containers.</summary>
-public sealed class ResticRepository(ResticRunner runner, ISecretProtector secrets, ILogger<ResticRepository> logger, Destinations.DestinationProviders? destinations = null)
+public sealed class ResticRepository(ResticRunner runner, ISecretProtector secrets, ILogger<ResticRepository> logger, Destinations.DestinationProviders? destinations = null, IDestinationStore? store = null)
 {
     private readonly Destinations.DestinationProviders _destinations = destinations ?? Destinations.DestinationProviders.BuiltIn(runner);
 
@@ -325,6 +325,11 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         var provider = _destinations.Get(destination.Kind);
         var values = Destinations.DestinationValues.Load(destination, provider.Descriptor, secrets);
         await using var access = await provider.OpenAsync(values, ct);
+        if (access.UpdatedValues is { Count: > 0 } updated)
+        {
+            await SaveUpdatedValuesAsync(destination, provider, values, updated, ct);
+        }
+
         env["RESTIC_REPOSITORY"] = access.Repository;
         foreach (var (key, value) in access.Environment)
         {
@@ -337,6 +342,52 @@ public sealed class ResticRepository(ResticRunner runner, ISecretProtector secre
         }
 
         return await runner.RunAsync(new RunnerRequest([.. access.ExtraArgs, .. args], [.. access.Mounts, .. extraMounts], env, files, access.Network, purpose), onLine, ct);
+    }
+
+    /// <summary>Whether the destination only accepts new data, so retention and prune are left to its owner.</summary>
+    public bool IsAppendOnly(Destination destination)
+    {
+        var provider = _destinations.Get(destination.Kind);
+        return provider.AppendOnly(Destinations.DestinationValues.Load(destination, provider.Descriptor, secrets));
+    }
+
+    /// <summary>
+    /// Keeps values a provider changed while opening (e.g. a refreshed sign-in token): in this run's destination, and in
+    /// the stored one, re-read so a concurrent edit isn't overwritten. A destination being added isn't stored yet; it's
+    /// saved with the new values when it is. Failing to save doesn't fail the run: the old values still work for a while.
+    /// </summary>
+    internal async Task SaveUpdatedValuesAsync(Destination destination, Destinations.IDestinationProvider provider, Dictionary<string, string> values,
+        IReadOnlyDictionary<string, string> updated, CancellationToken ct)
+    {
+        foreach (var (key, value) in updated)
+        {
+            values[key] = value;
+        }
+
+        Destinations.DestinationValues.Store(destination, provider.Descriptor, values, secrets);
+        if (store is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (await store.GetAsync(destination.Id, ct) is { } stored && stored.Kind == destination.Kind)
+            {
+                var current = Destinations.DestinationValues.Load(stored, provider.Descriptor, secrets);
+                foreach (var (key, value) in updated)
+                {
+                    current[key] = value;
+                }
+
+                Destinations.DestinationValues.Store(stored, provider.Descriptor, current, secrets);
+                await store.UpdateAsync(stored, ct);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Couldn't save the refreshed sign-in of destination {Destination}", destination.Name);
+        }
     }
 
     private static void EnsureSuccess(RunnerResult result)

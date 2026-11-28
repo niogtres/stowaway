@@ -1,4 +1,4 @@
-import { Box, Cloud, Database, FolderClosed, HardDriveUpload, Network, Server, type LucideIcon } from 'lucide-react'
+import { Box, Cloud, Database, FolderClosed, HardDriveUpload, Network, Server, ShieldCheck, type LucideIcon } from 'lucide-react'
 import type { DestinationField, DestinationKind, DestinationType } from './api'
 
 export type Values = Record<string, string>
@@ -12,6 +12,7 @@ const icons: Record<string, LucideIcon> = {
   database: Database,
   server: Server,
   box: Box,
+  shield: ShieldCheck,
 }
 
 export const iconFor = (name: string | undefined): LucideIcon => (name && icons[name]) || FolderClosed

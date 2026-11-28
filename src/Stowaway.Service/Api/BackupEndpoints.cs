@@ -65,11 +65,17 @@ public static class BackupEndpoints
             }
         });
 
-        api.MapPost("/dropbox/connect", async (DropboxAuthService dropbox, CancellationToken ct) =>
+        // Browser sign-in for cloud destinations (descriptor SignIn): /api/dropbox/connect, /api/onedrive/connect.
+        api.MapPost("/{service}/connect", async (string service, RcloneSignInService signIn, CancellationToken ct) =>
         {
+            if (!RcloneSignInService.Backends.ContainsKey(service))
+            {
+                return Results.NotFound();
+            }
+
             try
             {
-                return Results.Ok(await dropbox.StartAsync(ct));
+                return Results.Ok(await signIn.StartAsync(service, ct));
             }
             catch (ValidationException ex)
             {
@@ -77,14 +83,19 @@ public static class BackupEndpoints
             }
         }).AllowWithoutFreshCode(); // only starts a sign-in; creating the destination needs a code
 
-        api.MapGet("/dropbox/connect/{id:guid}", (Guid id, DropboxAuthService dropbox) =>
-            dropbox.Get(id) is { } status ? Results.Ok(status) : Results.NotFound());
+        api.MapGet("/{service}/connect/{id:guid}", (string service, Guid id, RcloneSignInService signIn) =>
+            RcloneSignInService.Backends.ContainsKey(service) && signIn.Get(id) is { } status ? Results.Ok(status) : Results.NotFound());
 
-        api.MapPost("/dropbox/connect/{id:guid}/callback", async (Guid id, DropboxCallbackBody body, DropboxAuthService dropbox, CancellationToken ct) =>
+        api.MapPost("/{service}/connect/{id:guid}/callback", async (string service, Guid id, DropboxCallbackBody body, RcloneSignInService signIn, CancellationToken ct) =>
         {
+            if (!RcloneSignInService.Backends.ContainsKey(service))
+            {
+                return Results.NotFound();
+            }
+
             try
             {
-                return Results.Ok(await dropbox.CompleteAsync(id, body.Url ?? string.Empty, ct));
+                return Results.Ok(await signIn.CompleteAsync(id, body.Url ?? string.Empty, ct));
             }
             catch (KeyNotFoundException)
             {

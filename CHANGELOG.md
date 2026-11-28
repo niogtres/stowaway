@@ -9,6 +9,10 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 - **Include** a host folder that's mapped into a container from outside the app (for example a configuration folder), so it's backed up with the app. Drives, system folders and network shares stay excluded.
 - Databases inside containers are sized by their last backup; until then the app shows *size unknown* instead of 0 B.
 - **Business Central** containers are recognized (version and localization on the card). Their own `my` folder (setup scripts, certificates) is backed up by default, and every snapshot includes a script that recreates the container with `New-BcContainer` and loads the backed-up database. *Recreate app* warns that it would start with a new database. New, and not yet tested on a second machine: please report how it goes.
+- New destinations:
+  - **REST server** (restic's rest-server). With the server in append-only mode, ransomware on this computer can't delete the backups; Stowaway then leaves removing old snapshots to the server.
+  - **Google Cloud Storage**, with a service account key.
+  - **OneDrive** (personal, or work and school), signed in in the browser like Dropbox. Stowaway keeps the sign-in current, so backups don't stop after Microsoft's 90 days.
 - A guide for contributors who want to add a database or destination type, or an app profile like Business Central: `docs/PROVIDERS.md`.
 
 ### Fixed

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { DropboxFolderInput } from '@/components/DropboxConnect'
+import { StowawayFolderInput } from '@/components/SignInConnect'
 import { Field, TextInput } from '@/components/forms'
 import type { DestinationField } from '@/lib/api'
 import type { Values } from '@/lib/destinations'
@@ -50,11 +50,23 @@ function FieldInput({ field, value, onChange, keepSecrets }: { field: Destinatio
   const label = keepSecrets && field.secret ? `New ${field.label.charAt(0).toLowerCase()}${field.label.slice(1)}` : field.label
   const hint = keepSecrets && field.secret ? 'Leave empty to keep the current one.' : (field.hint ?? undefined)
 
-  if (field.type === 'dropboxFolder') {
+  if (field.type === 'stowawayFolder') {
     return (
       <Field label={label} hint={hint}>
-        <DropboxFolderInput value={value} onChange={onChange} />
+        <StowawayFolderInput value={value} onChange={onChange} />
       </Field>
+    )
+  }
+
+  if (field.type === 'toggle') {
+    return (
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input type="checkbox" checked={value === 'true'} onChange={(e) => onChange(e.target.checked ? 'true' : '')} className="size-4 accent-accent" />
+          {label}
+        </label>
+        {hint && <p className="pl-6 text-xs text-muted">{hint}</p>}
+      </div>
     )
   }
 

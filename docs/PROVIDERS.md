@@ -147,7 +147,7 @@ A destination provider describes one type of backup destination: which values it
 **Adding a destination** (`DestinationService.CreateAsync`):
 
 1. The web client draws the form from your `Descriptor` (served at `GET /api/destination-types`) and sends back `settings` and `secrets`, keyed by your field keys.
-2. `TakeSignIn(session)` runs only if your descriptor names a browser sign-in (`SignIn`, e.g. "dropbox"). It returns the credentials the sign-in produced, such as a token.
+2. `TakeSignIn(session)` runs only if your descriptor names a browser sign-in (`SignIn`: "dropbox" or "onedrive", a backend of `RcloneSignInService`). It returns the credentials the sign-in produced, such as a token.
 3. `Normalize(values, creating: true)` tidies typed values in place: trims them, adds defaults, fixes formats.
 4. `Validate(values)` checks the complete set and returns the **location** shown for the destination (`s3://bucket/folder (host)`). Throw `DestinationValidationException` with a message the owner can act on. Don't use the network here.
 5. `PrepareAsync(values, changed, creating: true)` does any slow work that needs the network before saving. `SftpProvider` uses it to record the server's SSH host keys.
@@ -166,6 +166,9 @@ A destination provider describes one type of backup destination: which values it
 | `Mounts` | Bind or volume mounts the runner needs (local folders, a temporary SMB volume). |
 | `Network` | Whether the runner needs network access. Cloud types do; local folders don't. |
 | `Cleanup` | Undoes anything `OpenAsync` created, such as the SMB provider's temporary volume or connection. |
+| `UpdatedValues` | Values that changed while opening, such as a refreshed OneDrive token. Stowaway saves them to the stored destination. |
+
+`AppendOnly(values)` says the repository only accepts new data (an append-only REST server). Stowaway then skips retention and prune for it, and logs that the server's owner removes old snapshots.
 
 ### The descriptor
 
@@ -184,10 +187,10 @@ public override DestinationDescriptor Descriptor { get; } = new(
 | `DestinationField` | |
 |---|---|
 | `Key` | Stable key, stored in the settings or secrets and sent by the web client. **Never rename a key once released**: stored destinations use it. Shared keys live in `DestinationKeys`. |
-| `Type` | `Text`, `Password`, `Multiline`, `Number`, or `DropboxFolder`. |
+| `Type` | `Text`, `Password`, `Multiline`, `Number`, `StowawayFolder` (a subfolder of /Stowaway in a cloud drive), or `Toggle` (on is `DestinationKeys.On`). |
 | `Section` | `Location` (where the backups are; changing it later means the backups moved) or `Credentials` (can be replaced any time). The edit form treats them differently. |
 | `Secret` | Stored encrypted and never sent back to the browser. Every `Password` field must be secret; a guard test checks this. |
-| `Hidden` | Kept by Stowaway but not shown in forms (a Dropbox token, recorded SSH host keys). |
+| `Hidden` | Kept by Stowaway but not shown in forms (a sign-in token, a OneDrive drive id, recorded SSH host keys). |
 | `Required`, `Placeholder`, `Hint`, `Default`, `Mono`, `Half` | How the form renders it. |
 
 `SignIn` names a browser sign-in flow, and `Notes` is text shown under the fields when adding one. `Icon` must be a name `web/src/lib/destinations.ts` knows; add one there if needed.
@@ -218,7 +221,7 @@ public sealed class S3Provider : CloudProvider
 }
 ```
 
-The helpers: `S` (trimmed value), `Secret` (untrimmed value), `Has`, `Require`, `Prefix`/`Suffix` (an optional folder inside the bucket), `BucketName`, and `Connection` (network on, no files). Override `Normalize`, `PrepareAsync` or `TakeSignIn` when the type needs them; `SftpProvider` and `DropboxProvider` show how.
+The helpers: `S` (trimmed value), `Secret` (untrimmed value), `Has`, `Require`, `Prefix`/`Suffix` (an optional folder inside the bucket), `BucketName`, and `Connection` (network on, no files). Override `Normalize`, `PrepareAsync`, `TakeSignIn`, `OpenAsync` or `AppendOnly` when the type needs them; `SftpProvider`, `DropboxProvider`, `RestServerProvider` and `OneDriveProvider` show how.
 
 Types that aren't network services, such as `LocalFolderProvider` and `SmbProvider`, implement `IDestinationProvider` directly and return mounts from `OpenAsync`. They also have to work with host-side restic on Windows-container engines (`runner.OnHost`), where there is no runner container to mount into.
 
@@ -226,7 +229,7 @@ Types that aren't network services, such as `LocalFolderProvider` and `SmbProvid
 
 1. Add the type to `DestinationKind` (`src/Stowaway.Core/Backups/BackupModels.cs`) and to the `DestinationKind` type in `web/src/lib/api.ts`.
 2. Write the provider in `src/Stowaway.Docker/Destinations/`.
-3. Register it in `AddDestinationProviders` and in `DestinationProviders.BuiltIn`.
+3. Register it in `AddDestinationProviders` and in `DestinationProviders.BuiltIn`. A new browser sign-in also needs a `SignInBackend` in `RcloneSignInService.Backends`.
 4. Add tests. Check `Validate` and `Connect` the way `CloudRepositoryTests` does (`tests/Stowaway.Tests/Backups/CloudAndDumpTests.cs`): accepted and rejected values, and the exact repository string and environment. `DestinationProviderTests` checks the descriptor, the registration, and that stored values round-trip unchanged. If you can, test against a real service or a local emulator (MinIO for S3, an SFTP container).
 5. Add the type to the user guide (`docs/help/04-destinations.md`).
 
@@ -236,6 +239,43 @@ Types that aren't network services, such as `LocalFolderProvider` and `SmbProvid
 - **Validation is offline and explains itself.** Say what to enter ("Enter the S3 endpoint URL, e.g. …"), not what went wrong internally.
 - **Location keys are forever.** Changing what a location field means would point existing destinations somewhere else. Add a new key instead.
 - **Clean up.** Anything `OpenAsync` creates, its `Cleanup` removes, also when the run fails.
+- **Don't let credentials expire silently.** If the service replaces or expires tokens, refresh them in `OpenAsync` and return the new ones in `UpdatedValues`. A destination that stops working months after setup is the worst kind of backup failure.
+
+### Worked example: OneDrive
+
+Three destination types were added at the same time. Two of them show how small a typical provider is. The third, OneDrive, is the worked example because it didn't fit the interface as it was.
+
+**The simple ones.** `RestServerProvider` and `GcsProvider` (`ServerProviders.cs`) are about 60 lines each: a descriptor, `Validate` and `Connect`. Both follow the secrets rule without extra work.
+
+- The REST server's user and password go in `RESTIC_REST_USERNAME`/`RESTIC_REST_PASSWORD`, never into the `rest:https://user:pw@…` form restic also accepts. `Validate` refuses an address with a user in it and says where it goes instead.
+- The Google service-account key goes in as a file under `RepositoryConnection.SecretsDir`, and `GOOGLE_APPLICATION_CREDENTIALS` points at it.
+- A self-signed REST server certificate travels the same way, as a file named by `RESTIC_CACERT`.
+
+Both runners accept these: on Windows-container engines the host runner rewrites `/run/stowaway/…` paths in the environment to its own work folder.
+
+The REST server needed one new member: **`AppendOnly`**. A server started with `--append-only` refuses deletes, which is its point: ransomware on this computer can't remove the backups. Before, retention and the weekly prune would have failed on every run. Now the provider says the destination is append-only, and `BackupService` skips both with a log line saying why. The member has a default (`false`), so no other provider changed.
+
+**OneDrive: what was different.** On the surface, OneDrive is Dropbox again: rclone, a browser sign-in, backups under `/Stowaway`. Copying `DropboxProvider` would have compiled, and failed in two ways.
+
+**Decision 1: one sign-in service, not a second copy.** The sign-in (`rclone authorize`, the local callback port, the paste-the-address step for remote browsers) was written for Dropbox only, down to the URL check that keeps the server from following a redirect anywhere else. It became `RcloneSignInService`, with one `SignInBackend` per service: rclone's backend name, a label, and the one host whose sign-in page may be followed (`login.microsoftonline.com` for OneDrive). The API routes and the web component (`SignInConnect`) take the service from the descriptor's `SignIn`. The folder field became `FieldType.StowawayFolder`, because "Dropbox folder" no longer described it. *Rule applied:* a second user of a mechanism is the time to generalize it, not the first.
+
+**Decision 2: find the drive after the sign-in.** rclone's OneDrive remote needs a drive id and type, which the token alone doesn't give. `PrepareAsync` reads them from Microsoft Graph (`/me/drive`) with the new access token. Two edge cases shaped it:
+
+- **Reconnecting** with a different account is refused when the drive id changes. The repository-id check would catch it too, but later and with a less clear message.
+- **Reusing** another OneDrive destination's account copies only its credentials-section fields, and the copied token has usually expired. So the drive id and type are credentials-section fields too (hidden), and the Graph lookup only runs for a fresh sign-in.
+
+**Decision 3: save the refreshed token.** This is the part that changed the interface. Dropbox's refresh token never expires, so rclone refreshing the access token in memory on every run is fine. Microsoft *replaces* the refresh token when it's used and lets an unused one expire after 90 days. With the Dropbox design, backups to OneDrive would have stopped about three months after the sign-in, long after anyone remembered setting it up.
+
+- `OpenAsync` checks the token's expiry (`RcloneTokens.NeedsRefresh`).
+- When the access token is about to expire, a short rclone run against a temporary config file refreshes it, and the file is read back. That's in a runner, or `rclone.exe` on the host.
+- The new token is returned in **`RepositoryAccess.UpdatedValues`**.
+- `ResticRepository` stores it: it re-reads the destination first, so a rename made meanwhile isn't overwritten, and it never fails the run over it.
+
+Refreshes are serialized, because two at once would each receive a different new token. Checking the expiry first means at most one extra rclone run an hour, not one per restic command.
+
+**What it cost.** Two new members with defaults (`AppendOnly`, `UpdatedValues`), one service generalized, and one field type renamed. Every existing provider compiled and passed its tests unchanged. The tests stub Microsoft Graph with an `HttpMessageHandler`. They also give `RcloneTokens` no runner, so a test fails loudly if the provider refreshes when it shouldn't.
+
+**Tested for real, and still open.** The REST server has an integration test against a real `restic/rest-server` container in append-only mode, with a user and password (`RestServerIntegrationTests`). Backups go in, a wrong password is refused, and deleting a snapshot fails, which is exactly what `AppendOnly` is there to avoid. OneDrive and Google Cloud Storage need an account, so they haven't run against the real service yet. Try them once by hand before a release, including a OneDrive backup more than an hour after the sign-in, which is the first refresh.
 
 ---
 

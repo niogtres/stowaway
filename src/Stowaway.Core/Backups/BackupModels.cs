@@ -22,6 +22,15 @@ public enum DestinationKind
 
     /// <summary>Dropbox, through rclone.</summary>
     Dropbox,
+
+    /// <summary>restic's REST server (rest-server), optionally append-only.</summary>
+    Rest,
+
+    /// <summary>Google Cloud Storage.</summary>
+    Gcs,
+
+    /// <summary>Microsoft OneDrive (personal, or work and school), through rclone.</summary>
+    OneDrive,
 }
 
 /// <summary>Where backups go: one restic repository. Persisted; secrets are stored DPAPI-protected.</summary>

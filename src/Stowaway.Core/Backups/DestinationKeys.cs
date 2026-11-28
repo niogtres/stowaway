@@ -16,6 +16,15 @@ public static class DestinationKeys
     public const string User = "user";
     public const string RemotePath = "path";
     public const string KnownHosts = "knownHosts";
+    public const string Url = "url";
+    public const string Certificate = "certificate";
+    public const string AppendOnly = "appendOnly";
+    public const string ProjectId = "projectId";
+    public const string DriveId = "driveId";
+    public const string DriveType = "driveType";
+
+    /// <summary>The value of a <see cref="Destinations.FieldType.Toggle"/> field that's on.</summary>
+    public const string On = "true";
 
     // Secrets
     public const string AccessKeyId = "accessKeyId";
@@ -24,6 +33,8 @@ public static class DestinationKeys
     public const string AccountKey = "accountKey";
     public const string PrivateKey = "privateKey";
     public const string Token = "token";
+    public const string Password = "password";
+    public const string ServiceAccountKey = "serviceAccountKey";
 }
 
 /// <summary>How a runner reaches a repository: restic's repository string plus what it needs alongside.</summary>
@@ -36,6 +47,7 @@ public sealed record RepositoryConnection(
     IReadOnlyList<string> ExtraArgs,
     bool Network)
 {
+
     /// <summary>Where secret files (keys, the environment file) are placed inside a runner.</summary>
     public const string SecretsDir = "/run/stowaway";
 }

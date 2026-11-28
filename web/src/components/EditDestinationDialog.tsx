@@ -1,13 +1,13 @@
 import { TriangleAlert } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { DestinationFields } from '@/components/DestinationFields'
-import { DropboxConnect, type DropboxSignIn } from '@/components/DropboxConnect'
+import { SignInConnect, type SignIn } from '@/components/SignInConnect'
 import { Button, Dialog, Field, TextInput } from '@/components/forms'
 import { useDestinationTypes, useUpdateDestination, type Destination, type DestinationType, type UpdateDestination } from '@/lib/api'
 import { splitValues, typeOf, type Values } from '@/lib/destinations'
 
-/** The part of a Dropbox folder under /Stowaway, or null when the destination lives outside it (older versions). */
-function dropboxSubfolder(prefix: string | undefined): string | null {
+/** The part of a cloud drive folder under /Stowaway, or null when the destination lives outside it (older versions). */
+function stowawaySubfolder(prefix: string | undefined): string | null {
   const p = (prefix ?? '').replace(/^\/+|\/+$/g, '')
   if (p.toLowerCase() === 'stowaway') return ''
   return p.toLowerCase().startsWith('stowaway/') ? p.slice('stowaway/'.length) : null
@@ -28,17 +28,17 @@ function EditForm({ destination: d, type, onClose }: { destination: Destination;
   const [name, setName] = useState(d.name)
   const [values, setValues] = useState<Values>(() => {
     const initial: Values = { ...d.settings }
-    // Dropbox folders are typed as a subfolder of /Stowaway.
-    for (const f of type.fields.filter((f) => f.type === 'dropboxFolder')) initial[f.key] = dropboxSubfolder(d.settings[f.key]) ?? ''
+    // Cloud drive folders are typed as a subfolder of /Stowaway.
+    for (const f of type.fields.filter((f) => f.type === 'stowawayFolder')) initial[f.key] = stowawaySubfolder(d.settings[f.key]) ?? ''
     return initial
   })
   const [moveOpen, setMoveOpen] = useState(false)
   const [credentialsOpen, setCredentialsOpen] = useState(false)
-  const [signIn, setSignIn] = useState<DropboxSignIn | null>(null)
+  const [signIn, setSignIn] = useState<SignIn | null>(null)
 
   const location = type.fields.filter((f) => f.section === 'location' && !f.hidden)
   const credentials = type.fields.filter((f) => f.section === 'credentials' && !f.hidden)
-  const outsideStowaway = location.some((f) => f.type === 'dropboxFolder' && dropboxSubfolder(d.settings[f.key]) === null)
+  const outsideStowaway = location.some((f) => f.type === 'stowawayFolder' && stowawaySubfolder(d.settings[f.key]) === null)
   const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
 
   const submit = (e: FormEvent) => {
@@ -71,7 +71,7 @@ function EditForm({ destination: d, type, onClose }: { destination: Destination;
       >
         {outsideStowaway && (
           <p className="text-xs text-muted">
-            This destination is at {d.path}, outside /Stowaway. Move its folders (config, data, index, keys, locks, snapshots) into /Stowaway or a subfolder of it in Dropbox first, then enter that
+            This destination is at {d.path}, outside /Stowaway. Move its folders (config, data, index, keys, locks, snapshots) into /Stowaway or a subfolder of it in {type.label} first, then enter that
             subfolder here.
           </p>
         )}
@@ -80,13 +80,13 @@ function EditForm({ destination: d, type, onClose }: { destination: Destination;
 
       {(credentials.length > 0 || type.signIn) && (
         <Section
-          title={type.signIn === 'dropbox' ? 'Dropbox account' : 'Credentials'}
+          title={type.signIn ? `${type.label} account` : 'Credentials'}
           open={credentialsOpen}
           onOpen={() => setCredentialsOpen(true)}
           action={type.signIn ? 'Reconnect…' : 'Change credentials…'}
           summary={type.signIn ? 'Sign in again if access was revoked. Use the account that holds these backups.' : 'Replace a changed password or key. Fields left empty keep their current value.'}
         >
-          {type.signIn === 'dropbox' && <DropboxConnect value={signIn} onChange={setSignIn} label="Reconnect Dropbox" />}
+          {type.signIn && <SignInConnect service={type.signIn} serviceLabel={type.label} value={signIn} onChange={setSignIn} label={`Reconnect ${type.label}`} />}
           <DestinationFields fields={credentials} values={values} onChange={set} keepSecrets />
         </Section>
       )}

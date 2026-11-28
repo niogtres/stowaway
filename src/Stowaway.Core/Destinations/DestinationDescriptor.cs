@@ -20,8 +20,11 @@ public enum FieldType
     Multiline,
     Number,
 
-    /// <summary>A subfolder of /Stowaway in Dropbox.</summary>
-    DropboxFolder,
+    /// <summary>A subfolder of /Stowaway in a cloud drive (Dropbox, OneDrive).</summary>
+    StowawayFolder,
+
+    /// <summary>On or off: <c>true</c> or empty.</summary>
+    Toggle,
 }
 
 /// <summary>Older destinations keep these values in their own columns instead of the settings and secrets JSON.</summary>
