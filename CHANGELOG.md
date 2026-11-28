@@ -8,6 +8,7 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 - **Include** a host folder that's mapped into a container from outside the app (for example a Business Central container's `my` folder), so it's backed up with the app. Drives, system folders and network shares stay excluded.
 - Databases inside containers are sized by their last backup; until then the app shows *size unknown* instead of 0 B.
+- A guide for contributors who want to add a database or destination type: `docs/PROVIDERS.md`.
 
 ### Fixed
 

@@ -45,6 +45,7 @@ See [Requirements](#requirements) for what it runs on. The [user guide](docs/USE
 - [Design](docs/DESIGN.md): architecture, security model and the decisions behind them.
 - [Changelog](CHANGELOG.md): what changed in each release.
 - [Contributing](.github/CONTRIBUTING.md): building from source, tests, pull requests.
+- [Writing a provider](docs/PROVIDERS.md): adding a database or a destination type.
 - [Security policy](.github/SECURITY.md): how to report a vulnerability.
 
 ## Building from source
