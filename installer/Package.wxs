@@ -32,6 +32,21 @@
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="OpenUi"
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="StartTray" Condition="NOT Installed" />
+
+      <!-- What the progress page says while each step runs. Without these the page keeps showing "Validating install"
+           through the slow steps (removing the old version, copying files, stopping and starting the service). -->
+      <ProgressText Action="InstallValidate" Message="Checking for programs that are using Stowaway's files" />
+      <ProgressText Action="InstallInitialize" Message="Preparing to install (Windows may save a System Restore point first, which can take a minute or two)" />
+      <ProgressText Action="RemoveExistingProducts" Message="Removing the previous version: stopping the Stowaway service and removing its files" />
+      <ProgressText Action="StopServices" Message="Stopping the Stowaway service (it finishes what it's doing first, which can take up to half a minute)" />
+      <ProgressText Action="DeleteServices" Message="Removing the Stowaway service" />
+      <ProgressText Action="RemoveFiles" Message="Removing old files" Template="[1]" />
+      <ProgressText Action="InstallFiles" Message="Copying files (about 250 MB; your antivirus checks each new program file)" Template="[1]" />
+      <ProgressText Action="WriteRegistryValues" Message="Writing settings" />
+      <ProgressText Action="InstallServices" Message="Registering the Stowaway service" />
+      <ProgressText Action="StartServices" Message="Starting the Stowaway service (the first start after an update can take a minute)" />
+      <ProgressText Action="UninstallCleanup" Message="Removing Stowaway's certificate and event log source" />
+      <ProgressText Action="InstallFinalize" Message="Finishing" />
     </UI>
 
     <!-- Finish page: offer to open the UI (the service is already started by ServiceControl). -->

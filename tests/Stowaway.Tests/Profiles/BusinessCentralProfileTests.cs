@@ -48,15 +48,36 @@ public class BusinessCentralProfileTests
         var my = mounts[@"c:\run\my"];
         Assert.Equal((true, false, false, BusinessCentralProfile.MyFolderNote, 4096L), (my.Included, my.CanInclude, my.IncludedByOwner, my.Note, my.SizeBytes!.Value));
 
-        Assert.Equal((false, true, BusinessCentralProfile.ArtifactCache), (mounts[@"c:\dl"].Included, mounts[@"c:\dl"].CanInclude, mounts[@"c:\dl"].ExclusionReason));
+        Assert.Equal((false, true, true, BusinessCentralProfile.ArtifactCache),
+            (mounts[@"c:\dl"].Included, mounts[@"c:\dl"].CanInclude, mounts[@"c:\dl"].NotNeeded, mounts[@"c:\dl"].ExclusionReason));
         var shared = mounts[@"c:\programdata\bccontainerhelper"];
-        Assert.Equal((false, true, BusinessCentralProfile.SharedFolder), (shared.Included, shared.CanInclude, shared.ExclusionReason));
-        Assert.Equal((false, false), (mounts[@"c:\driversetc"].Included, mounts[@"c:\driversetc"].CanInclude));
+        Assert.Equal((false, true, true, BusinessCentralProfile.SharedFolder), (shared.Included, shared.CanInclude, shared.NotNeeded, shared.ExclusionReason));
+
+        // The hosts file: explained and marked not needed, but a profile still can't include a system folder.
+        var hosts = mounts[@"c:\driversetc"];
+        Assert.Equal((false, false, true, BusinessCentralProfile.HostsFile), (hosts.Included, hosts.CanInclude, hosts.NotNeeded, hosts.ExclusionReason));
+        Assert.False(my.NotNeeded);
 
         // The owner can still include the cache.
         var included = InventoryBuilder.Build(raw, sizes, 1, DateTimeOffset.UnixEpoch, platform: Platforms.Windows, includedFolders: IncludedFolders.Of([@"C:\bcartifacts.cache"]));
         var cache = included.Apps.Single().Containers.Single().Mounts.Single(m => m.Destination == @"c:\dl");
         Assert.Equal((true, true, (string?)null), (cache.Included, cache.IncludedByOwner, cache.ExclusionReason));
+    }
+
+    /// <summary>The included my folder isn't where the database lives: it's still unmeasured until the first backup.</summary>
+    [Fact]
+    public void The_database_still_counts_when_the_containers_own_folder_is_included()
+    {
+        var raw = new RawInventory([Container(Labels)], [], []);
+        var sizes = new SizeIndex(new Dictionary<string, long>(), new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { [@"C:\ProgramData\BcContainerHelper\Extensions\bc-demo\my"] = 4096 });
+        var support = new Stowaway.Core.Databases.DatabaseSupport([(DatabaseKind.SqlServer, Platforms.Windows)]);
+
+        var before = InventoryBuilder.Build(raw, sizes, 1, DateTimeOffset.UnixEpoch, platform: Platforms.Windows, databases: support).Apps.Single();
+        Assert.Equal((4096L, true, (long?)null), (before.DataBytes, before.SizeIncomplete, before.DatabaseBytes));
+
+        var measured = sizes with { Databases = new Dictionary<string, long> { ["container:bc-demo"] = 1_000_000 } };
+        var after = InventoryBuilder.Build(raw, measured, 1, DateTimeOffset.UnixEpoch, platform: Platforms.Windows, databases: support).Apps.Single();
+        Assert.Equal((1_004_096L, false, (long?)1_000_000), (after.DataBytes, after.SizeIncomplete, after.DatabaseBytes));
     }
 
     [Fact]

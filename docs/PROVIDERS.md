@@ -297,7 +297,7 @@ public interface IAppProfile
 {
     string Id { get; }                                    // stored in snapshots: never change it
     AppProduct? Detect(IReadOnlyDictionary<string, string> labels);
-    (string? Reason, string? Note) Bind(string defaultReason, string windowsSource, string destination);
+    ProfileBind Bind(string defaultReason, string windowsSource, string destination);   // (Reason, Note, NotNeeded)
     IReadOnlyDictionary<string, string> DefinitionFiles(ContainerDefinition container, DateTimeOffset backedUpAt);
     string? DefinitionDescription { get; }
     string? RecreateWarning(string containerName);
@@ -307,7 +307,7 @@ public interface IAppProfile
 | Member | Called by | When |
 |---|---|---|
 | `Detect` | `InventoryBuilder` | every inventory scan, per container. The labels include the image's. The first profile that answers wins. The returned `AppProduct` (name, version, country, a note for the card) is kept in `app.json` with every snapshot. |
-| `Bind` | `InventoryBuilder.DecideBind` (inventory, sizing and backups all use it) | only for bind mounts the generic rule leaves out **and** the owner could include (`HostPaths.CanInclude`). Return a null reason plus a note to include the folder, or a clearer reason to keep it out. Drives, system folders, shares and sockets never reach a profile. |
+| `Bind` | `InventoryBuilder.DecideBind` (inventory, sizing and backups all use it) | for bind mounts the generic rule leaves out. Return a null reason plus a note to include the folder, or a clearer reason to keep it out, with `NotNeeded` when the folder needs no backup at all (the card folds those away instead of listing them as data left out). A null reason only takes effect for folders the owner could include (`HostPaths.CanInclude`): drives, system folders and shares stay out whatever a profile says. |
 | `DefinitionFiles` | `BackupService` while it writes the app definition | every backup, per recognized container. `ContainerDefinition` is the container's saved `docker inspect`: environment, memory, DNS, ports, bind mounts. The files go to the snapshot's *App definition*, next to the container settings. |
 | `DefinitionDescription` | `SnapshotCatalog` | shown where the snapshot lists its contents ("container settings and …"). |
 | `RecreateWarning` | `RestoreService` preview | before **Recreate app** brings back a container of this product. |
@@ -342,11 +342,13 @@ This is how the Business Central profile (`BusinessCentralProfile`, `BusinessCen
 | Folder (container path) | Decision | Why |
 |---|---|---|
 | `…\Extensions\<name>\my` (`C:\run\my`) | **included** by default | It belongs to this one container: its setup scripts and certificates. It's small. |
-| `C:\bcartifacts.cache` (`C:\dl`) | left out, with its own reason | It's a download cache that refills itself, and it can be many GB. The owner can still choose **Include**. |
-| `C:\ProgramData\BcContainerHelper` | left out, with its own reason | It's shared by every Business Central container on the computer, so it isn't this app's. |
-| `drivers\etc` | left out (generic rule) | It's a system folder. A profile can't include it, by design. |
+| `C:\bcartifacts.cache` (`C:\dl`) | **not needed** | It's a download cache that refills itself, and it can be many GB. The owner can still choose **Include**. |
+| `C:\ProgramData\BcContainerHelper` | **not needed** | It's shared by every Business Central container on the computer. Each container's own part (`my`) is backed up with that container, and BcContainerHelper sets up the rest again. |
+| `drivers\etc` (`C:\driversetc`) | **not needed** | It's the computer's hosts file, which BcContainerHelper updates. A profile can't include a system folder anyway, by design; it can only explain it. |
 
 The profile decides by the container path (`C:\run\my`), which BcContainerHelper always uses, rather than the host path, which the owner can change.
+
+*Correction after the first test on a real host:* the first version only gave the three left-out folders better reasons. The card still listed them as data left out, telling the owner to back them up with a file backup, which they don't need. `NotNeeded` was added so they're folded into one line. The same test showed the card's size counting only the `my` folder: the builder treated "this container has an included folder" as "its database lives there". That's true for a Linux database on a volume, but not for SQL Server in a Windows container. The card now reads "149 KB + database" until the first backup measures the database.
 
 **Decision 4: a restore script instead of Recreate.** The snapshot already holds the container's full `docker inspect`, so a backup can write a script that runs `New-BcContainer` with the same artifact URL, authentication, locale, memory, DNS, ports and extra folders. The script then loads the backup:
 

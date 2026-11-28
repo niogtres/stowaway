@@ -168,6 +168,9 @@ public sealed record MountInfo
 
     /// <summary>Why a folder outside the app is included by default (e.g. a Business Central container's own folder).</summary>
     public string? Note { get; init; }
+
+    /// <summary>Left out because it needs no backup at all (e.g. Business Central's artifact cache), not because it's elsewhere.</summary>
+    public bool NotNeeded { get; init; }
 }
 
 public sealed record VolumeInfo

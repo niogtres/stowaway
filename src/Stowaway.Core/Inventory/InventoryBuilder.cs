@@ -149,8 +149,11 @@ public static partial class InventoryBuilder
         var (bytes, incomplete, _) = MeasureMounts(containers.SelectMany(c => c.Mounts));
         var hasData = HasData(platform, containers);
 
-        // Databases whose data lives only inside the container: sized by their last backup, unknown until then.
-        var inContainer = containers.Any(c => HoldsDatabase(platform, c) && !c.Mounts.Any(m => m.Included));
+        // Databases whose data lives only inside the container: sized by their last backup, unknown until then. On
+        // Linux an included mount is where the database keeps its data; Windows containers (SQL Server) keep it in the
+        // container itself, so only a volume counts there, not a folder such as Business Central's own.
+        var inContainer = containers.Any(c => HoldsDatabase(platform, c)
+            && !c.Mounts.Any(m => m.Included && (platform != Platforms.Windows || m.Kind == MountKind.Volume)));
         long? databaseBytes = inContainer && sizes.DatabaseBytes.TryGetValue(key, out var dumped) ? dumped : null;
 
         return new AppInfo
@@ -250,7 +253,8 @@ public static partial class InventoryBuilder
     /// <param name="Reason">Why it isn't backed up, or null when it is.</param>
     /// <param name="CanInclude">Left out by default, and the owner may include it.</param>
     /// <param name="Note">Why it's included although it's outside the app (e.g. a Business Central container's own folder).</param>
-    public sealed record BindDecision(string? WindowsPath, string? Reason, bool CanInclude, bool IncludedByOwner, string? Note);
+    /// <param name="NotNeeded">Left out because it needs no backup at all (a cache, a shared tool folder), per the container's product.</param>
+    public sealed record BindDecision(string? WindowsPath, string? Reason, bool CanInclude, bool IncludedByOwner, string? Note, bool NotNeeded = false);
 
     /// <summary>
     /// Whether a bind mount is backed up: folders inside the app's project folder, folders the container's product
@@ -261,13 +265,18 @@ public static partial class InventoryBuilder
     {
         var windows = HostPaths.ToWindowsPath(m.Source);
         var defaultReason = HostPaths.BindExclusionReason(m.Source, m.Destination, projectDir);
-        var (reason, note) = (profile ?? AppProfiles.Of(product)) is { } known && windows is not null && HostPaths.CanInclude(defaultReason)
-            // Profiles only decide about folders the owner could include: never drives, system folders or shares.
-            ? known.Bind(defaultReason!, windows, m.Destination)
-            : (defaultReason, null);
-        var canInclude = windows is not null && reason is not null && HostPaths.CanInclude(defaultReason);
+        var rule = (profile ?? AppProfiles.Of(product)) is { } known && windows is not null && defaultReason is not null
+            ? known.Bind(defaultReason, windows, m.Destination)
+            : new ProfileBind(defaultReason);
+        if (rule.Reason is null && !HostPaths.CanInclude(defaultReason))
+        {
+            // Profiles only include folders the owner could include: never drives, system folders or shares.
+            rule = rule with { Reason = defaultReason, Note = null };
+        }
+
+        var canInclude = windows is not null && rule.Reason is not null && HostPaths.CanInclude(defaultReason);
         var byOwner = canInclude && includedFolders.Contains(windows!);
-        return new BindDecision(windows, byOwner ? null : reason, canInclude, byOwner, note);
+        return new BindDecision(windows, byOwner ? null : rule.Reason, canInclude, byOwner, rule.Note, !byOwner && rule.Reason is not null && rule.NotNeeded);
     }
 
     private static MountInfo MapMount(RawMount m, SizeIndex sizes, string? projectDir, AppProduct? product, IReadOnlyDictionary<string, string> externalVolumes,
@@ -309,6 +318,7 @@ public static partial class InventoryBuilder
                     CanInclude = bind.CanInclude,
                     IncludedByOwner = bind.IncludedByOwner,
                     Note = bind.Note,
+                    NotNeeded = bind.NotNeeded,
                     // Folders outside the app aren't measured: their size is irrelevant to the backup.
                     SizeBytes = bind.Reason is null && bind.WindowsPath is not null && sizes.HostPaths.TryGetValue(bind.WindowsPath, out var size) ? size : null,
                 };

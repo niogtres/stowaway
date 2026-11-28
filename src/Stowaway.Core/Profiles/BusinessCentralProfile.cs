@@ -23,8 +23,9 @@ public sealed class BusinessCentralProfile : IAppProfile
     public const string MyFolder = @"c:\run\my";
 
     public const string MyFolderNote = "Business Central: this container's own setup scripts and certificates";
-    public const string ArtifactCache = "Business Central artifact cache: downloaded again when a container needs it. Back it up with your file backup if you like.";
-    public const string SharedFolder = "BcContainerHelper's shared folder, used by every Business Central container on this computer. Back it up with your file backup.";
+    public const string ArtifactCache = "Business Central artifact cache: downloaded again when a container needs it, so it needs no backup.";
+    public const string SharedFolder = "BcContainerHelper's own folder, shared by every Business Central container on this computer. Each container's part of it (its my folder) is backed up with that container; BcContainerHelper sets up the rest again.";
+    public const string HostsFile = "The computer's hosts file, which BcContainerHelper updates so the container can be reached by name. Nothing to back up.";
     public const string CardNote = "Business Central: the database and the container's own folder are backed up, with a script that recreates the container from the snapshot (see Help, Recover a whole app).";
 
     public string Id => ProfileId;
@@ -55,25 +56,31 @@ public sealed class BusinessCentralProfile : IAppProfile
             CardNote);
     }
 
-    public (string? Reason, string? Note) Bind(string defaultReason, string windowsSource, string destination)
+    public ProfileBind Bind(string defaultReason, string windowsSource, string destination)
     {
-        if (string.Equals(destination.TrimEnd('\\', '/'), MyFolder, StringComparison.OrdinalIgnoreCase))
+        var target = destination.TrimEnd('\\', '/');
+        if (target.Equals(MyFolder, StringComparison.OrdinalIgnoreCase))
         {
-            return (null, MyFolderNote);
+            return new ProfileBind(null, MyFolderNote);
+        }
+
+        if (target.Equals(@"c:\driversetc", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ProfileBind(HostsFile, NotNeeded: true);
         }
 
         var leaf = Path.GetFileName(windowsSource.TrimEnd('\\'));
         if (leaf.Equals("bcartifacts.cache", StringComparison.OrdinalIgnoreCase))
         {
-            return (ArtifactCache, null);
+            return new ProfileBind(ArtifactCache, NotNeeded: true);
         }
 
         if (leaf.Equals("BcContainerHelper", StringComparison.OrdinalIgnoreCase))
         {
-            return (SharedFolder, null);
+            return new ProfileBind(SharedFolder, NotNeeded: true);
         }
 
-        return (defaultReason, null);
+        return new ProfileBind(defaultReason);
     }
 
     public IReadOnlyDictionary<string, string> DefinitionFiles(ContainerDefinition container, DateTimeOffset backedUpAt) =>

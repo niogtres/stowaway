@@ -10,6 +10,12 @@ namespace Stowaway.Core.Profiles;
 /// <param name="Note">One sentence for the app's card: what Stowaway does differently for this product.</param>
 public sealed record AppProduct(string Profile, string Name, string? Version = null, string? Country = null, string? Note = null);
 
+/// <summary>How an app profile treats one bind mount.</summary>
+/// <param name="Reason">Why it isn't backed up, or null to include it.</param>
+/// <param name="Note">Why an included folder is included (shown next to it).</param>
+/// <param name="NotNeeded">It needs no backup at all (a cache, a tool's shared folder, the hosts file): shown folded away, not as data left out.</param>
+public sealed record ProfileBind(string? Reason, string? Note = null, bool NotNeeded = false);
+
 /// <summary>What a profile may read from a container's saved definition (<c>docker inspect</c>).</summary>
 /// <param name="Env">The container's environment. It may hold secrets: never copy values into anything shown or written in clear.</param>
 /// <param name="MemoryBytes">The memory limit, or 0 for none.</param>
@@ -39,11 +45,12 @@ public interface IAppProfile
     AppProduct? Detect(IReadOnlyDictionary<string, string> labels);
 
     /// <summary>
-    /// How one of the product's bind mounts is treated. Called only for folders the generic rule left out but the owner
-    /// may include (<see cref="HostPaths.CanInclude"/>). Return a null reason to include the folder (with a
-    /// <paramref name="windowsSource"/> note saying why), or a clearer reason to keep it out.
+    /// How one of the product's bind mounts is treated, for folders the generic rule leaves out
+    /// (<paramref name="defaultReason"/>). Return a null reason to include the folder, with a note saying why; that only
+    /// takes effect for folders the owner could include anyway (<see cref="HostPaths.CanInclude"/>), never for drives,
+    /// system folders or shares. Or return a clearer reason to keep it out, and mark it not needed if it needs no backup.
     /// </summary>
-    (string? Reason, string? Note) Bind(string defaultReason, string windowsSource, string destination);
+    ProfileBind Bind(string defaultReason, string windowsSource, string destination);
 
     /// <summary>Files stored with each snapshot's app definition, by path relative to it (e.g. a restore script).</summary>
     IReadOnlyDictionary<string, string> DefinitionFiles(ContainerDefinition container, DateTimeOffset backedUpAt);

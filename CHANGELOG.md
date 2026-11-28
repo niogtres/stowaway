@@ -8,7 +8,7 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 - **Include** a host folder that's mapped into a container from outside the app (for example a configuration folder), so it's backed up with the app. Drives, system folders and network shares stay excluded.
 - Databases inside containers are sized by their last backup; until then the app shows *size unknown* instead of 0 B.
-- **Business Central** containers are recognized (version and localization on the card). Their own `my` folder (setup scripts, certificates) is backed up by default, and every snapshot includes a script that recreates the container with `New-BcContainer` and loads the backed-up database. *Recreate app* warns that it would start with a new database. New, and not yet tested on a second machine: please report how it goes.
+- **Business Central** containers are recognized (version and localization on the card). Their own `my` folder (setup scripts, certificates) is backed up by default, the folders that need no backup (the artifact cache, BcContainerHelper's shared folder, the hosts file) are folded away, and every snapshot includes a script that recreates the container with `New-BcContainer` and loads the backed-up database. *Recreate app* warns that it would start with a new database. New, and not yet tested on a second machine: please report how it goes.
 - New destinations:
   - **REST server** (restic's rest-server). With the server in append-only mode, ransomware on this computer can't delete the backups; Stowaway then leaves removing old snapshots to the server.
   - **Google Cloud Storage**, with a service account key.
@@ -17,6 +17,7 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ### Fixed
 
+- Setup showed *Validating install* for minutes while it removed the previous version, copied files and restarted the service. Each step now says what it's doing.
 - Installing a new version could take several minutes: the bundled restic and rclone (112 MB) were packed inside the service and unpacked to a temporary folder on each new version's first start, for the service and for every user's tray icon, and old copies were never removed. They're now installed as files in `tools` next to the service.
 - Windows containers whose only data is a SQL Server database inside the container showed as *Stateless*, and a backup plan skipped them. They now count as data, also when stopped.
 - Stopped containers showed as *Unhealthy*: Docker keeps the last health check after a container stops. Health is now shown only for running containers.

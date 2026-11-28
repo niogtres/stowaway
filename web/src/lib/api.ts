@@ -60,6 +60,8 @@ export interface MountInfo {
   includedByOwner: boolean
   /** Why a folder outside the app is included by default (e.g. a Business Central container's own folder). */
   note: string | null
+  /** Left out because it needs no backup at all (e.g. Business Central's artifact cache), not because it lives elsewhere. */
+  notNeeded: boolean
 }
 
 /** The product a container runs, when Stowaway recognizes it. */

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { Boxes, Container, Database, FolderTree, Layers, RefreshCw, Search, TriangleAlert } from 'lucide-react'
+import { Boxes, ChevronRight, Container, Database, FolderTree, Layers, RefreshCw, Search, TriangleAlert } from 'lucide-react'
 import { useDeferredValue, useMemo, useState } from 'react'
 import emptyInventory from '@/assets/illustrations/empty-inventory.webp'
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
@@ -203,6 +203,9 @@ function AppCard({ app }: { app: AppInfo }) {
       }, new Map<string, MountInfo & { key: string; count: number }>())
       .values(),
   ]
+  // Folders the app's product says need no backup (a cache, a tool's shared folder): folded away, not shown as data left out.
+  const notNeeded = mounts.filter((m) => m.notNeeded)
+  const shown = mounts.filter((m) => !m.notNeeded)
   return (
     <Card className="flex h-full flex-col">
       <header className="mb-2 flex items-start justify-between gap-3">
@@ -221,7 +224,7 @@ function AppCard({ app }: { app: AppInfo }) {
           <ProtectionChip status={app.protection} />
           {app.protection !== 'stateless' && (
             <span className="text-sm font-medium tabular-nums" title={sizeTitle(app)}>
-              {formatBytes(app.dataBytes, { lowerBound: app.sizeIncomplete })}
+              {appSize(app)}
             </span>
           )}
         </div>
@@ -235,10 +238,11 @@ function AppCard({ app }: { app: AppInfo }) {
 
       {mounts.length > 0 && (
         <div className="mt-2 border-t border-line pt-2">
-          {mounts.map((m) => (
+          {shown.map((m) => (
             <MountRow key={m.key} mount={m} sharedBy={m.count} />
           ))}
-          <OutsideDataNote mounts={mounts} />
+          {notNeeded.length > 0 && <NotNeededMounts mounts={notNeeded} />}
+          <OutsideDataNote mounts={shown} />
         </div>
       )}
 
@@ -341,7 +345,41 @@ function InventorySkeleton() {
   )
 }
 
+/** A database inside a container that hasn't been backed up yet, so its size isn't known. */
+const unmeasuredDatabase = (app: AppInfo) => app.sizeIncomplete && app.databaseBytes === null && app.containers.some((c) => c.database && c.dumpSupported)
+
+/** e.g. "149 KB + database" until the database's first backup, "≥ 2.1 GB" while folders are still being measured. */
+function appSize(app: AppInfo) {
+  if (unmeasuredDatabase(app) && app.dataBytes > 0) return `${formatBytes(app.dataBytes)} + database`
+  return formatBytes(app.dataBytes, { lowerBound: app.sizeIncomplete })
+}
+
+/** Folders that need no backup (per the container's product), behind one line that opens them. */
+function NotNeededMounts({ mounts }: { mounts: (MountInfo & { key: string; count: number })[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 py-1 text-left text-xs text-muted hover:text-fg"
+        title={mounts.map((m) => `${m.displaySource}: ${m.exclusionReason ?? ''}`).join('\n')}
+      >
+        <ChevronRight className={cn('size-3.5 transition', open && 'rotate-90')} />
+        {mounts.length === 1 ? 'One folder needs no backup' : `${mounts.length} folders need no backup`}
+        <span className="truncate">({mounts.map((m) => m.exclusionReason?.split(/[:,]/)[0]).join('; ')})</span>
+      </button>
+      {open && mounts.map((m) => <MountRow key={m.key} mount={m} sharedBy={m.count} />)}
+    </>
+  )
+}
+
 function sizeTitle(app: AppInfo) {
+  if (unmeasuredDatabase(app))
+    return app.dataBytes > 0
+      ? `${formatBytes(app.dataBytes)} of folders, plus the database inside the container, which is measured by its first backup.`
+      : 'Not measured yet. Databases inside a container are sized by their first backup; folders are measured in the background.'
   if (app.dataBytes === 0 && app.sizeIncomplete)
     return 'Not measured yet. Databases inside a container are sized by their first backup; folders are measured in the background.'
   if (app.databaseBytes !== null) return `Includes ${formatBytes(app.databaseBytes)} of databases, as of the last backup.`

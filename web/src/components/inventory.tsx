@@ -132,7 +132,7 @@ export function MountRow({ mount, sharedBy = 1 }: { mount: MountInfo; sharedBy?:
             {mount.note.split(':')[0]}
           </span>
         )}
-        {mount.included ? formatBytes(mount.sizeBytes) : 'not included'}
+        {mount.included ? formatBytes(mount.sizeBytes) : mount.notNeeded ? 'not needed' : 'not included'}
         {(mount.canInclude || mount.includedByOwner) && <IncludeFolderButton mount={mount} />}
       </span>
     </div>
@@ -186,7 +186,7 @@ export function WindowsContainerNote({ sqlServer, productNote = null }: { sqlSer
  * its compose project folder), not host folders, drives or shares that happen to be mapped into it.
  */
 export function OutsideDataNote({ mounts }: { mounts: MountInfo[] }) {
-  const outside = mounts.filter((m) => !m.included && (m.kind === 'bind' || m.kind === 'volume'))
+  const outside = mounts.filter((m) => !m.included && !m.notNeeded && (m.kind === 'bind' || m.kind === 'volume'))
   if (outside.length === 0) return null
   const what = outside.length === 1 ? 'One mapped folder or share isn’t' : `${outside.length} mapped folders or shares aren’t`
   return (

@@ -49,7 +49,7 @@ public class AppProfileTests
         public string Id => "greedy";
         public string? DefinitionDescription => null;
         public AppProduct? Detect(IReadOnlyDictionary<string, string> labels) => Product;
-        public (string? Reason, string? Note) Bind(string defaultReason, string windowsSource, string destination) => (null, "mine");
+        public ProfileBind Bind(string defaultReason, string windowsSource, string destination) => new(null, "mine");
         public IReadOnlyDictionary<string, string> DefinitionFiles(ContainerDefinition container, DateTimeOffset backedUpAt) => new Dictionary<string, string>();
         public string? RecreateWarning(string containerName) => null;
     }
