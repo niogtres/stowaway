@@ -24,7 +24,9 @@
     <!-- Shipped next to the program (and so in the MSI), and shown on the About page. -->
     <None Include="..\..\LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- restic and rclone for Windows-container engines (tools\Get-BundledTools.ps1 downloads and verifies them). -->
-    <None Include="..\..\tools\bin\*.exe" Link="tools\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\tools\bin\*.exe" Link="tools\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <!-- ExcludeFromSingleFile: installed as files next to the service. Packed into the single-file exe, they were
+         unpacked to %TEMP% instead (112 MB per build and per user, scanned by antivirus on each new version's first start). -->
     <None Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

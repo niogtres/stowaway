@@ -12,6 +12,7 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ### Fixed
 
+- Installing a new version could take several minutes: the bundled restic and rclone (112 MB) were packed inside the service and unpacked to a temporary folder on each new version's first start, for the service and for every user's tray icon, and old copies were never removed. They're now installed as files in `tools` next to the service.
 - Windows containers whose only data is a SQL Server database inside the container showed as *Stateless*, and a backup plan skipped them. They now count as data, also when stopped.
 - Stopped containers showed as *Unhealthy*: Docker keeps the last health check after a container stops. Health is now shown only for running containers.
 - The protection score stayed on *Measuring your data…* when no size could be measured (databases inside containers). It now counts items when sizes are unknown, and says so when there is nothing to back up.
