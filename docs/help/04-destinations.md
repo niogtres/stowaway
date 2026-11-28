@@ -19,7 +19,13 @@ Backups are **encrypted** before they leave your computer. Each destination has 
 
 > **Save the recovery key somewhere safe, away from this computer.** If this computer is lost, you need it (and the destination) to get your data back. Without it, nobody can read the backups, including you.
 
-You can show it again later with the key button on the destination. It can only be shown on this computer, never through remote access.
+Adding a destination ends with this step: Stowaway shows the key, with **Copy** and **Download recovery kit**. The recovery kit is a text file with the key, where the backups are, and the steps to restore them on another computer, with Stowaway or with restic alone. Keep it in a password manager, print it, or put it on a USB stick in a drawer.
+
+Tick **I've stored this key somewhere other than this computer** and choose **Done**. Until you do, the destination shows **Recovery key not saved**, and the dashboard lists it under *Needs attention*. **Remind me later** keeps those reminders. A destination you connected by typing in its key counts as saved.
+
+- **Check a key you stored:** open the key button on the destination, choose **Check a key you stored** and paste it. Stowaway tells you whether it's this destination's key, which catches a key copied only in part, or one that belongs to another destination. A key that matches also counts as saved.
+- **Which kit is which:** each kit and the key dialog show the same short *key check value*, so you can match kits to destinations without revealing any key.
+- **Remote access:** keys are only shown, checked and confirmed on the computer that runs Stowaway, never through remote access.
 
 ## What you see at the destination
 

@@ -60,6 +60,12 @@ public sealed class Destination
     /// <summary>restic's repository id, recorded at init/connect so a swapped repository is detected.</summary>
     public string? RepositoryId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// When the owner confirmed they keep the recovery key away from this computer (or proved it by pasting it, or by
+    /// connecting with it). Null: not yet, and Stowaway keeps warning, because a lost computer takes the only copy.
+    /// </summary>
+    public DateTimeOffset? RecoveryKeyConfirmedAt { get; set; }
 }
 
 public enum BackupStrategy

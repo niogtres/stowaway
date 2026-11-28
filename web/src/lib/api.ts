@@ -181,6 +181,10 @@ export interface Destination {
   status: DestinationStatus | null
   /** The destination's non-secret field values (folder, bucket, host…), keyed like its type's fields. */
   settings: Record<string, string>
+  /** When the owner confirmed the recovery key is stored away from this computer; null: not yet (warn). */
+  recoveryKeyConfirmedAt: string | null
+  /** A short, non-secret check value of the key, also printed in its recovery kit. */
+  recoveryKeyFingerprint: string | null
 }
 
 /** A field a destination type needs, as the server describes it (GET /api/destination-types). */
@@ -746,8 +750,19 @@ export const startSignIn = (service: string) => request<SignInSession>('POST', `
 export const pollSignIn = (service: string, id: string) => request<SignInSession>('GET', `/api/${service}/connect/${id}`)
 export const completeSignIn = (service: string, id: string, url: string) => request<SignInSession>('POST', `/api/${service}/connect/${id}/callback`, { url })
 
-export const revealRecoveryKey = (id: string) =>
-  request<{ recoveryKey: string }>('POST', `/api/destinations/${id}/recovery-key`).then((r) => r.recoveryKey)
+/** The recovery key and its recovery kit (a text file). Local sessions only. */
+export interface RecoveryKeyReveal {
+  recoveryKey: string
+  kit: string
+  kitFileName: string
+}
+
+export const revealRecoveryKey = (id: string) => request<RecoveryKeyReveal>('POST', `/api/destinations/${id}/recovery-key`)
+/** "I've stored the key away from this computer." Local sessions only. */
+export const confirmRecoveryKey = (id: string) => request<void>('POST', `/api/destinations/${id}/recovery-key/confirm`)
+/** Whether a stored key is this destination's key (a match also confirms it). Local sessions only. */
+export const checkRecoveryKey = (id: string, key: string) =>
+  request<{ matches: boolean }>('POST', `/api/destinations/${id}/recovery-key/check`, { key }).then((r) => r.matches)
 
 export function useBackupRuns(limit = 200) {
   return useQuery({

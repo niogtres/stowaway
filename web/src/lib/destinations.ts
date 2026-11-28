@@ -1,5 +1,5 @@
 import { Box, Cloud, Database, FolderClosed, HardDriveUpload, Network, Server, ShieldCheck, type LucideIcon } from 'lucide-react'
-import type { DestinationField, DestinationKind, DestinationType } from './api'
+import type { Destination, DestinationField, DestinationKind, DestinationType } from './api'
 
 export type Values = Record<string, string>
 
@@ -14,6 +14,9 @@ const icons: Record<string, LucideIcon> = {
   box: Box,
   shield: ShieldCheck,
 }
+
+/** Destinations whose recovery key the owner hasn't confirmed keeping somewhere other than this computer. */
+export const keyNotSaved = (destinations: Destination[] | undefined) => (destinations ?? []).filter((d) => !d.recoveryKeyConfirmedAt)
 
 export const iconFor = (name: string | undefined): LucideIcon => (name && icons[name]) || FolderClosed
 

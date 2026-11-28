@@ -297,6 +297,9 @@ public sealed class RemoteSignInTests(RemoteEnabledFactory factory) : IClassFixt
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/remote/accounts", _ct)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsync("/api/system/restart", null, _ct)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsync($"/api/destinations/{Guid.NewGuid()}/recovery-key", null, _ct)).StatusCode);
+        // Nor silence the "key not saved" warning, or test guesses at a key.
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsync($"/api/destinations/{Guid.NewGuid()}/recovery-key/confirm", null, _ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync($"/api/destinations/{Guid.NewGuid()}/recovery-key/check", new { key = "guess" }, _ct)).StatusCode);
     }
 
     [Fact]

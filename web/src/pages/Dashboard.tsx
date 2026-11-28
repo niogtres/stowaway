@@ -1,10 +1,11 @@
 import { motion } from 'motion/react'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Boxes, CheckCircle2, Circle, Cpu, Database, HeartPulse, Layers, PackageOpen, ShieldAlert, ShieldCheck, TriangleAlert } from 'lucide-react'
+import { ArrowRight, Boxes, CheckCircle2, Circle, Cpu, Database, HeartPulse, KeyRound, Layers, PackageOpen, ShieldAlert, ShieldCheck, TriangleAlert } from 'lucide-react'
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
 import { ProtectionRing } from '@/components/ProtectionRing'
 import { Badge, Card, CardHeader, Skeleton, Stat, StatusDot } from '@/components/ui'
 import { useBackupRuns, useDestinations, useInventory, usePlans, useSystemInfo, type AppInfo, type BackupRun, type InventorySnapshot, type SystemInfo } from '@/lib/api'
+import { keyNotSaved } from '@/lib/destinations'
 import { cn, formatBytes, formatNumber } from '@/lib/utils'
 
 const rise = {
@@ -178,6 +179,8 @@ interface AttentionItem {
   icon: typeof TriangleAlert
   title: string
   detail: string
+  /** Where the item leads; the inventory unless said otherwise. */
+  to?: string
 }
 
 function unprotectedBytes(apps: AppInfo[]) {
@@ -256,7 +259,20 @@ function NeedsAttention({ snapshot }: { snapshot: InventorySnapshot }) {
   const latestDrill = new Map<string, BackupRun>()
   for (const r of runs.data ?? []) if (r.kind === 'drill' && (r.status === 'succeeded' || r.status === 'failed') && !latestDrill.has(r.appId)) latestDrill.set(r.appId, r)
   const failedDrills = [...latestDrill.values()].filter((r) => r.status === 'failed')
-  const items = [
+  const unsavedKeys = keyNotSaved(useDestinations().data)
+  const items: AttentionItem[] = [
+    // First: without the key, every other backup on the list is unrestorable once this computer is gone.
+    ...(unsavedKeys.length > 0
+      ? [
+          {
+            tone: 'danger' as const,
+            icon: KeyRound,
+            title: `${plural(unsavedKeys.length, 'destination')}: recovery key not saved`,
+            detail: `${unsavedKeys.map((d) => d.name).join(', ')}. Without the key, these backups can't be restored if this computer is lost. Save it now.`,
+            to: '/destinations',
+          },
+        ]
+      : []),
     ...(failedDrills.length > 0
       ? [{ tone: 'danger' as const, icon: ShieldAlert, title: `${plural(failedDrills.length, 'restore drill')} failed`, detail: `${failedDrills.map((r) => r.appName).join(', ')}: a backup didn't restore cleanly.` }]
       : []),
@@ -269,9 +285,9 @@ function NeedsAttention({ snapshot }: { snapshot: InventorySnapshot }) {
         <p className="text-sm text-muted">Nothing needs your attention right now.</p>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
-          {items.map(({ tone, icon: Icon, title, detail }) => (
+          {items.map(({ tone, icon: Icon, title, detail, to }) => (
             <li key={title}>
-              <Link to="/inventory" className="flex gap-3 rounded-xl p-2 transition hover:bg-accent-soft">
+              <Link to={to ?? '/inventory'} className="flex gap-3 rounded-xl p-2 transition hover:bg-accent-soft">
                 <span className={cn('mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft', toneText[tone])}>
                   <Icon className="size-4" />
                 </span>

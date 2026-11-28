@@ -290,6 +290,9 @@ namespace Stowaway.Data.Migrations
                     b.Property<string>("ProtectedSmbPassword")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("RecoveryKeyConfirmedAt")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("RepositoryId")
                         .HasColumnType("TEXT");
 

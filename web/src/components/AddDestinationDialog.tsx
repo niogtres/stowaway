@@ -4,11 +4,11 @@ import { DestinationFields } from '@/components/DestinationFields'
 import { SignInConnect, type SignIn } from '@/components/SignInConnect'
 import { Button, Dialog, Field, TextInput } from '@/components/forms'
 import { iconFor, splitValues, type Values } from '@/lib/destinations'
-import { useCreateDestination, useDestinations, useDestinationTypes, type DestinationKind, type DestinationType } from '@/lib/api'
+import { useCreateDestination, useDestinations, useDestinationTypes, type Destination, type DestinationKind, type DestinationType } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 /** Mounted only while open (see Destinations page), so state starts fresh each time. */
-export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
+export function AddDestinationDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (created: Destination) => void }) {
   const types = useDestinationTypes().data ?? []
   const [kind, setKind] = useState<DestinationKind>('local')
   const [name, setName] = useState('')
@@ -33,13 +33,25 @@ export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
           ))}
         </div>
         {/* Keyed by type, so switching starts with that type's defaults. */}
-        {type && <AddForm key={type.kind} type={type} name={name} setName={setName} onClose={onClose} />}
+        {type && <AddForm key={type.kind} type={type} name={name} setName={setName} onClose={onClose} onCreated={onCreated} />}
       </div>
     </Dialog>
   )
 }
 
-function AddForm({ type, name, setName, onClose }: { type: DestinationType; name: string; setName: (name: string) => void; onClose: () => void }) {
+function AddForm({
+  type,
+  name,
+  setName,
+  onClose,
+  onCreated,
+}: {
+  type: DestinationType
+  name: string
+  setName: (name: string) => void
+  onClose: () => void
+  onCreated: (created: Destination) => void
+}) {
   const create = useCreateDestination()
   const [values, setValues] = useState<Values>(() => Object.fromEntries(type.fields.filter((f) => f.default).map((f) => [f.key, f.default!])))
   const [connectExisting, setConnectExisting] = useState(false)
@@ -64,7 +76,7 @@ function AddForm({ type, name, setName, onClose }: { type: DestinationType; name
         signInSession: type.signIn && !reuseFrom ? signIn?.id : undefined,
         credentialsFrom: reuseFrom || undefined,
       },
-      { onSuccess: onClose },
+      { onSuccess: onCreated },
     )
   }
 
