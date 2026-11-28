@@ -4,6 +4,13 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-28
+
+### Changed
+- **Destination forms:** the Add and Edit destination windows are drawn from the server's description of each destination type, so new types need no form changes. The fields and checks are the same; the SFTP fields now sit in two columns.
+- **Editing a destination** re-checks the backups only when its location or credentials actually change. Saving the same folder again no longer does.
+- **Docs:** the design notes, README, contributing guide and help were brought up to date. `CONTRIBUTING.md` and `SECURITY.md` moved to `.github/`.
+
 ### Fixed
 - **Unowned volumes** no longer lists `dockerbackup-restic-cache`, Stowaway's own restic cache from before the project was renamed. The service removes it at startup.
 
@@ -99,7 +106,8 @@ Since the internal 0.7.x builds:
 - Dialogs with fields closed when clicking outside them, losing what was typed.
 - A database dump could hang the backup when Docker didn't pass on the end of the dump stream, and could fail with "No such exec instance" when Docker removed a finished command before its exit code was read.
 
-[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/niogtres/stowaway/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/niogtres/stowaway/releases/tag/v0.12.0
 [0.11.1]: https://github.com/niogtres/stowaway/releases/tag/v0.11.1
 [0.11.0]: https://github.com/niogtres/stowaway/releases/tag/v0.11.0
 [0.10.1]: https://github.com/niogtres/stowaway/releases/tag/v0.10.1
