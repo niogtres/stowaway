@@ -2,8 +2,8 @@
 .SYNOPSIS
   Builds Stowaway end to end: web UI -> tests -> self-contained service -> MSI.
 .EXAMPLE
-  ./build.ps1                      # version 0.1.0-dev, runs tests
-  ./build.ps1 -Version 0.2.0       # release version
+  ./build.ps1                      # the latest release's version (newest vX.Y.Z tag), runs tests
+  ./build.ps1 -Version 0.2.0       # a specific version
   ./build.ps1 -SkipTests
   ./build.ps1 -Version 0.2.0 -SignThumbprint 0123ABCD...   # sign with a certificate from your store (e.g. on a token)
 .NOTES
@@ -13,7 +13,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Version = '0.1.0',
+    [string] $Version,
     [string] $Configuration = 'Release',
     [switch] $SkipTests,
     [string] $SignThumbprint,
@@ -22,6 +22,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
+
+# Without -Version, build as the latest release (newest vX.Y.Z tag). The installer allows same-version upgrades,
+# so a local build installs over that release, and the next release installs over the local build.
+if (-not $Version) {
+    $tag = git -C $root tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | Select-Object -First 1
+    $Version = if ($tag) { $tag.Substring(1) } else { '0.1.0' }
+    Write-Host "Version $Version (latest tag; pass -Version to choose)" -ForegroundColor Cyan
+}
 $publishDir = Join-Path $root 'artifacts\publish'
 $outDir = Join-Path $root 'artifacts'
 

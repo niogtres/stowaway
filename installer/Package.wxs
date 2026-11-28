@@ -10,7 +10,7 @@
            Compressed="yes">
 
     <SummaryInformation Description="Stowaway: Sensible Docker backup management" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Property Id="ARPHELPLINK" Value="https://localhost:8484/help" />
