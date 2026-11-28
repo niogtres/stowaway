@@ -41,7 +41,7 @@ public static class BackupItems
         return items.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    public static bool HasData(AppInfo app) => app.Containers.SelectMany(c => c.Mounts).Any(m => m.Included);
+    public static bool HasData(AppInfo app) => InventoryBuilder.HasData(app.Platform, app.Containers);
 
     /// <summary>
     /// Strategy for an item under a plan. Auto copies live and dumps running databases; it only stops the app

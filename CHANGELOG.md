@@ -4,6 +4,12 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows containers whose only data is a SQL Server database inside the container showed as *Stateless*, and a backup plan skipped them. They now count as data, also when stopped.
+- Stopped containers showed as *Unhealthy*: Docker keeps the last health check after a container stops. Health is now shown only for running containers.
+- The protection score stayed on *Measuring your data…* when no size could be measured (databases inside containers). It now counts items when sizes are unknown, and says so when there is nothing to back up.
+
 ### Documentation
 
 - The install guide explains the SmartScreen warning for the unsigned installer and how to check the download's checksum.

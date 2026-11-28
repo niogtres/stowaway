@@ -69,7 +69,7 @@ public static partial class InventoryBuilder
 
         var apps = containers
             .GroupBy(c => AppKey(c.Raw), StringComparer.Ordinal)
-            .Select(g => BuildApp(g.Key, g.Select(x => x.Raw).ToList(), g.Select(x => x.Info).ToList(), protection) with { Platform = platform })
+            .Select(g => BuildApp(g.Key, g.Select(x => x.Raw).ToList(), g.Select(x => x.Info).ToList(), protection, platform))
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -137,11 +137,12 @@ public static partial class InventoryBuilder
             ? $"compose:{project}"
             : $"container:{c.Name}";
 
-    private static AppInfo BuildApp(string key, IReadOnlyList<RawContainer> raws, IReadOnlyList<ContainerInfo> containers, Func<string, bool, ProtectionStatus> protection)
+    private static AppInfo BuildApp(string key, IReadOnlyList<RawContainer> raws, IReadOnlyList<ContainerInfo> containers, Func<string, bool, ProtectionStatus> protection, string platform)
     {
         var isCompose = key.StartsWith("compose:", StringComparison.Ordinal);
         var labels = raws[0].Labels;
-        var (bytes, incomplete, hasData) = MeasureMounts(containers.SelectMany(c => c.Mounts));
+        var (bytes, incomplete, _) = MeasureMounts(containers.SelectMany(c => c.Mounts));
+        var hasData = HasData(platform, containers);
 
         return new AppInfo
         {
@@ -156,8 +157,18 @@ public static partial class InventoryBuilder
             DataBytes = bytes,
             SizeIncomplete = incomplete,
             Protection = protection(key, hasData),
+            Platform = platform,
         };
     }
+
+    /// <summary>
+    /// Whether an app holds data worth backing up: an included mount, or a database a provider can back up without
+    /// one (inside the container). Running databases are dumped on any engine; on Windows engines a stopped SQL
+    /// Server container's database files are copied too.
+    /// </summary>
+    public static bool HasData(string platform, IEnumerable<ContainerInfo> containers) =>
+        containers.Any(c => c.Mounts.Any(m => m.Included)
+            || (c.Database is not null && c.DumpSupported && (c.State == "running" || platform == Platforms.Windows)));
 
     /// <summary>Sums included mounts, counting each volume or host path once.</summary>
     private static (long Bytes, bool Incomplete, bool HasData) MeasureMounts(IEnumerable<MountInfo> mounts)
@@ -209,7 +220,8 @@ public static partial class InventoryBuilder
         ImageIsLocalOnly = localOnlyImages.Contains(c.ImageId),
         State = c.State,
         StatusText = c.Status,
-        Health = string.IsNullOrWhiteSpace(c.Health) || c.Health == "none" ? null : c.Health,
+        // Docker keeps the last health check result after a container stops; it only means something while it runs.
+        Health = c.State != "running" || string.IsNullOrWhiteSpace(c.Health) || c.Health == "none" ? null : c.Health,
         CreatedAt = c.Created,
         ComposeService = c.Labels.GetValueOrDefault(ComposeServiceLabel),
         ComposeDependsOn = c.Labels.GetValueOrDefault(Backups.ComposeOrder.DependsOnLabel),
@@ -331,7 +343,13 @@ public static partial class InventoryBuilder
                 + volumes.Count(v => v.Orphaned && v.Protection == ProtectionStatus.Stale),
             DataBytes = dataBytes,
             ProtectedBytes = protectedBytes,
+            DataItems = apps.Count(a => HoldsData(a.Protection))
+                + volumes.Count(v => v.Orphaned && HoldsData(v.Protection)),
+            ProtectedItems = apps.Count(a => a.Protection == ProtectionStatus.Protected)
+                + volumes.Count(v => v.Orphaned && v.Protection == ProtectionStatus.Protected),
         };
+
+        static bool HoldsData(ProtectionStatus status) => status is not (ProtectionStatus.Stateless or ProtectionStatus.Excluded);
     }
 
     [GeneratedRegex("^[0-9a-f]{64}$")]
