@@ -189,6 +189,46 @@ public sealed class InventoryBuilderTests
     }
 
     [Fact]
+    public void Databases_inside_containers_are_sized_by_their_last_backup()
+    {
+        var raw = new RawInventory([SqlServer("bc1", "exited", null)], [], []);
+        var support = new Stowaway.Core.Databases.DatabaseSupport([(DatabaseKind.SqlServer, Platforms.Windows)]);
+
+        var unknown = InventoryBuilder.Build(raw, SizeIndex.Empty, version: 1, capturedAt: DateTimeOffset.UnixEpoch, platform: Platforms.Windows, databases: support).Apps.Single();
+        Assert.Equal((0L, (long?)null, true), (unknown.DataBytes, unknown.DatabaseBytes, unknown.SizeIncomplete));
+
+        var sizes = SizeIndex.Empty with { Databases = new Dictionary<string, long> { ["container:bc1"] = 16_000_000 } };
+        var snapshot = InventoryBuilder.Build(raw, sizes, version: 1, capturedAt: DateTimeOffset.UnixEpoch, platform: Platforms.Windows, databases: support);
+        var app = snapshot.Apps.Single();
+        Assert.Equal((16_000_000L, (long?)16_000_000, false), (app.DataBytes, app.DatabaseBytes, app.SizeIncomplete));
+        Assert.Equal(16_000_000, snapshot.Totals.DataBytes);
+    }
+
+    [Fact]
+    public void The_owner_can_include_host_folders_but_not_drives()
+    {
+        var raw = new RawInventory(
+            [Container("app", "nginx", NoLabels,
+                new RawMount("bind", null, @"C:\ProgramData\helper\extensions\app\my", @"c:\run\my", true),
+                new RawMount("bind", null, @"M:\", @"c:\media", true))], [], []);
+
+        var before = InventoryBuilder.Build(raw, SizeIndex.Empty, version: 1, capturedAt: DateTimeOffset.UnixEpoch, platform: Platforms.Windows).Apps.Single();
+        var (folder, drive) = (before.Containers[0].Mounts.Single(m => m.Destination == @"c:\run\my"), before.Containers[0].Mounts.Single(m => m.Destination == @"c:\media"));
+        Assert.Equal((false, true, false), (folder.Included, folder.CanInclude, folder.IncludedByOwner));
+        Assert.Equal((false, false), (drive.Included, drive.CanInclude));
+        Assert.Equal(ProtectionStatus.Stateless, before.Protection);
+
+        // Paths match case-insensitively; a drive stays excluded even if it's on the list.
+        var included = IncludedFolders.Of([@"c:\programdata\HELPER\extensions\app\my", @"M:\"]);
+        var after = InventoryBuilder.Build(raw, SizeIndex.Empty, version: 1, capturedAt: DateTimeOffset.UnixEpoch, platform: Platforms.Windows, includedFolders: included).Apps.Single();
+        folder = after.Containers[0].Mounts.Single(m => m.Destination == @"c:\run\my");
+        Assert.Equal((true, true, true, (string?)null), (folder.Included, folder.CanInclude, folder.IncludedByOwner, folder.ExclusionReason));
+        Assert.False(after.Containers[0].Mounts.Single(m => m.Destination == @"c:\media").Included);
+        Assert.Equal(ProtectionStatus.Unprotected, after.Protection);
+        Assert.True(Stowaway.Core.Backups.BackupItems.HasData(after));
+    }
+
+    [Fact]
     public void A_stopped_linux_database_without_a_volume_holds_nothing_to_dump()
     {
         var raw = new RawInventory([Container("db", "postgres:17", NoLabels) with { State = "exited" }], [], []);

@@ -397,6 +397,7 @@ public sealed class BackupService(
             run.FilesProcessed = summary.TotalFilesProcessed;
             run.BytesProcessed = summary.TotalBytesProcessed;
             run.BytesAdded = summary.DataAdded;
+            run.DatabaseBytes = dumpOutcomes.Count > 0 ? dumpOutcomes.Sum(o => o.Bytes) : null;
             run.Status = RunStatus.Succeeded;
             if (dumpOutcomes.FirstOrDefault(o => o.Errors.Count > 0) is { } failed)
             {

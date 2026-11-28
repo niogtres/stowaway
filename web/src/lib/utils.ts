@@ -14,6 +14,7 @@ const byteUnits = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 /** Binary-scaled sizes with SI-style labels, matching what Explorer shows. */
 export function formatBytes(bytes: number | null | undefined, { lowerBound = false } = {}) {
   if (bytes === null || bytes === undefined) return '—'
+  if (lowerBound && bytes === 0) return 'size unknown'
   let value = bytes
   let unit = 0
   while (value >= 1024 && unit < byteUnits.length - 1) {

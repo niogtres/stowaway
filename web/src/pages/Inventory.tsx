@@ -220,7 +220,9 @@ function AppCard({ app }: { app: AppInfo }) {
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <ProtectionChip status={app.protection} />
           {app.protection !== 'stateless' && (
-            <span className="text-sm font-medium tabular-nums">{formatBytes(app.dataBytes, { lowerBound: app.sizeIncomplete })}</span>
+            <span className="text-sm font-medium tabular-nums" title={sizeTitle(app)}>
+              {formatBytes(app.dataBytes, { lowerBound: app.sizeIncomplete })}
+            </span>
           )}
         </div>
       </header>
@@ -332,4 +334,11 @@ function InventorySkeleton() {
       </div>
     </div>
   )
+}
+
+function sizeTitle(app: AppInfo) {
+  if (app.dataBytes === 0 && app.sizeIncomplete)
+    return 'Not measured yet. Databases inside a container are sized by their first backup; folders are measured in the background.'
+  if (app.databaseBytes !== null) return `Includes ${formatBytes(app.databaseBytes)} of databases, as of the last backup.`
+  return undefined
 }

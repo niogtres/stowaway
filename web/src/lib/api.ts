@@ -55,6 +55,9 @@ export interface MountInfo {
   included: boolean
   exclusionReason: string | null
   sizeBytes: number | null
+  /** A host folder left out by default that the owner may include. */
+  canInclude: boolean
+  includedByOwner: boolean
 }
 
 export interface ContainerInfo {
@@ -82,6 +85,8 @@ export interface AppInfo {
   composeConfigFiles: string[]
   containers: ContainerInfo[]
   dataBytes: number
+  /** Databases inside the containers, sized by the last backup. */
+  databaseBytes: number | null
   sizeIncomplete: boolean
   protection: ProtectionStatus
   platform: 'linux' | 'windows'
@@ -658,6 +663,14 @@ export function useRefreshInventory() {
       // The rescan is debounced server-side; the hub announces the result. Refetch shortly as a fallback.
       setTimeout(() => queryClient.invalidateQueries({ queryKey: queryKeys.inventory }), 2500)
     },
+  })
+}
+
+export function useIncludeFolder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ path, include }: { path: string; include: boolean }) => request<void>('POST', '/api/inventory/folders', { path, include }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
   })
 }
 

@@ -38,6 +38,11 @@ public sealed class ProtectionTracker(
         };
     }
 
+    public IReadOnlyDictionary<string, long> DatabaseSizes =>
+        _state is { } state
+            ? state.Runs.Where(kv => kv.Value.DatabaseBytes is not null).ToDictionary(kv => kv.Key, kv => kv.Value.DatabaseBytes!.Value, StringComparer.Ordinal)
+            : new Dictionary<string, long>();
+
     public void Invalidate() => _ = RefreshAsync(CancellationToken.None);
 
     public Task RunFinishedAsync(BackupRun run, CancellationToken ct) => RefreshAsync(ct);

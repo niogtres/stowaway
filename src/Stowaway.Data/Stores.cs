@@ -1,5 +1,6 @@
 using Stowaway.Core.Access;
 using Stowaway.Core.Backups;
+using Stowaway.Core.Inventory;
 using Stowaway.Core.Notifications;
 using Stowaway.Core.Plans;
 using Microsoft.EntityFrameworkCore;
@@ -98,7 +99,7 @@ public sealed class BackupRunStore(IDbContextFactory<AppDbContext> factory) : IB
             .Where(r => r.Kind == RunKind.Backup && (r.Status == RunStatus.Succeeded || r.Status == RunStatus.Failed))
             .OrderByDescending(r => r.QueuedAt)
             .Take(StateWindow)
-            .Select(r => new { r.AppId, r.PlanId, r.Status, r.FinishedAt })
+            .Select(r => new { r.AppId, r.PlanId, r.Status, r.FinishedAt, r.DatabaseBytes })
             .ToListAsync(ct);
 
         return finished
@@ -108,7 +109,8 @@ public sealed class BackupRunStore(IDbContextFactory<AppDbContext> factory) : IB
                 g => new ItemRunState(
                     g.FirstOrDefault(r => r.PlanId is not null)?.Status,
                     g.Where(r => r.Status == RunStatus.Succeeded).Select(r => r.FinishedAt).FirstOrDefault(),
-                    g.FirstOrDefault(r => r.PlanId is not null)?.FinishedAt),
+                    g.FirstOrDefault(r => r.PlanId is not null)?.FinishedAt,
+                    g.FirstOrDefault(r => r.Status == RunStatus.Succeeded && r.DatabaseBytes is not null)?.DatabaseBytes),
                 StringComparer.Ordinal);
     }
 
@@ -315,6 +317,31 @@ public sealed class DatabaseCredentialStore(IDbContextFactory<AppDbContext> fact
     }
 }
 
+public sealed class IncludedFolderStore(IDbContextFactory<AppDbContext> factory) : IIncludedFolderStore
+{
+    public async Task<IReadOnlyList<IncludedFolder>> ListAsync(CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.IncludedFolders.AsNoTracking().OrderBy(f => f.Path).ToListAsync(ct);
+    }
+
+    public async Task AddAsync(IncludedFolder folder, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        if (!await db.IncludedFolders.AnyAsync(f => f.Path == folder.Path, ct))
+        {
+            db.IncludedFolders.Add(folder);
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
+    public async Task<bool> RemoveAsync(string path, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        return await db.IncludedFolders.Where(f => f.Path == path).ExecuteDeleteAsync(ct) > 0;
+    }
+}
+
 public static class DataServiceCollectionExtensions
 {
     public static IServiceCollection AddStowawayData(this IServiceCollection services, string databasePath)
@@ -327,6 +354,7 @@ public static class DataServiceCollectionExtensions
         services.AddSingleton<IRemoteAccountStore, RemoteAccountStore>();
         services.AddSingleton<IAuditStore, AuditStore>();
         services.AddSingleton<IDatabaseCredentialStore, DatabaseCredentialStore>();
+        services.AddSingleton<IIncludedFolderStore, IncludedFolderStore>();
         return services;
     }
 

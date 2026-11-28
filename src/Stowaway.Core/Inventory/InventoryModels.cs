@@ -77,10 +77,16 @@ public sealed record AppInfo
     public IReadOnlyList<string> ComposeConfigFiles { get; init; } = [];
     public required IReadOnlyList<ContainerInfo> Containers { get; init; }
 
-    /// <summary>Sum of the known sizes of the app's included mounts (each volume or path counted once).</summary>
+    /// <summary>Sum of the known sizes of the app's included mounts (each volume or path counted once) and databases.</summary>
     public long DataBytes { get; init; }
 
-    /// <summary>At least one included mount hasn't been measured yet, so <see cref="DataBytes"/> is a lower bound.</summary>
+    /// <summary>
+    /// Size of the databases inside the app's containers, from its last successful backup; null when there's none
+    /// (or no such database).
+    /// </summary>
+    public long? DatabaseBytes { get; init; }
+
+    /// <summary>Some of the app's data hasn't been measured yet, so <see cref="DataBytes"/> is a lower bound (0 means unknown).</summary>
     public bool SizeIncomplete { get; init; }
     public required ProtectionStatus Protection { get; init; }
 
@@ -142,12 +148,18 @@ public sealed record MountInfo
     public string? VolumeName { get; init; }
     public bool Anonymous { get; init; }
 
-    /// <summary>Whether this mount is backed up by default.</summary>
+    /// <summary>Whether this mount is backed up.</summary>
     public required bool Included { get; init; }
 
-    /// <summary>Why the mount is excluded by default, when <see cref="Included"/> is false.</summary>
+    /// <summary>Why the mount is excluded, when <see cref="Included"/> is false.</summary>
     public string? ExclusionReason { get; init; }
     public long? SizeBytes { get; init; }
+
+    /// <summary>A host folder excluded by default that the owner may include (see <see cref="IncludedFolders"/>).</summary>
+    public bool CanInclude { get; init; }
+
+    /// <summary>Included because the owner chose to, not by default.</summary>
+    public bool IncludedByOwner { get; init; }
 }
 
 public sealed record VolumeInfo

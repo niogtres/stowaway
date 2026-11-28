@@ -116,6 +116,9 @@ public sealed class BackupRun
     public long? BytesProcessed { get; set; }
     public long? BytesAdded { get; set; }
 
+    /// <summary>Bytes of database dumps (or copied database files) in the snapshot; null when there were none.</summary>
+    public long? DatabaseBytes { get; set; }
+
     /// <summary>Seconds the app's containers were stopped (StopStart only).</summary>
     public double? DowntimeSeconds { get; set; }
     public string? Error { get; set; }

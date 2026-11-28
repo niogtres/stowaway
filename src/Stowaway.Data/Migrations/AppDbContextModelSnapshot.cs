@@ -146,6 +146,9 @@ namespace Stowaway.Data.Migrations
                     b.Property<long?>("BytesProcessed")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("DatabaseBytes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid>("DestinationId")
                         .HasColumnType("TEXT");
 
@@ -305,6 +308,21 @@ namespace Stowaway.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Destinations");
+                });
+
+            modelBuilder.Entity("Stowaway.Core.Inventory.IncludedFolder", b =>
+                {
+                    b.Property<string>("Path")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT")
+                        .UseCollation("NOCASE");
+
+                    b.Property<long>("AddedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Path");
+
+                    b.ToTable("IncludedFolders");
                 });
 
             modelBuilder.Entity("Stowaway.Core.Notifications.NotificationChannel", b =>

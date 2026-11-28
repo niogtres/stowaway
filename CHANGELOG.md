@@ -4,6 +4,11 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- **Include** a host folder that's mapped into a container from outside the app (for example a Business Central container's `my` folder), so it's backed up with the app. Drives, system folders and network shares stay excluded.
+- Databases inside containers are sized by their last backup; until then the app shows *size unknown* instead of 0 B.
+
 ### Fixed
 
 - Windows containers whose only data is a SQL Server database inside the container showed as *Stateless*, and a backup plan skipped them. They now count as data, also when stopped.

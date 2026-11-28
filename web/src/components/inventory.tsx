@@ -1,5 +1,5 @@
 import { Ban, Database, FolderOpen, HardDrive, Info, Layers, PackageOpen } from 'lucide-react'
-import { databaseLabels, type ContainerInfo, type MountInfo, type ProtectionStatus } from '@/lib/api'
+import { databaseLabels, useIncludeFolder, type ContainerInfo, type MountInfo, type ProtectionStatus } from '@/lib/api'
 import { cn, formatBytes, shortVolumeName } from '@/lib/utils'
 import { DatabaseLoginButton } from './DatabaseLogin'
 import { Badge, StatusDot } from './ui'
@@ -110,8 +110,38 @@ export function MountRow({ mount, sharedBy = 1 }: { mount: MountInfo; sharedBy?:
           </span>
         )}
       </div>
-      <span className="tabular-nums text-muted">{mount.included ? formatBytes(mount.sizeBytes) : 'not included'}</span>
+      <span className="flex items-center gap-2 tabular-nums text-muted">
+        {mount.includedByOwner && <span className="text-accent">included by you</span>}
+        {mount.included ? formatBytes(mount.sizeBytes) : 'not included'}
+        {(mount.canInclude || mount.includedByOwner) && <IncludeFolderButton mount={mount} />}
+      </span>
     </div>
+  )
+}
+
+/** Backs up a host folder Stowaway leaves out by default, or stops (the owner's choice, kept per folder). */
+function IncludeFolderButton({ mount }: { mount: MountInfo }) {
+  const include = useIncludeFolder()
+  const including = !mount.included
+  return (
+    <button
+      type="button"
+      disabled={include.isPending}
+      onClick={() => include.mutate({ path: mount.displaySource, include: including })}
+      title={
+        include.error
+          ? include.error.message
+          : including
+            ? `Back up ${mount.displaySource} with this app, in every plan that covers it.`
+            : `Stop backing up ${mount.displaySource}. Earlier snapshots keep it.`
+      }
+      className={cn(
+        'rounded-md border border-line px-1.5 py-0.5 text-[11px] font-medium opacity-100 transition hover:border-accent hover:text-fg disabled:opacity-50',
+        include.error && 'border-danger text-danger',
+      )}
+    >
+      {including ? 'Include' : 'Exclude'}
+    </button>
   )
 }
 
@@ -142,7 +172,8 @@ export function OutsideDataNote({ mounts }: { mounts: MountInfo[] }) {
       <Info className="mt-px size-3 shrink-0" />
       <span>
         {what} included: {outside.length === 1 ? 'it lives' : 'they live'} outside the app, on the host or another computer. Back{' '}
-        {outside.length === 1 ? 'it' : 'them'} up with your file backup.
+        {outside.length === 1 ? 'it' : 'them'} up with your file backup
+        {outside.some((m) => m.canInclude) ? ', or choose Include to back up a folder with this app.' : '.'}
       </span>
     </p>
   )

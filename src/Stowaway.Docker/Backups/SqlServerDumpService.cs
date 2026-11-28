@@ -49,6 +49,13 @@ public sealed class SqlServerDumpService(
         return errors;
     }
 
+    /// <summary>Bytes staged for the item's SQL Server containers by <see cref="CreateAsync"/>.</summary>
+    public long StagedBytes(AppInfo item) =>
+        SqlServerDumps.Containers(item)
+            .Select(c => new DirectoryInfo(Path.Combine(runner.HostStageDirectory, BackupPlanner.DumpsFolder, SqlServerDumps.FolderName(c.Name))))
+            .Where(d => d.Exists)
+            .Sum(d => d.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length));
+
     /// <summary>Checks that the saved (or Windows) login works, without dumping anything.</summary>
     public async Task<ProbeResult> ProbeAsync(DockerClient client, string containerId, IReadOnlyList<string> environment, CancellationToken ct)
     {
