@@ -53,8 +53,8 @@ Requirements: Windows 10/11, .NET SDK 10.0.1xx, Node.js 24, and Docker Desktop f
 
 ```powershell
 dotnet tool restore
-./build.ps1 -Version 0.1.0                                 # web UI -> tests -> self-contained publish -> artifacts/*.msi
-./build.ps1 -Version 0.1.0 -SignThumbprint <thumbprint>    # also Authenticode-sign the exe and the MSI
+./build.ps1                                                # web UI -> tests -> self-contained publish -> artifacts/*.msi (version of the latest tag)
+./build.ps1 -Version 1.2.3 -SignThumbprint <thumbprint>    # a specific version, Authenticode-signing the exe and the MSI
 ```
 
 For development:

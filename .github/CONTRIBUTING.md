@@ -29,7 +29,7 @@ dotnet run --project src/Stowaway.Service    # https://localhost:8484 (sign-in o
 cd web; npm run dev                          # UI with hot reload on http://localhost:5173
 ```
 
-Build the installer with `./build.ps1 -Version 0.1.0` (output in `artifacts/`).
+Build the installer with `./build.ps1` (output in `artifacts/`). Without `-Version` it uses the latest release's version, and it installs over that release.
 
 ## Adding support for a database
 
