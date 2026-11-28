@@ -6,9 +6,10 @@ Design and decisions: [docs/DESIGN.md](docs/DESIGN.md). Read §10 (decisions) be
 - `src/Stowaway.Service`: ASP.NET Core host, Windows Service, API (`/api/*`), serves SPA from `wwwroot` (generated, git-ignored).
 - `src/Stowaway.Core`: domain types, no infrastructure dependencies.
 - `src/Stowaway.Docker`: Docker Engine access (Docker.DotNet.Enhanced, builder API: `new DockerClientBuilder().WithEndpoint(..).Build()`).
+- Databases and destinations are built-in providers (`Stowaway.Docker/Databases`, `Stowaway.Docker/Destinations`; DESIGN decision 9). How to add one: `.github/CONTRIBUTING.md`.
 - `web/`: React 19 + Vite 8 + TS 7 + Tailwind v4. `npm run build` writes into the service's `wwwroot`.
 - `src/Stowaway.Data`: EF Core + SQLite (destinations, runs). Add migrations with `dotnet tool restore` then `dotnet ef migrations add <Name> --project src/Stowaway.Data --startup-project src/Stowaway.Data`.
-- Backups run restic in ephemeral `restic/restic:<pinned>` containers (`ResticRunner`); bump the pin deliberately and re-run the integration tests.
+- Backups run restic in ephemeral runner containers (`stowaway/runner:<hash>`, built from the pinned `restic/restic` image; `ResticRunner`), or host-side `restic.exe` for Windows-container engines (`HostResticRunner`, pinned in `tools/Get-BundledTools.ps1`). Bump pins deliberately and re-run the integration tests.
 - `installer/`: WiX **v5** MSI (do not upgrade to v6+ without approval: it requires accepting the OSMF EULA).
 - `tests/Stowaway.Tests`: xUnit v3 on Microsoft.Testing.Platform (`global.json` opts in).
 

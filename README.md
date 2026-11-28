@@ -14,11 +14,11 @@ Stowaway backs up the apps you run in Docker on a Windows computer (their volume
 
 - **Finds everything by itself.** Every container, compose stack, volume and bind mount, with sizes, live as Docker changes. Nothing to list by hand.
 - **Backs up on a schedule.** Encrypted and deduplicated with [restic](https://restic.net), with retention ("keep 7 daily, 4 weekly…") and weekly integrity checks.
-- **Keeps databases consistent without downtime.** PostgreSQL, MySQL/MariaDB, MongoDB and Redis are dumped with their own tools while they run. Apps it can't dump are stopped briefly, in the right order, and started again.
+- **Keeps databases consistent without downtime.** PostgreSQL, MySQL/MariaDB, MongoDB and Redis are dumped with their own tools while they run, and SQL Server in Windows containers with its own `BACKUP DATABASE`. Apps it can't dump are stopped briefly, in the right order, and started again.
 - **Backs up to where you want.** A second disk, a network share (SMB), S3-compatible storage, Backblaze B2, Azure Blob, SFTP, or Dropbox.
 - **Restores files, volumes or whole apps.** Restore a single file, a volume to where it was (with an undo snapshot) or to a new one, or rebuild an app's containers, networks and data after a disaster.
 - **Proves backups work.** Weekly restore drills restore into scratch space and load database dumps into throwaway containers, without touching your apps.
-- **Tells you when something's wrong.** Protection status for every app, a tray icon, and alerts by email, webhook (Slack, Discord, Teams) or ntfy.
+- **Tells you when something's wrong.** Protection status for every app, a tray icon, and alerts by email, webhook (Slack, Discord, Mattermost, or Teams through a workflow) or ntfy.
 - **Secure by default.** Only this computer can open it, with Windows sign-in. Optional remote access, even over the internet behind a reverse proxy, needs a password and an authenticator app, and every change is in an audit log.
 
 ## Install
@@ -44,8 +44,8 @@ See [Requirements](#requirements) for what it runs on. The [user guide](docs/USE
 - [User guide](docs/USER-GUIDE.md): installing, backing up, restoring, remote access, troubleshooting.
 - [Design](docs/DESIGN.md): architecture, security model and the decisions behind them.
 - [Changelog](CHANGELOG.md): what changed in each release.
-- [Contributing](CONTRIBUTING.md): building from source, tests, pull requests.
-- [Security policy](SECURITY.md): how to report a vulnerability.
+- [Contributing](.github/CONTRIBUTING.md): building from source, tests, pull requests.
+- [Security policy](.github/SECURITY.md): how to report a vulnerability.
 
 ## Building from source
 
@@ -60,12 +60,14 @@ dotnet tool restore
 For development:
 
 ```powershell
-dotnet run --project src/Stowaway.Service   # https://localhost:8484 (sign-in off in Development)
+dotnet run --project src/Stowaway.Service   # https://localhost:8484 (sign-in off in Development; data in %LOCALAPPDATA%\Stowaway-dev)
 cd web; npm run dev                          # UI with hot reload on http://localhost:5173 (proxies /api)
 dotnet test
 ```
 
-Built with .NET 10 (ASP.NET Core, Windows service), Docker.DotNet, React 19, Vite, Tailwind CSS, TanStack, WiX v5, and restic + rclone in a runner container. Third-party licenses: [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) (regenerate with `python -I tools/generate-notices.py`).
+If Stowaway is also installed on the same computer, the installed service already uses port 8484: stop it first, or give the development copy another port (`$env:Stowaway__Port = 8499`).
+
+Built with .NET 10 (ASP.NET Core, Windows service), Docker.DotNet, React 19, Vite, Tailwind CSS, TanStack, WiX v5, and restic + rclone (in a runner container, or on the host for Windows-container engines). Third-party licenses: [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) (regenerate with `python -I tools/generate-notices.py`).
 
 Brand artwork masters are in `assets/brand/`; `python -I tools/generate-brand-assets.py` regenerates the derived files (icon, favicon, installer images, illustrations).
 
