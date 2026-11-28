@@ -72,7 +72,8 @@ public sealed class ShellDatabaseProvider(
             [new RunnerMount("volume", DumpService.VolumeName(runId), DatabaseDumps.SnapshotDir, ReadOnly: true)],
             () => dumps.RemoveAsync(client, runId),
             "Database dump failed",
-            "The files were still copied live.");
+            "The files were still copied live.",
+            results.Where(r => r.Error is null).Sum(r => r.Bytes));
     }
 
     public async Task VerifyAsync(DrillContext context, CancellationToken ct)

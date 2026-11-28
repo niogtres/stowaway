@@ -9,7 +9,8 @@ public sealed record PlanCoverage(Guid PlanId, string PlanName, TimeSpan Interva
 /// <param name="LastPlanRunStatus">Status of the latest finished plan-triggered backup of the item.</param>
 /// <param name="LastSuccessAt">Latest successful backup of the item, manual or scheduled.</param>
 /// <param name="LastPlanRunAt">When the latest plan run finished; a successful backup after it (manual or not) clears a failure.</param>
-public sealed record ItemRunState(RunStatus? LastPlanRunStatus, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastPlanRunAt = null);
+/// <param name="DatabaseBytes">Size of the database dumps in the latest successful backup that made any.</param>
+public sealed record ItemRunState(RunStatus? LastPlanRunStatus, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastPlanRunAt = null, long? DatabaseBytes = null);
 
 /// <summary>Turns plans and run history into a protection status per app or orphaned volume.</summary>
 public static class ProtectionEvaluator
@@ -74,4 +75,7 @@ public interface IProtectionSource
 
     /// <summary>Raised when plans or run history changed, so statuses should be recomputed.</summary>
     event Action? Changed;
+
+    /// <summary>Database dump sizes from the latest successful backups, by item id.</summary>
+    IReadOnlyDictionary<string, long> DatabaseSizes => new Dictionary<string, long>();
 }

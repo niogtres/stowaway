@@ -397,6 +397,7 @@ public sealed class BackupService(
             run.FilesProcessed = summary.TotalFilesProcessed;
             run.BytesProcessed = summary.TotalBytesProcessed;
             run.BytesAdded = summary.DataAdded;
+            run.DatabaseBytes = dumpOutcomes.Count > 0 ? dumpOutcomes.Sum(o => o.Bytes) : null;
             run.Status = RunStatus.Succeeded;
             if (dumpOutcomes.FirstOrDefault(o => o.Errors.Count > 0) is { } failed)
             {
@@ -474,6 +475,12 @@ public sealed class BackupService(
             var plan = await plans.GetAsync(planId, ct);
             if (plan is null)
             {
+                return;
+            }
+
+            if (repository.IsAppendOnly(destination))
+            {
+                log.Add("Retention: skipped, the destination is append-only (remove old snapshots on the server)");
                 return;
             }
 
@@ -698,10 +705,17 @@ public sealed class BackupService(
             var destination = await destinations.GetAsync(run.DestinationId, ct)
                 ?? throw new InvalidOperationException("The destination no longer exists.");
 
-            log.Add($"Pruning unreferenced data in {destination.Name}");
-            Report(run.Id, "pruning", null, 0, 0, 0, 0);
-            await SaveAsync(run, log);
-            await repository.PruneAsync(destination, line => log.Add(line), ct);
+            if (repository.IsAppendOnly(destination))
+            {
+                log.Add($"Not pruning {destination.Name}: it's append-only, so only the server's owner can remove data");
+            }
+            else
+            {
+                log.Add($"Pruning unreferenced data in {destination.Name}");
+                Report(run.Id, "pruning", null, 0, 0, 0, 0);
+                await SaveAsync(run, log);
+                await repository.PruneAsync(destination, line => log.Add(line), ct);
+            }
 
             log.Add($"Checking repository integrity (re-reading {CheckReadDataPercent}% of the data)");
             Report(run.Id, "checking", null, 0, 0, 0, 0);
@@ -763,6 +777,14 @@ public sealed class BackupService(
             {
                 var inspect = await client.Containers.InspectContainerAsync(container.Id, ct);
                 files[$"{dir}/containers/{container.Name}.json"] = JsonSerializer.SerializeToUtf8Bytes(inspect, MetadataJson);
+                if (Stowaway.Core.Profiles.AppProfiles.Of(container.Product) is { } profile)
+                {
+                    // Written with a byte order mark: Windows PowerShell 5.1 reads scripts without one as ANSI.
+                    foreach (var (path, text) in profile.DefinitionFiles(Definition(container.Name, inspect), time.GetUtcNow()))
+                    {
+                        files[$"{dir}/{path}"] = [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(text)];
+                    }
+                }
             }
             catch (DockerContainerNotFoundException)
             {
@@ -792,6 +814,28 @@ public sealed class BackupService(
         }
 
         return files;
+    }
+
+    /// <summary>What app profiles may read from a container's definition.</summary>
+    internal static Stowaway.Core.Profiles.ContainerDefinition Definition(string name, ContainerInspectResponse inspect)
+    {
+        var env = (inspect.Config?.Env ?? [])
+            .Select(e => e.Split('=', 2))
+            .Where(p => p.Length == 2)
+            .GroupBy(p => p[0], StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Last()[1], StringComparer.OrdinalIgnoreCase);
+        var host = inspect.HostConfig;
+        var ports = (host?.PortBindings ?? new Dictionary<string, IList<PortBinding>>())
+            .Where(p => p.Value is { Count: > 0 })
+            .Select(p => int.TryParse(p.Key.Split('/')[0], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var port) ? port : 0)
+            .Where(p => p > 0)
+            .Distinct()
+            .ToList();
+        var binds = (inspect.Mounts ?? [])
+            .Where(m => string.Equals(m.Type, "bind", StringComparison.OrdinalIgnoreCase))
+            .Select(m => (m.Source, m.Destination))
+            .ToList();
+        return new Stowaway.Core.Profiles.ContainerDefinition(name, env, host?.Memory ?? 0, host?.DNS?.ToList(), ports, binds);
     }
 
     private void Report(Guid runId, string phase, double? percent, long bytesDone, long totalBytes, long filesDone, long totalFiles) =>

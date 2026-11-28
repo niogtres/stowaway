@@ -1,5 +1,6 @@
 using Stowaway.Core.Access;
 using Stowaway.Core.Backups;
+using Stowaway.Core.Inventory;
 using Stowaway.Core.Notifications;
 using Stowaway.Core.Plans;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<RemoteAccount> RemoteAccounts => Set<RemoteAccount>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<DatabaseCredential> DatabaseCredentials => Set<DatabaseCredential>();
+    public DbSet<IncludedFolder> IncludedFolders => Set<IncludedFolder>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configuration)
     {
@@ -99,6 +101,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(c => c.Kind).HasConversion<string>().HasMaxLength(20);
             e.Property(c => c.User).HasMaxLength(200);
             e.Property(c => c.Database).HasMaxLength(200);
+        });
+
+        model.Entity<IncludedFolder>(e =>
+        {
+            e.HasKey(f => f.Path);
+            e.Property(f => f.Path).HasMaxLength(1000).UseCollation("NOCASE"); // Windows paths ignore case
         });
     }
 }

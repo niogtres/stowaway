@@ -105,6 +105,12 @@ public static partial class HostPaths
         return IsInside(windows ?? source, ToWindowsPath(projectDir) ?? projectDir) ? null : OutsideApp;
     }
 
+    /// <summary>
+    /// Whether the owner may include a bind mount excluded for <paramref name="reason"/>: host folders outside the
+    /// app, yes; drives, system folders, shares and plumbing, no.
+    /// </summary>
+    public static bool CanInclude(string? reason) => reason is OutsideApp or OutsideStandalone;
+
     /// <summary>True when <paramref name="path"/> is <paramref name="folder"/> or below it (Windows paths ignore case).</summary>
     public static bool IsInside(string path, string folder)
     {

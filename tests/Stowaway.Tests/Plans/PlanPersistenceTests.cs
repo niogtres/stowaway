@@ -80,12 +80,15 @@ public sealed class PlanPersistenceTests : IAsyncLifetime
         }
 
         var state = (await runs.LatestStatesAsync(ct))["compose:blog"];
+        Assert.Null(state.DatabaseBytes);
         Assert.Equal(RunStatus.Failed, state.LastPlanRunStatus);                 // latest scheduled run failed...
         Assert.Equal(manual.FinishedAt!.Value, state.LastSuccessAt!.Value, TimeSpan.FromMilliseconds(1)); // ...a manual success still counts
         Assert.False((await runs.LatestStatesAsync(ct)).ContainsKey(BackupService.MaintenanceItemId));
 
         var next = Run(4, RunStatus.Succeeded, planId);
+        next.DatabaseBytes = 4096;
         await runs.AddAsync(next, ct);
+        Assert.Equal(4096, (await runs.LatestStatesAsync(ct))["compose:blog"].DatabaseBytes);
         Assert.Equal(failed.Id, (await runs.PreviousAsync(next, ct))!.Id); // same item and plan: manual run ignored
 
         var lastMaintenance = await runs.LastMaintenanceAsync(ct);
@@ -117,5 +120,18 @@ public sealed class PlanPersistenceTests : IAsyncLifetime
             Assert.Equal(RunKind.Backup, run.Kind);
             Assert.Null(run.PlanId);
         }
+    }
+
+    [Fact]
+    public async Task Included_folders_are_stored_once_and_ignore_case()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var folders = _services.GetRequiredService<Stowaway.Core.Inventory.IIncludedFolderStore>();
+        await folders.AddAsync(new() { Path = @"C:\ProgramData\helper\my", AddedAt = DateTimeOffset.UtcNow }, ct);
+        await folders.AddAsync(new() { Path = @"c:\programdata\HELPER\my", AddedAt = DateTimeOffset.UtcNow }, ct);
+        Assert.Equal([@"C:\ProgramData\helper\my"], (await folders.ListAsync(ct)).Select(f => f.Path));
+
+        Assert.True(await folders.RemoveAsync(@"C:\PROGRAMDATA\helper\my", ct));
+        Assert.Empty(await folders.ListAsync(ct));
     }
 }

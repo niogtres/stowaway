@@ -28,8 +28,10 @@ public abstract class CloudProvider : IDestinationProvider
     /// <summary>restic's repository string and what it needs alongside.</summary>
     public abstract RepositoryConnection Connect(IReadOnlyDictionary<string, string> values);
 
-    public Task<RepositoryAccess> OpenAsync(IReadOnlyDictionary<string, string> values, CancellationToken ct) =>
+    public virtual Task<RepositoryAccess> OpenAsync(IReadOnlyDictionary<string, string> values, CancellationToken ct) =>
         Task.FromResult(RepositoryAccess.FromConnection(Connect(values)));
+
+    public virtual bool AppendOnly(IReadOnlyDictionary<string, string> values) => false;
 
     protected static string S(IReadOnlyDictionary<string, string> values, string key) => values.GetValueOrDefault(key)?.Trim() ?? string.Empty;
 
@@ -252,7 +254,7 @@ public sealed class SftpProvider(ResticRunner runner) : CloudProvider
 }
 
 /// <summary>Dropbox through rclone, signed in in the browser. Backups always live under /Stowaway.</summary>
-public sealed class DropboxProvider(DropboxAuthService signIn) : CloudProvider
+public sealed class DropboxProvider(RcloneSignInService signIn) : CloudProvider
 {
     /// <summary>Every Dropbox destination set up or moved by this version lives under this folder.</summary>
     public const string Root = "Stowaway";
@@ -262,7 +264,7 @@ public sealed class DropboxProvider(DropboxAuthService signIn) : CloudProvider
     public override DestinationDescriptor Descriptor { get; } = new(
         DestinationKind.Dropbox, "Dropbox", "box", "Dropbox",
         [
-            new(DestinationKeys.Prefix, "Folder in Dropbox", FieldType.DropboxFolder,
+            new(DestinationKeys.Prefix, "Folder in Dropbox", FieldType.StowawayFolder,
                 Hint: "Backups always go under /Stowaway. Use a subfolder per computer or purpose. In Dropbox you'll see restic's encrypted folders (data, index, keys, snapshots), not your files: restore with Stowaway."),
             new(DestinationKeys.Token, "Dropbox access", Section: FieldSection.Credentials, Secret: true, Hidden: true),
         ],
@@ -294,15 +296,23 @@ public sealed class DropboxProvider(DropboxAuthService signIn) : CloudProvider
     public override IReadOnlyDictionary<string, string> TakeSignIn(Guid session) =>
         new Dictionary<string, string>
         {
-            [DestinationKeys.Token] = signIn.TakeToken(session) ?? throw new DestinationValidationException("The Dropbox sign-in isn't complete. Connect again."),
+            [DestinationKeys.Token] = signIn.TakeToken(session, RcloneSignInService.Dropbox) ?? throw new DestinationValidationException("The Dropbox sign-in isn't complete. Connect again."),
         };
 
+    /// <summary>The Dropbox folder for a subfolder the user typed: always under <see cref="Root"/>.</summary>
+    public static string Folder(string? subfolder) => CloudFolders.StowawayFolder(subfolder);
+}
+
+/// <summary>Folders in cloud drives (Dropbox, OneDrive), where Stowaway keeps everything under /Stowaway.</summary>
+public static class CloudFolders
+{
     /// <summary>
-    /// The Dropbox folder for a subfolder the user typed: always under <see cref="Root"/>. A leading "Stowaway/" is
-    /// accepted as already meaning that folder.
+    /// The folder for a subfolder the user typed: always under <see cref="DropboxProvider.Root"/>. A leading
+    /// "Stowaway/" is accepted as already meaning that folder.
     /// </summary>
-    public static string Folder(string? subfolder)
+    public static string StowawayFolder(string? subfolder)
     {
+        const string Root = DropboxProvider.Root;
         var parts = (subfolder ?? string.Empty).Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         if (parts.Count > 0 && string.Equals(parts[0], Root, StringComparison.OrdinalIgnoreCase))
         {

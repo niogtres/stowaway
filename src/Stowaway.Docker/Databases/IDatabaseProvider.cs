@@ -45,12 +45,14 @@ public sealed record DumpContext(DockerClient Client, AppInfo Item, Guid RunId, 
 /// <param name="Cleanup">Runs after the backup, whatever happened.</param>
 /// <param name="FailureTitle">Starts the run error when there are errors, e.g. "Database dump failed".</param>
 /// <param name="FailureConsequence">Ends it: what the failure means for the snapshot.</param>
+/// <param name="Bytes">Size of the dumps (or copied database files) that succeeded.</param>
 public sealed record DumpOutcome(
     IReadOnlyList<string> Errors,
     IReadOnlyList<RunnerMount> Mounts,
     Func<Task>? Cleanup,
     string FailureTitle,
-    string FailureConsequence)
+    string FailureConsequence,
+    long Bytes = 0)
 {
     public static DumpOutcome Nothing { get; } = new([], [], null, "", "");
 }

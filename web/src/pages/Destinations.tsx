@@ -1,12 +1,12 @@
 import { motion } from 'motion/react'
-import { Copy, Eye, HardDrive, KeyRound, Pencil, Plus, RefreshCw, Trash2, TriangleAlert, Wrench } from 'lucide-react'
+import { HardDrive, KeyRound, Pencil, Plus, RefreshCw, Trash2, TriangleAlert, Wrench } from 'lucide-react'
 import { createElement, useState } from 'react'
 import { AddDestinationDialog } from '@/components/AddDestinationDialog'
 import { EditDestinationDialog } from '@/components/EditDestinationDialog'
+import { KeyNotSavedBadge, RecoveryKeyDialog } from '@/components/RecoveryKey'
 import { Button, Dialog } from '@/components/forms'
 import { Badge, Card, Skeleton, Stat, StatusDot } from '@/components/ui'
 import {
-  revealRecoveryKey,
   useCheckDestination,
   useDeleteDestination,
   useDestinations,
@@ -20,6 +20,7 @@ import { cn, formatBytes, relativeTime } from '@/lib/utils'
 export function Destinations() {
   const { data, isPending } = useDestinations()
   const [adding, setAdding] = useState(false)
+  const [newKeyFor, setNewKeyFor] = useState<Destination | null>(null)
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -57,7 +58,17 @@ export function Destinations() {
         </div>
       )}
 
-      {adding && <AddDestinationDialog onClose={() => setAdding(false)} />}
+      {adding && (
+        <AddDestinationDialog
+          onClose={() => setAdding(false)}
+          onCreated={(created) => {
+            setAdding(false)
+            // The last step of adding one: save its recovery key (not needed when it was connected with a key).
+            if (!created.recoveryKeyConfirmedAt) setNewKeyFor(created)
+          }}
+        />
+      )}
+      {newKeyFor && <RecoveryKeyDialog destination={newKeyFor} open justAdded onClose={() => setNewKeyFor(null)} />}
     </div>
   )
 }
@@ -83,6 +94,7 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
             <div className="flex items-center gap-2">
               <h3 className="font-semibold tracking-tight">{d.name}</h3>
               <Badge>{type?.label ?? d.kind}</Badge>
+              {!d.recoveryKeyConfirmedAt && <KeyNotSavedBadge onClick={() => setShowKey(true)} />}
             </div>
             <div className="mt-0.5 truncate font-mono text-xs text-muted">{d.path}</div>
           </div>
@@ -111,8 +123,13 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
           <Button variant="ghost" onClick={() => setEditing(true)} title="Edit name, location or credentials" aria-label="Edit destination">
             <Pencil className="size-4" />
           </Button>
-          <Button variant="ghost" onClick={() => setShowKey(true)} title="Recovery key" aria-label="Show recovery key">
-            <KeyRound className="size-4" />
+          <Button
+            variant="ghost"
+            onClick={() => setShowKey(true)}
+            title={d.recoveryKeyConfirmedAt ? 'Recovery key' : 'Recovery key: not saved yet'}
+            aria-label="Show recovery key"
+          >
+            <KeyRound className={cn('size-4', !d.recoveryKeyConfirmedAt && 'text-warn')} />
           </Button>
           <Button variant="ghost" onClick={() => setConfirmDelete(true)} title="Remove" aria-label="Remove destination">
             <Trash2 className="size-4" />
@@ -159,57 +176,3 @@ function DestinationCard({ destination: d }: { destination: Destination }) {
   )
 }
 
-function RecoveryKeyDialog({ destination, open, onClose }: { destination: Destination; open: boolean; onClose: () => void }) {
-  const [key, setKey] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-
-  const close = () => {
-    setKey(null)
-    setError(null)
-    setCopied(false)
-    onClose()
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onClose={close}
-      title="Recovery key"
-      description="Every backup in this destination is encrypted with this key. Without it, the backups cannot be restored by anyone, including you on a new machine."
-      footer={<Button onClick={close}>Done</Button>}
-    >
-      <div className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm">
-        Store it somewhere safe and separate from this computer, such as a password manager.
-      </div>
-      <div className="mt-4">
-        {key ? (
-          <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 break-all rounded-xl border border-line bg-surface px-3 py-2 font-mono text-sm">{key}</code>
-            <Button
-              onClick={async () => {
-                await navigator.clipboard.writeText(key)
-                setCopied(true)
-              }}
-              aria-label="Copy recovery key"
-            >
-              <Copy className="size-4" /> {copied ? 'Copied' : 'Copy'}
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="primary"
-            onClick={() =>
-              revealRecoveryKey(destination.id)
-                .then(setKey)
-                .catch((e: Error) => setError(e.message))
-            }
-          >
-            <Eye className="size-4" /> Reveal key
-          </Button>
-        )}
-        {error && <p className="mt-2 text-sm text-danger">{error}</p>}
-      </div>
-    </Dialog>
-  )
-}

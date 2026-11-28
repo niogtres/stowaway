@@ -22,6 +22,7 @@
   </ItemGroup>
   <Target Name="EnsurePublished" BeforeTargets="Build">
     <Error Condition="!Exists('$(PublishDir)Stowaway.Service.exe')" Text="Service not published to $(PublishDir). Run build.ps1 or dotnet publish first." />
+    <Error Condition="!Exists('$(PublishDir)tools\restic.exe') Or !Exists('$(PublishDir)tools\rclone.exe')" Text="restic.exe or rclone.exe missing from $(PublishDir)tools. Run tools\Get-BundledTools.ps1 (build.ps1 does)." />
     <Error Condition="!Exists('$(PublishDir)wwwroot\index.html')" Text="Web UI missing from $(PublishDir)wwwroot. Build web/ before publishing." />
   </Target>
 </Project>

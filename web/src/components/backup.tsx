@@ -41,7 +41,7 @@ export function BackupNowDialog({ app, open, onClose }: { app: AppInfo; open: bo
       open={open}
       onClose={close}
       title={`Back up ${app.name}`}
-      description={`${formatBytes(app.dataBytes, { lowerBound: app.sizeIncomplete })} of data. Only changes since the last backup are stored.`}
+      description={`${app.dataBytes === 0 && app.sizeIncomplete ? 'Size not known yet' : `${formatBytes(app.dataBytes, { lowerBound: app.sizeIncomplete })} of data`}. Only changes since the last backup are stored.`}
       footer={
         <>
           <Button onClick={close}>Cancel</Button>

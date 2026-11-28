@@ -15,7 +15,7 @@ public sealed class DropboxCallbackTests
     [InlineData("  http://127.0.0.1:53682/?code=x%2By&state=s  ", "state=s&code=x%2By")]
     [InlineData("http://localhost:53682/?state=s&error=access_denied&extra=1", "state=s&error=access_denied")]
     public void Pasted_callback_addresses_forward_only_the_oauth_parameters(string pasted, string query) =>
-        Assert.Equal(query, DropboxAuthService.CallbackQuery(pasted));
+        Assert.Equal(query, RcloneSignInService.CallbackQuery(pasted));
 
     [Theory]
     [InlineData("https://localhost:53682/?state=s&code=c")] // not what rclone listens on
@@ -25,7 +25,7 @@ public sealed class DropboxCallbackTests
     [InlineData("http://localhost:53682/?state=s")] // neither code nor error
     [InlineData("not a url")]
     public void Other_addresses_are_refused(string pasted) =>
-        Assert.Null(DropboxAuthService.CallbackQuery(pasted));
+        Assert.Null(RcloneSignInService.CallbackQuery(pasted));
 
     [Theory]
     [InlineData("https://www.dropbox.com/oauth2/authorize?client_id=x&state=s", true)]
@@ -33,7 +33,7 @@ public sealed class DropboxCallbackTests
     [InlineData("https://www.dropbox.com.evil.example/oauth2/authorize", false)]
     [InlineData("https://www.dropbox.com/login", false)]
     public void Only_dropbox_sign_in_pages_are_handed_to_the_browser(string url, bool ok) =>
-        Assert.Equal(ok, DropboxAuthService.IsDropboxAuthorizeUrl(new Uri(url)));
+        Assert.Equal(ok, RcloneSignInService.IsDropboxAuthorizeUrl(new Uri(url)));
 }
 
 /// <summary>

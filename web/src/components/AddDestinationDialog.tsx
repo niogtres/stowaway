@@ -1,14 +1,14 @@
 import { ShieldCheck, TriangleAlert } from 'lucide-react'
 import { createElement, useState, type FormEvent } from 'react'
 import { DestinationFields } from '@/components/DestinationFields'
-import { DropboxConnect, type DropboxSignIn } from '@/components/DropboxConnect'
+import { SignInConnect, type SignIn } from '@/components/SignInConnect'
 import { Button, Dialog, Field, TextInput } from '@/components/forms'
 import { iconFor, splitValues, type Values } from '@/lib/destinations'
-import { useCreateDestination, useDestinations, useDestinationTypes, type DestinationKind, type DestinationType } from '@/lib/api'
+import { useCreateDestination, useDestinations, useDestinationTypes, type Destination, type DestinationKind, type DestinationType } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 /** Mounted only while open (see Destinations page), so state starts fresh each time. */
-export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
+export function AddDestinationDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (created: Destination) => void }) {
   const types = useDestinationTypes().data ?? []
   const [kind, setKind] = useState<DestinationKind>('local')
   const [name, setName] = useState('')
@@ -33,18 +33,30 @@ export function AddDestinationDialog({ onClose }: { onClose: () => void }) {
           ))}
         </div>
         {/* Keyed by type, so switching starts with that type's defaults. */}
-        {type && <AddForm key={type.kind} type={type} name={name} setName={setName} onClose={onClose} />}
+        {type && <AddForm key={type.kind} type={type} name={name} setName={setName} onClose={onClose} onCreated={onCreated} />}
       </div>
     </Dialog>
   )
 }
 
-function AddForm({ type, name, setName, onClose }: { type: DestinationType; name: string; setName: (name: string) => void; onClose: () => void }) {
+function AddForm({
+  type,
+  name,
+  setName,
+  onClose,
+  onCreated,
+}: {
+  type: DestinationType
+  name: string
+  setName: (name: string) => void
+  onClose: () => void
+  onCreated: (created: Destination) => void
+}) {
   const create = useCreateDestination()
   const [values, setValues] = useState<Values>(() => Object.fromEntries(type.fields.filter((f) => f.default).map((f) => [f.key, f.default!])))
   const [connectExisting, setConnectExisting] = useState(false)
   const [existingKey, setExistingKey] = useState('')
-  const [signIn, setSignIn] = useState<DropboxSignIn | null>(null)
+  const [signIn, setSignIn] = useState<SignIn | null>(null)
 
   // Types with a browser sign-in can reuse the sign-in of a destination of the same type.
   const sameType = (useDestinations().data ?? []).filter((d) => d.kind === type.kind)
@@ -64,7 +76,7 @@ function AddForm({ type, name, setName, onClose }: { type: DestinationType; name
         signInSession: type.signIn && !reuseFrom ? signIn?.id : undefined,
         credentialsFrom: reuseFrom || undefined,
       },
-      { onSuccess: onClose },
+      { onSuccess: onCreated },
     )
   }
 
@@ -76,10 +88,10 @@ function AddForm({ type, name, setName, onClose }: { type: DestinationType; name
         <TextInput required value={name} onChange={(e) => setName(e.target.value)} placeholder={type.namePlaceholder} autoFocus />
       </Field>
 
-      {type.signIn === 'dropbox' && (
+      {type.signIn && (
         <>
           {sameType.length > 0 && (
-            <Field label="Dropbox account" hint="Reuse the account of a Dropbox destination you already have, or connect another one.">
+            <Field label={`${type.label} account`} hint={`Reuse the account of a ${type.label} destination you already have, or connect another one.`}>
               <select
                 value={reuseFrom}
                 onChange={(e) => setReuseChoice(e.target.value)}
@@ -90,11 +102,11 @@ function AddForm({ type, name, setName, onClose }: { type: DestinationType; name
                     Same account as {d.name} ({d.path})
                   </option>
                 ))}
-                <option value="">Connect another Dropbox account</option>
+                <option value="">Connect another {type.label} account</option>
               </select>
             </Field>
           )}
-          {!reuseFrom && <DropboxConnect value={signIn} onChange={setSignIn} />}
+          {!reuseFrom && <SignInConnect service={type.signIn} serviceLabel={type.label} value={signIn} onChange={setSignIn} />}
         </>
       )}
 

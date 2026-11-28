@@ -1,20 +1,34 @@
 import { Check, ExternalLink } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Button, TextInput } from '@/components/forms'
-import { completeDropbox, pollDropbox, startDropbox } from '@/lib/api'
+import { completeSignIn, pollSignIn, startSignIn } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-export interface DropboxSignIn {
+export interface SignIn {
   id: string
   state: 'pending' | 'ready' | 'failed'
   error: string | null
 }
 
 /**
- * Dropbox sign-in. The browser normally comes back to this computer by itself. On another computer (remote access)
+ * Browser sign-in to a cloud service (Dropbox, OneDrive), done by rclone on the Stowaway computer. The browser normally comes back to this computer by itself. On another computer (remote access)
  * it ends on a localhost page that can't load; pasting that address here finishes the sign-in.
  */
-export function DropboxConnect({ value, onChange, label = 'Connect Dropbox' }: { value: DropboxSignIn | null; onChange: (s: DropboxSignIn | null) => void; label?: string }) {
+export function SignInConnect({
+  service,
+  serviceLabel,
+  value,
+  onChange,
+  label = `Connect ${serviceLabel}`,
+}: {
+  /** The destination type's signIn, e.g. 'dropbox'. */
+  service: string
+  /** e.g. 'Dropbox'. */
+  serviceLabel: string
+  value: SignIn | null
+  onChange: (s: SignIn | null) => void
+  label?: string
+}) {
   const [starting, setStarting] = useState(false)
   const [pasted, setPasted] = useState('')
   const [pasteError, setPasteError] = useState<string | null>(null)
@@ -26,19 +40,19 @@ export function DropboxConnect({ value, onChange, label = 'Connect Dropbox' }: {
   useEffect(() => {
     if (!value || value.state !== 'pending') return
     const timer = setInterval(() => {
-      pollDropbox(value.id)
+      pollSignIn(service, value.id)
         .then((s) => onChange({ id: s.id, state: s.state, error: s.error }))
         .catch(() => onChange({ ...value, state: 'failed', error: 'The sign-in session expired.' }))
     }, 1500)
     return () => clearInterval(timer)
-  }, [value, onChange])
+  }, [service, value, onChange])
 
   const connect = async () => {
     setStarting(true)
     setPasted('')
     setPasteError(null)
     try {
-      const session = await startDropbox()
+      const session = await startSignIn(service)
       onChange({ id: session.id, state: session.state, error: session.error })
       if (session.authUrl) window.open(session.authUrl, '_blank', 'noopener')
     } catch (e) {
@@ -53,7 +67,7 @@ export function DropboxConnect({ value, onChange, label = 'Connect Dropbox' }: {
     setSending(true)
     setPasteError(null)
     try {
-      const s = await completeDropbox(value.id, pasted)
+      const s = await completeSignIn(service, value.id, pasted)
       onChange({ id: s.id, state: s.state, error: s.error })
     } catch (e) {
       setPasteError((e as Error).message)
@@ -84,15 +98,15 @@ export function DropboxConnect({ value, onChange, label = 'Connect Dropbox' }: {
     <div className="rounded-xl border border-line p-4">
       {value?.state === 'ready' ? (
         <p className="flex items-center gap-2 text-sm text-ok">
-          <Check className="size-4" /> Dropbox connected.
+          <Check className="size-4" /> {serviceLabel} connected.
         </p>
       ) : remote ? (
-        // The browser isn't on the Stowaway computer, so Dropbox's return trip can't reach it: walk through the extra step.
+        // The browser isn't on the Stowaway computer, so the service's return trip can't reach it: walk through the extra step.
         <div className="space-y-3 text-sm">
           <p className="font-medium">You're on another computer, so connecting takes one extra step:</p>
           <ol className="space-y-2">
             <Step n={1} active={value?.state !== 'pending'}>
-              Choose <strong>{label}</strong>. Dropbox opens in a new tab: sign in and choose <strong>Allow</strong>.
+              Choose <strong>{label}</strong>. {serviceLabel} opens in a new tab: sign in and allow access.
             </Step>
             <Step n={2} active={value?.state === 'pending'}>
               The tab then shows an error like <em>“localhost refused to connect”</em>. That's expected. Copy the whole address from that tab's
@@ -118,14 +132,14 @@ export function DropboxConnect({ value, onChange, label = 'Connect Dropbox' }: {
       ) : value?.state === 'pending' ? (
         <div className="space-y-3 text-sm">
           <p>
-            Finish signing in on the Dropbox page that just opened, and choose <strong>Allow</strong>. This window updates by itself.{' '}
+            Finish signing in on the {serviceLabel} page that just opened, and allow access. This window updates by itself.{' '}
             <button type="button" onClick={connect} className="text-accent hover:underline">
               Start again
             </button>
           </p>
           <div className="space-y-2 border-t border-line pt-3">
             <p className="text-muted">
-              Did the Dropbox tab end on a page that can't load (an address starting with <code className="font-mono">http://localhost:53682/</code>)? Copy
+              Did the {serviceLabel} tab end on a page that can't load (an address starting with <code className="font-mono">http://localhost:53682/</code>)? Copy
               that whole address and paste it here.
             </p>
             {pasteBox}
@@ -133,7 +147,7 @@ export function DropboxConnect({ value, onChange, label = 'Connect Dropbox' }: {
         </div>
       ) : (
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted">Sign in to Dropbox and allow access. Stowaway only keeps the access it is given.</p>
+          <p className="text-sm text-muted">Sign in to {serviceLabel} and allow access. Stowaway only keeps the access it is given.</p>
           <Button variant="primary" onClick={connect} disabled={starting}>
             <ExternalLink className="size-4" /> {starting ? 'Starting…' : label}
           </Button>
@@ -155,8 +169,8 @@ function Step({ n, active, children }: { n: number; active: boolean; children: R
   )
 }
 
-/** The Dropbox folder field: everything goes under /Stowaway/, the user picks an optional subfolder. */
-export function DropboxFolderInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/** The folder field of a cloud drive: everything goes under /Stowaway/, the user picks an optional subfolder. */
+export function StowawayFolderInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center rounded-xl border border-line bg-surface-strong focus-within:border-accent">
       <span className="pl-3 font-mono text-sm text-muted">/Stowaway/</span>

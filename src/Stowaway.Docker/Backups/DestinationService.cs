@@ -124,6 +124,8 @@ public sealed class DestinationService(
             Kind = request.Kind,
             Path = path,
             ProtectedRepositoryPassword = secrets.Protect(password),
+            // Connected with a key the owner typed in: they have it.
+            RecoveryKeyConfirmedAt = existingPassword is null ? null : DateTimeOffset.UtcNow,
         };
         Destinations.DestinationValues.Store(destination, provider.Descriptor, values, secrets);
 
@@ -188,11 +190,54 @@ public sealed class DestinationService(
         return status;
     }
 
-    public async Task<string> RevealRepositoryPasswordAsync(Guid id, CancellationToken ct)
+    public async Task<string> RevealRepositoryPasswordAsync(Guid id, CancellationToken ct) =>
+        (await RevealAsync(id, ct)).Key;
+
+    /// <summary>The recovery key and the recovery kit that explains it (both secret: local sessions only).</summary>
+    public async Task<(string Key, string Kit, string FileName)> RevealAsync(Guid id, CancellationToken ct)
     {
         var destination = await store.GetAsync(id, ct) ?? throw new KeyNotFoundException();
         logger.LogWarning("Recovery key for destination {Name} was revealed", destination.Name);
-        return secrets.Unprotect(destination.ProtectedRepositoryPassword);
+        var key = secrets.Unprotect(destination.ProtectedRepositoryPassword);
+        return (key, RecoveryKit.Build(KitInfo(destination), key, DateTimeOffset.UtcNow), RecoveryKit.FileName(destination.Name));
+    }
+
+    /// <summary>The owner keeps the recovery key away from this computer.</summary>
+    public async Task ConfirmRecoveryKeyAsync(Guid id, CancellationToken ct)
+    {
+        var destination = await store.GetAsync(id, ct) ?? throw new KeyNotFoundException();
+        destination.RecoveryKeyConfirmedAt = DateTimeOffset.UtcNow;
+        await store.UpdateAsync(destination, ct);
+        logger.LogInformation("Recovery key for destination {Name} confirmed as saved", destination.Name);
+        events.DestinationsChanged();
+    }
+
+    /// <summary>Whether a key the owner kept is this destination's key; a match also confirms it's saved.</summary>
+    public async Task<bool> CheckRecoveryKeyAsync(Guid id, string candidate, CancellationToken ct)
+    {
+        var destination = await store.GetAsync(id, ct) ?? throw new KeyNotFoundException();
+        var matches = RecoveryKit.Matches(secrets.Unprotect(destination.ProtectedRepositoryPassword), candidate);
+        logger.LogInformation("Recovery key check for destination {Name}: {Result}", destination.Name, matches ? "matches" : "doesn't match");
+        if (matches)
+        {
+            destination.RecoveryKeyConfirmedAt = DateTimeOffset.UtcNow;
+            await store.UpdateAsync(destination, ct);
+            events.DestinationsChanged();
+        }
+
+        return matches;
+    }
+
+    /// <summary>A short, non-secret fingerprint of the destination's key, matching the one in its recovery kit.</summary>
+    public string KeyFingerprint(Destination destination) => RecoveryKit.Fingerprint(secrets.Unprotect(destination.ProtectedRepositoryPassword));
+
+    private RecoveryKitInfo KitInfo(Destination destination)
+    {
+        var provider = Provider(destination.Kind);
+        var values = Destinations.DestinationValues.Load(destination, provider.Descriptor, secrets);
+        var repository = provider is Destinations.CloudProvider cloud ? cloud.Connect(values).Repository : destination.Path;
+        return new RecoveryKitInfo(destination.Name, provider.Descriptor.Label, destination.Path, repository, destination.RepositoryId,
+            Environment.MachineName, destination.CreatedAt, repository.StartsWith("rclone:", StringComparison.Ordinal));
     }
 
     /// <summary>

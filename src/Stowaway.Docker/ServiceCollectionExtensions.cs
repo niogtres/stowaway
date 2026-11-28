@@ -39,7 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddDatabaseProviders();
         services.AddDestinationProviders();
         services.AddSingleton<DatabaseProbe>();
-        services.AddSingleton<DropboxAuthService>();
+        services.AddSingleton<RcloneSignInService>();
         services.AddSingleton<DestinationService>();
         services.AddSingleton<Restore.SnapshotCatalog>();
         services.AddSingleton<Restore.RestoreService>();
@@ -70,6 +70,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<Destinations.IDestinationProvider, Destinations.AzureProvider>();
         services.AddSingleton<Destinations.IDestinationProvider, Destinations.SftpProvider>();
         services.AddSingleton<Destinations.IDestinationProvider, Destinations.DropboxProvider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.RestServerProvider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.GcsProvider>();
+        services.AddSingleton<Destinations.IDestinationProvider, Destinations.OneDriveProvider>();
+        services.AddSingleton<Destinations.RcloneTokens>();
         services.AddSingleton<Destinations.DestinationProviders>();
         return services;
     }

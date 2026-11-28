@@ -22,6 +22,15 @@ public enum DestinationKind
 
     /// <summary>Dropbox, through rclone.</summary>
     Dropbox,
+
+    /// <summary>restic's REST server (rest-server), optionally append-only.</summary>
+    Rest,
+
+    /// <summary>Google Cloud Storage.</summary>
+    Gcs,
+
+    /// <summary>Microsoft OneDrive (personal, or work and school), through rclone.</summary>
+    OneDrive,
 }
 
 /// <summary>Where backups go: one restic repository. Persisted; secrets are stored DPAPI-protected.</summary>
@@ -51,6 +60,12 @@ public sealed class Destination
     /// <summary>restic's repository id, recorded at init/connect so a swapped repository is detected.</summary>
     public string? RepositoryId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// When the owner confirmed they keep the recovery key away from this computer (or proved it by pasting it, or by
+    /// connecting with it). Null: not yet, and Stowaway keeps warning, because a lost computer takes the only copy.
+    /// </summary>
+    public DateTimeOffset? RecoveryKeyConfirmedAt { get; set; }
 }
 
 public enum BackupStrategy
@@ -115,6 +130,9 @@ public sealed class BackupRun
     public long? FilesProcessed { get; set; }
     public long? BytesProcessed { get; set; }
     public long? BytesAdded { get; set; }
+
+    /// <summary>Bytes of database dumps (or copied database files) in the snapshot; null when there were none.</summary>
+    public long? DatabaseBytes { get; set; }
 
     /// <summary>Seconds the app's containers were stopped (StopStart only).</summary>
     public double? DowntimeSeconds { get; set; }

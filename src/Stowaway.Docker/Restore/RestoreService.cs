@@ -57,6 +57,14 @@ public sealed class RestoreService(SnapshotCatalog catalog, IInventoryProvider i
             {
                 warnings.Add("All of this app's containers already exist; only the data will be restored.");
             }
+
+            foreach (var container in missing)
+            {
+                if (Stowaway.Core.Profiles.AppProfiles.Of(container.Product)?.RecreateWarning(container.Name) is { } warning)
+                {
+                    warnings.Add(warning);
+                }
+            }
         }
 
         return new RestorePreview(

@@ -34,14 +34,24 @@ public interface IDestinationProvider
     IReadOnlyDictionary<string, string> TakeSignIn(Guid session) =>
         throw new DestinationValidationException($"{Descriptor.Label} destinations don't use a browser sign-in.");
 
-    /// <summary>How restic reaches the repository for one run. Disposed when the run ends.</summary>
+    /// <summary>
+    /// How restic reaches the repository for one run. Disposed when the run ends. Values the provider had to change
+    /// to get there (e.g. a refreshed sign-in token) go in <see cref="RepositoryAccess.UpdatedValues"/>; Stowaway saves them.
+    /// </summary>
     Task<RepositoryAccess> OpenAsync(IReadOnlyDictionary<string, string> values, CancellationToken ct);
+
+    /// <summary>
+    /// The repository only accepts new data (e.g. an append-only REST server): Stowaway adds backups but doesn't apply
+    /// retention or prune, which would fail there. The server's owner removes old snapshots.
+    /// </summary>
+    bool AppendOnly(IReadOnlyDictionary<string, string> values) => false;
 }
 
 /// <summary>How a runner reaches a repository for one run, and what to undo afterwards.</summary>
 /// <param name="Repository">restic's repository string (e.g. <c>s3:…</c>, or the mounted <see cref="ResticRepository.RepositoryPath"/>).</param>
 /// <param name="Environment">Variables for restic/rclone. Written to a file inside the runner, never put in the container config.</param>
 /// <param name="Files">Files placed in the runner before it starts (keys, known_hosts).</param>
+/// <param name="UpdatedValues">Destination values that changed while opening (secrets included), saved by Stowaway; null when none did.</param>
 public sealed record RepositoryAccess(
     string Repository,
     IReadOnlyDictionary<string, string> Environment,
@@ -49,7 +59,8 @@ public sealed record RepositoryAccess(
     IReadOnlyList<string> ExtraArgs,
     IReadOnlyList<RunnerMount> Mounts,
     bool Network,
-    Func<Task>? Cleanup = null) : IAsyncDisposable
+    Func<Task>? Cleanup = null,
+    IReadOnlyDictionary<string, string>? UpdatedValues = null) : IAsyncDisposable
 {
     public static RepositoryAccess FromConnection(RepositoryConnection connection) =>
         new(connection.Repository, connection.Environment, connection.Files, connection.ExtraArgs, [], connection.Network);
@@ -83,7 +94,10 @@ public sealed class DestinationProviders(IEnumerable<IDestinationProvider> provi
             new B2Provider(),
             new AzureProvider(),
             new SftpProvider(runner),
-            new DropboxProvider(new DropboxAuthService(runner, Microsoft.Extensions.Logging.Abstractions.NullLogger<DropboxAuthService>.Instance)),
+            new DropboxProvider(new RcloneSignInService(runner, Microsoft.Extensions.Logging.Abstractions.NullLogger<RcloneSignInService>.Instance)),
+            new RestServerProvider(),
+            new GcsProvider(),
+            new OneDriveProvider(new RcloneSignInService(runner, Microsoft.Extensions.Logging.Abstractions.NullLogger<RcloneSignInService>.Instance), new RcloneTokens(runner)),
         ]);
 }
 

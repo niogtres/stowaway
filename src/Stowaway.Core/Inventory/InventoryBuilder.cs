@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Stowaway.Core.Profiles;
 
 namespace Stowaway.Core.Inventory;
 
@@ -42,6 +43,7 @@ public static partial class InventoryBuilder
             : null;
 
     /// <param name="protection">Resolves (item id, holds data) to a status; null treats everything with data as unprotected.</param>
+    /// <param name="includedFolders">Host folders (Windows paths) the owner chose to include although they're excluded by default.</param>
     public static InventorySnapshot Build(
         RawInventory raw,
         SizeIndex sizes,
@@ -49,9 +51,11 @@ public static partial class InventoryBuilder
         DateTimeOffset capturedAt,
         Func<string, bool, ProtectionStatus>? protection = null,
         string platform = Platforms.Linux,
-        Databases.DatabaseSupport? databases = null)
+        Databases.DatabaseSupport? databases = null,
+        IReadOnlySet<string>? includedFolders = null)
     {
         databases ??= Databases.DatabaseSupport.None;
+        includedFolders ??= IncludedFolders.Empty;
         protection ??= static (_, hasData) => hasData ? ProtectionStatus.Unprotected : ProtectionStatus.Stateless;
         raw = WithoutOwnResources(raw);
         var externalVolumes = raw.Volumes
@@ -64,12 +68,12 @@ public static partial class InventoryBuilder
             .ToHashSet(StringComparer.Ordinal);
 
         var containers = raw.Containers
-            .Select(c => (Raw: c, Info: MapContainer(c, sizes, localOnlyImages, externalVolumes, databases, platform)))
+            .Select(c => (Raw: c, Info: MapContainer(c, sizes, localOnlyImages, externalVolumes, databases, platform, includedFolders)))
             .ToList();
 
         var apps = containers
             .GroupBy(c => AppKey(c.Raw), StringComparer.Ordinal)
-            .Select(g => BuildApp(g.Key, g.Select(x => x.Raw).ToList(), g.Select(x => x.Info).ToList(), protection, platform))
+            .Select(g => BuildApp(g.Key, g.Select(x => x.Raw).ToList(), g.Select(x => x.Info).ToList(), protection, platform, sizes))
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -137,12 +141,20 @@ public static partial class InventoryBuilder
             ? $"compose:{project}"
             : $"container:{c.Name}";
 
-    private static AppInfo BuildApp(string key, IReadOnlyList<RawContainer> raws, IReadOnlyList<ContainerInfo> containers, Func<string, bool, ProtectionStatus> protection, string platform)
+    private static AppInfo BuildApp(string key, IReadOnlyList<RawContainer> raws, IReadOnlyList<ContainerInfo> containers, Func<string, bool, ProtectionStatus> protection, string platform,
+        SizeIndex sizes)
     {
         var isCompose = key.StartsWith("compose:", StringComparison.Ordinal);
         var labels = raws[0].Labels;
         var (bytes, incomplete, _) = MeasureMounts(containers.SelectMany(c => c.Mounts));
         var hasData = HasData(platform, containers);
+
+        // Databases whose data lives only inside the container: sized by their last backup, unknown until then. On
+        // Linux an included mount is where the database keeps its data; Windows containers (SQL Server) keep it in the
+        // container itself, so only a volume counts there, not a folder such as Business Central's own.
+        var inContainer = containers.Any(c => HoldsDatabase(platform, c)
+            && !c.Mounts.Any(m => m.Included && (platform != Platforms.Windows || m.Kind == MountKind.Volume)));
+        long? databaseBytes = inContainer && sizes.DatabaseBytes.TryGetValue(key, out var dumped) ? dumped : null;
 
         return new AppInfo
         {
@@ -154,8 +166,9 @@ public static partial class InventoryBuilder
                 ? files.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 : [],
             Containers = containers.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList(),
-            DataBytes = bytes,
-            SizeIncomplete = incomplete,
+            DataBytes = bytes + (databaseBytes ?? 0),
+            DatabaseBytes = databaseBytes,
+            SizeIncomplete = incomplete || (inContainer && databaseBytes is null),
             Protection = protection(key, hasData),
             Platform = platform,
         };
@@ -167,8 +180,10 @@ public static partial class InventoryBuilder
     /// Server container's database files are copied too.
     /// </summary>
     public static bool HasData(string platform, IEnumerable<ContainerInfo> containers) =>
-        containers.Any(c => c.Mounts.Any(m => m.Included)
-            || (c.Database is not null && c.DumpSupported && (c.State == "running" || platform == Platforms.Windows)));
+        containers.Any(c => c.Mounts.Any(m => m.Included) || HoldsDatabase(platform, c));
+
+    private static bool HoldsDatabase(string platform, ContainerInfo c) =>
+        c.Database is not null && c.DumpSupported && (c.State == "running" || platform == Platforms.Windows);
 
     /// <summary>Sums included mounts, counting each volume or host path once.</summary>
     private static (long Bytes, bool Incomplete, bool HasData) MeasureMounts(IEnumerable<MountInfo> mounts)
@@ -201,17 +216,21 @@ public static partial class InventoryBuilder
     private static string MountIdentity(MountInfo m) => m.VolumeName is not null ? $"v:{m.VolumeName}" : $"p:{m.DisplaySource}";
 
     private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes,
-        Databases.DatabaseSupport databases, string platform)
+        Databases.DatabaseSupport databases, string platform, IReadOnlySet<string> includedFolders)
     {
         var database = DatabaseDetector.Detect(c.Image, c.Command);
-        return MapContainer(c, sizes, localOnlyImages, externalVolumes) with
+        return MapContainer(c, sizes, localOnlyImages, externalVolumes, includedFolders) with
         {
             Database = database,
             DumpSupported = database is { } kind && databases.CanDump(kind, platform),
         };
     }
 
-    private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes) => new()
+    private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes,
+        IReadOnlySet<string> includedFolders) => MapContainer(c, sizes, localOnlyImages, externalVolumes, includedFolders, AppProfiles.Detect(c.Labels));
+
+    private static ContainerInfo MapContainer(RawContainer c, SizeIndex sizes, HashSet<string> localOnlyImages, IReadOnlyDictionary<string, string> externalVolumes,
+        IReadOnlySet<string> includedFolders, AppProduct? product) => new()
     {
         Id = c.Id,
         Name = c.Name,
@@ -225,10 +244,43 @@ public static partial class InventoryBuilder
         CreatedAt = c.Created,
         ComposeService = c.Labels.GetValueOrDefault(ComposeServiceLabel),
         ComposeDependsOn = c.Labels.GetValueOrDefault(Backups.ComposeOrder.DependsOnLabel),
-        Mounts = c.Mounts.Select(m => MapMount(m, sizes, ProjectDir(c), externalVolumes)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
+        Product = product,
+        Mounts = c.Mounts.Select(m => MapMount(m, sizes, ProjectDir(c), product, externalVolumes, includedFolders)).OrderBy(m => m.Destination, StringComparer.Ordinal).ToList(),
     };
 
-    private static MountInfo MapMount(RawMount m, SizeIndex sizes, string? projectDir, IReadOnlyDictionary<string, string> externalVolumes)
+    /// <summary>How a bind mount is treated.</summary>
+    /// <param name="WindowsPath">The folder's Windows path, or null when it only exists inside the engine's VM.</param>
+    /// <param name="Reason">Why it isn't backed up, or null when it is.</param>
+    /// <param name="CanInclude">Left out by default, and the owner may include it.</param>
+    /// <param name="Note">Why it's included although it's outside the app (e.g. a Business Central container's own folder).</param>
+    /// <param name="NotNeeded">Left out because it needs no backup at all (a cache, a shared tool folder), per the container's product.</param>
+    public sealed record BindDecision(string? WindowsPath, string? Reason, bool CanInclude, bool IncludedByOwner, string? Note, bool NotNeeded = false);
+
+    /// <summary>
+    /// Whether a bind mount is backed up: folders inside the app's project folder, folders the container's product
+    /// keeps its own files in (<see cref="IAppProfile.Bind"/>), and folders the owner included.
+    /// </summary>
+    /// <param name="profile">The product's profile; looked up from <paramref name="product"/> when null.</param>
+    public static BindDecision DecideBind(RawMount m, string? projectDir, AppProduct? product, IReadOnlySet<string> includedFolders, IAppProfile? profile = null)
+    {
+        var windows = HostPaths.ToWindowsPath(m.Source);
+        var defaultReason = HostPaths.BindExclusionReason(m.Source, m.Destination, projectDir);
+        var rule = (profile ?? AppProfiles.Of(product)) is { } known && windows is not null && defaultReason is not null
+            ? known.Bind(defaultReason, windows, m.Destination)
+            : new ProfileBind(defaultReason);
+        if (rule.Reason is null && !HostPaths.CanInclude(defaultReason))
+        {
+            // Profiles only include folders the owner could include: never drives, system folders or shares.
+            rule = rule with { Reason = defaultReason, Note = null };
+        }
+
+        var canInclude = windows is not null && rule.Reason is not null && HostPaths.CanInclude(defaultReason);
+        var byOwner = canInclude && includedFolders.Contains(windows!);
+        return new BindDecision(windows, byOwner ? null : rule.Reason, canInclude, byOwner, rule.Note, !byOwner && rule.Reason is not null && rule.NotNeeded);
+    }
+
+    private static MountInfo MapMount(RawMount m, SizeIndex sizes, string? projectDir, AppProduct? product, IReadOnlyDictionary<string, string> externalVolumes,
+        IReadOnlySet<string> includedFolders)
     {
         switch (m.Type.ToLowerInvariant())
         {
@@ -253,19 +305,22 @@ public static partial class InventoryBuilder
 
             case "bind":
             {
-                var windows = HostPaths.ToWindowsPath(m.Source);
-                var reason = HostPaths.BindExclusionReason(m.Source, m.Destination, projectDir);
+                var bind = DecideBind(m, projectDir, product, includedFolders);
                 return new MountInfo
                 {
                     Kind = MountKind.Bind,
                     Source = m.Source,
-                    DisplaySource = windows ?? m.Source,
+                    DisplaySource = bind.WindowsPath ?? m.Source,
                     Destination = m.Destination,
                     ReadOnly = !m.ReadWrite,
-                    Included = reason is null,
-                    ExclusionReason = reason,
+                    Included = bind.Reason is null,
+                    ExclusionReason = bind.Reason,
+                    CanInclude = bind.CanInclude,
+                    IncludedByOwner = bind.IncludedByOwner,
+                    Note = bind.Note,
+                    NotNeeded = bind.NotNeeded,
                     // Folders outside the app aren't measured: their size is irrelevant to the backup.
-                    SizeBytes = reason is null && windows is not null && sizes.HostPaths.TryGetValue(windows, out var size) ? size : null,
+                    SizeBytes = bind.Reason is null && bind.WindowsPath is not null && sizes.HostPaths.TryGetValue(bind.WindowsPath, out var size) ? size : null,
                 };
             }
 
@@ -310,6 +365,15 @@ public static partial class InventoryBuilder
                         protectedBytes += mount.SizeBytes.Value;
                     }
                 }
+            }
+        }
+
+        foreach (var app in apps.Where(a => a.DatabaseBytes is not null))
+        {
+            dataBytes += app.DatabaseBytes!.Value;
+            if (app.Protection == ProtectionStatus.Protected)
+            {
+                protectedBytes += app.DatabaseBytes.Value;
             }
         }
 

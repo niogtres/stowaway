@@ -55,6 +55,24 @@ export interface MountInfo {
   included: boolean
   exclusionReason: string | null
   sizeBytes: number | null
+  /** A host folder left out by default that the owner may include. */
+  canInclude: boolean
+  includedByOwner: boolean
+  /** Why a folder outside the app is included by default (e.g. a Business Central container's own folder). */
+  note: string | null
+  /** Left out because it needs no backup at all (e.g. Business Central's artifact cache), not because it lives elsewhere. */
+  notNeeded: boolean
+}
+
+/** The product a container runs, when Stowaway recognizes it. */
+export interface AppProduct {
+  /** The server-side app profile that recognized it, e.g. business-central. */
+  profile: string
+  name: string
+  version: string | null
+  country: string | null
+  /** What Stowaway does differently for this product, for the app's card. */
+  note: string | null
 }
 
 export interface ContainerInfo {
@@ -69,6 +87,7 @@ export interface ContainerInfo {
   createdAt: string
   composeService: string | null
   database: DatabaseKind | null
+  product: AppProduct | null
   /** Whether Stowaway can back up this database consistently while it runs (decided by the server's database providers). */
   dumpSupported: boolean
   mounts: MountInfo[]
@@ -82,6 +101,8 @@ export interface AppInfo {
   composeConfigFiles: string[]
   containers: ContainerInfo[]
   dataBytes: number
+  /** Databases inside the containers, sized by the last backup. */
+  databaseBytes: number | null
   sizeIncomplete: boolean
   protection: ProtectionStatus
   platform: 'linux' | 'windows'
@@ -134,7 +155,7 @@ export interface InventoryResponse {
 
 // ---- Backups -------------------------------------------------------------
 
-export type DestinationKind = 'local' | 'smb' | 's3' | 'b2' | 'azure' | 'sftp' | 'dropbox'
+export type DestinationKind = 'local' | 'smb' | 's3' | 'b2' | 'azure' | 'sftp' | 'dropbox' | 'rest' | 'gcs' | 'oneDrive'
 export type BackupStrategy = 'live' | 'stopStart'
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type RunKind = 'backup' | 'maintenance' | 'restore' | 'drill'
@@ -160,13 +181,17 @@ export interface Destination {
   status: DestinationStatus | null
   /** The destination's non-secret field values (folder, bucket, host…), keyed like its type's fields. */
   settings: Record<string, string>
+  /** When the owner confirmed the recovery key is stored away from this computer; null: not yet (warn). */
+  recoveryKeyConfirmedAt: string | null
+  /** A short, non-secret check value of the key, also printed in its recovery kit. */
+  recoveryKeyFingerprint: string | null
 }
 
 /** A field a destination type needs, as the server describes it (GET /api/destination-types). */
 export interface DestinationField {
   key: string
   label: string
-  type: 'text' | 'password' | 'multiline' | 'number' | 'dropboxFolder'
+  type: 'text' | 'password' | 'multiline' | 'number' | 'stowawayFolder' | 'toggle'
   section: 'location' | 'credentials'
   required: boolean
   secret: boolean
@@ -184,7 +209,7 @@ export interface DestinationType {
   icon: string
   namePlaceholder: string
   fields: DestinationField[]
-  /** A browser sign-in instead of typed credentials ('dropbox'). */
+  /** A browser sign-in instead of typed credentials: the service ('dropbox', 'onedrive'). */
   signIn: string | null
   notes: string | null
 }
@@ -197,7 +222,7 @@ export interface CreateDestination {
   secrets: Record<string, string>
   existingRepositoryPassword?: string
   signInSession?: string
-  /** Reuse the credentials (e.g. the Dropbox sign-in) of this destination of the same type. */
+  /** Reuse the credentials (e.g. the Dropbox or OneDrive sign-in) of this destination of the same type. */
   credentialsFrom?: string
 }
 
@@ -661,6 +686,14 @@ export function useRefreshInventory() {
   })
 }
 
+export function useIncludeFolder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ path, include }: { path: string; include: boolean }) => request<void>('POST', '/api/inventory/folders', { path, include }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.inventory }),
+  })
+}
+
 export function useDestinations() {
   return useQuery({
     queryKey: queryKeys.destinations,
@@ -705,19 +738,31 @@ export function useDeleteDestination() {
   })
 }
 
-export interface DropboxSession {
+export interface SignInSession {
   id: string
   state: 'pending' | 'ready' | 'failed'
   authUrl: string | null
   error: string | null
 }
 
-export const startDropbox = () => request<DropboxSession>('POST', '/api/dropbox/connect')
-export const pollDropbox = (id: string) => request<DropboxSession>('GET', `/api/dropbox/connect/${id}`)
-export const completeDropbox = (id: string, url: string) => request<DropboxSession>('POST', `/api/dropbox/connect/${id}/callback`, { url })
+/** Browser sign-in to a cloud service (a destination type's signIn). */
+export const startSignIn = (service: string) => request<SignInSession>('POST', `/api/${service}/connect`)
+export const pollSignIn = (service: string, id: string) => request<SignInSession>('GET', `/api/${service}/connect/${id}`)
+export const completeSignIn = (service: string, id: string, url: string) => request<SignInSession>('POST', `/api/${service}/connect/${id}/callback`, { url })
 
-export const revealRecoveryKey = (id: string) =>
-  request<{ recoveryKey: string }>('POST', `/api/destinations/${id}/recovery-key`).then((r) => r.recoveryKey)
+/** The recovery key and its recovery kit (a text file). Local sessions only. */
+export interface RecoveryKeyReveal {
+  recoveryKey: string
+  kit: string
+  kitFileName: string
+}
+
+export const revealRecoveryKey = (id: string) => request<RecoveryKeyReveal>('POST', `/api/destinations/${id}/recovery-key`)
+/** "I've stored the key away from this computer." Local sessions only. */
+export const confirmRecoveryKey = (id: string) => request<void>('POST', `/api/destinations/${id}/recovery-key/confirm`)
+/** Whether a stored key is this destination's key (a match also confirms it). Local sessions only. */
+export const checkRecoveryKey = (id: string, key: string) =>
+  request<{ matches: boolean }>('POST', `/api/destinations/${id}/recovery-key/check`, { key }).then((r) => r.matches)
 
 export function useBackupRuns(limit = 200) {
   return useQuery({

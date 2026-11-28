@@ -34,8 +34,18 @@ public sealed record RawInventory(
     IReadOnlyList<RawVolume> Volumes,
     IReadOnlyList<RawImage> Images);
 
-/// <summary>Known data sizes in bytes, keyed by volume name or by normalized host path for bind mounts.</summary>
-public sealed record SizeIndex(IReadOnlyDictionary<string, long> Volumes, IReadOnlyDictionary<string, long> HostPaths)
+/// <summary>
+/// Known data sizes in bytes, keyed by volume name, by normalized host path for bind mounts, and by app id for
+/// databases inside containers (the size of the last successful backup's database dumps).
+/// </summary>
+public sealed record SizeIndex(
+    IReadOnlyDictionary<string, long> Volumes,
+    IReadOnlyDictionary<string, long> HostPaths,
+    IReadOnlyDictionary<string, long>? Databases = null)
 {
     public static SizeIndex Empty { get; } = new(new Dictionary<string, long>(), new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase));
+
+    public IReadOnlyDictionary<string, long> DatabaseBytes => Databases ?? EmptyDatabases;
+
+    private static readonly Dictionary<string, long> EmptyDatabases = new(StringComparer.Ordinal);
 }

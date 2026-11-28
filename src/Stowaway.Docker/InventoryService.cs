@@ -39,7 +39,8 @@ public sealed class InventoryService(
     TimeProvider time,
     ILogger<InventoryService> logger,
     IProtectionSource? protection = null,
-    Stowaway.Core.Databases.DatabaseSupport? databases = null) : BackgroundService, IInventoryProvider
+    Stowaway.Core.Databases.DatabaseSupport? databases = null,
+    IIncludedFolderStore? folders = null) : BackgroundService, IInventoryProvider
 {
     private static readonly JsonSerializerOptions FingerprintJson = new() { WriteIndented = false };
 
@@ -50,6 +51,7 @@ public sealed class InventoryService(
     private readonly ConcurrentDictionary<string, long> _pathSizes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Lock _gate = new();
 
+    private volatile IReadOnlySet<string> _included = IncludedFolders.Empty;
     private RawInventory? _lastRaw;
     private InventorySnapshot? _current;
     private string? _fingerprint;
@@ -63,8 +65,47 @@ public sealed class InventoryService(
 
     private void RequestSizes() => _sizeTriggers.Writer.TryWrite(true);
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>Includes (or stops including) a host folder the owner chose; it must be one <see cref="HostPaths.CanInclude"/> allows.</summary>
+    public async Task SetFolderIncludedAsync(string path, bool include, CancellationToken ct)
     {
+        if (folders is null)
+        {
+            throw new InvalidOperationException("Included folders aren't stored in this configuration.");
+        }
+
+        if (include)
+        {
+            await folders.AddAsync(new IncludedFolder { Path = path, AddedAt = time.GetUtcNow() }, ct);
+        }
+        else
+        {
+            await folders.RemoveAsync(path, ct);
+        }
+
+        await LoadIncludedAsync(ct);
+        Rebuild();
+        RequestSizes();
+    }
+
+    private async Task LoadIncludedAsync(CancellationToken ct)
+    {
+        if (folders is not null)
+        {
+            _included = IncludedFolders.Of((await folders.ListAsync(ct)).Select(f => f.Path));
+        }
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await LoadIncludedAsync(stoppingToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not load the folders included by the owner");
+        }
+
         engine.StatusChanged += OnEngineStatusChanged;
         stoppingToken.Register(() => engine.StatusChanged -= OnEngineStatusChanged);
         if (protection is not null)
@@ -74,7 +115,7 @@ public sealed class InventoryService(
         }
 
         RequestRefresh();
-        return Task.WhenAll(
+        await Task.WhenAll(
             ScanLoopAsync(stoppingToken),
             PeriodicAsync(_options.RescanInterval, RequestRefresh, stoppingToken),
             EventLoopAsync(stoppingToken),
@@ -238,15 +279,18 @@ public sealed class InventoryService(
         }
     }
 
-    /// <summary>Windows paths of bind mounts that are backed up by default.</summary>
-    /// <summary>Host folders that belong to an app (inside its project folder): the only ones worth measuring.</summary>
-    private static IEnumerable<string> BindPaths(RawInventory raw) =>
-        InventoryBuilder.WithoutOwnResources(raw).Containers
-            .SelectMany(c => c.Mounts.Select(m => (Mount: m, ProjectDir: InventoryBuilder.ProjectDir(c))))
-            .Where(x => x.Mount.Type == "bind" && HostPaths.BindExclusionReason(x.Mount.Source, x.Mount.Destination, x.ProjectDir) is null)
-            .Select(x => HostPaths.ToWindowsPath(x.Mount.Source))
-            .OfType<string>()
+    /// <summary>Host folders that are backed up (inside an app's project folder, kept by its product, or included by the owner): the only ones worth measuring.</summary>
+    private IEnumerable<string> BindPaths(RawInventory raw)
+    {
+        var included = _included;
+        return InventoryBuilder.WithoutOwnResources(raw).Containers
+            .SelectMany(c => c.Mounts
+                .Where(m => m.Type == "bind")
+                .Select(m => InventoryBuilder.DecideBind(m, InventoryBuilder.ProjectDir(c), Stowaway.Core.Profiles.AppProfiles.Detect(c.Labels), included)))
+            .Where(b => b.WindowsPath is not null && b.Reason is null)
+            .Select(b => b.WindowsPath!)
             .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
 
     private bool HasUnmeasuredItems(RawInventory raw) =>
         raw.Volumes.Any(v => !_volumeSizes.ContainsKey(v.Name)) || BindPaths(raw).Any(p => !_pathSizes.ContainsKey(p));
@@ -263,9 +307,10 @@ public sealed class InventoryService(
 
             var sizes = new SizeIndex(
                 new Dictionary<string, long>(_volumeSizes, StringComparer.Ordinal),
-                new Dictionary<string, long>(_pathSizes, StringComparer.OrdinalIgnoreCase));
+                new Dictionary<string, long>(_pathSizes, StringComparer.OrdinalIgnoreCase),
+                protection?.DatabaseSizes);
             var now = time.GetUtcNow();
-            var candidate = InventoryBuilder.Build(_lastRaw, sizes, _version + 1, now, protection?.CreateResolver(now), Platforms.Of(engine.Current.OsType), databases);
+            var candidate = InventoryBuilder.Build(_lastRaw, sizes, _version + 1, now, protection?.CreateResolver(now), Platforms.Of(engine.Current.OsType), databases, _included);
             var fingerprint = JsonSerializer.Serialize(candidate with { Version = 0, CapturedAt = default }, FingerprintJson);
             if (fingerprint == _fingerprint)
             {

@@ -30,7 +30,7 @@ public sealed class SqlServerProvider(SqlServerDumpService dumps, SqlServerDrill
 
         context.Phase("backing up SQL Server databases");
         var errors = await dumps.CreateAsync(context.Client, context.Item, context.Log, ct);
-        return new DumpOutcome(errors, [], null, "SQL Server backup failed", "The snapshot doesn't include those databases.");
+        return new DumpOutcome(errors, [], null, "SQL Server backup failed", "The snapshot doesn't include those databases.", dumps.StagedBytes(context.Item));
     }
 
     public Task VerifyAsync(DrillContext context, CancellationToken ct) =>

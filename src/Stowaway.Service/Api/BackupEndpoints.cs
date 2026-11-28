@@ -15,7 +15,9 @@ public sealed record DestinationResponse(
     string? RepositoryId,
     DateTimeOffset CreatedAt,
     DestinationStatus? Status,
-    IReadOnlyDictionary<string, string>? Settings);
+    IReadOnlyDictionary<string, string>? Settings,
+    DateTimeOffset? RecoveryKeyConfirmedAt = null,
+    string? RecoveryKeyFingerprint = null);
 
 /// <summary>A new destination: <c>Settings</c> and <c>Secrets</c> hold the fields its type describes (<c>GET /api/destination-types</c>).</summary>
 public sealed record CreateDestinationBody(
@@ -37,7 +39,12 @@ public sealed record DropboxCallbackBody(string Url);
 
 public sealed record StartBackupBody(string AppId, Guid DestinationId, BackupStrategy Strategy);
 
-public sealed record RevealKeyResponse(string RecoveryKey);
+/// <param name="Kit">The recovery kit: the key and what to do with it, as a text file named <paramref name="KitFileName"/>.</param>
+public sealed record RevealKeyResponse(string RecoveryKey, string Kit, string KitFileName);
+
+public sealed record CheckKeyBody(string? Key);
+
+public sealed record CheckKeyResponse(bool Matches);
 
 public static class BackupEndpoints
 {
@@ -65,11 +72,17 @@ public static class BackupEndpoints
             }
         });
 
-        api.MapPost("/dropbox/connect", async (DropboxAuthService dropbox, CancellationToken ct) =>
+        // Browser sign-in for cloud destinations (descriptor SignIn): /api/dropbox/connect, /api/onedrive/connect.
+        api.MapPost("/{service}/connect", async (string service, RcloneSignInService signIn, CancellationToken ct) =>
         {
+            if (!RcloneSignInService.Backends.ContainsKey(service))
+            {
+                return Results.NotFound();
+            }
+
             try
             {
-                return Results.Ok(await dropbox.StartAsync(ct));
+                return Results.Ok(await signIn.StartAsync(service, ct));
             }
             catch (ValidationException ex)
             {
@@ -77,14 +90,19 @@ public static class BackupEndpoints
             }
         }).AllowWithoutFreshCode(); // only starts a sign-in; creating the destination needs a code
 
-        api.MapGet("/dropbox/connect/{id:guid}", (Guid id, DropboxAuthService dropbox) =>
-            dropbox.Get(id) is { } status ? Results.Ok(status) : Results.NotFound());
+        api.MapGet("/{service}/connect/{id:guid}", (string service, Guid id, RcloneSignInService signIn) =>
+            RcloneSignInService.Backends.ContainsKey(service) && signIn.Get(id) is { } status ? Results.Ok(status) : Results.NotFound());
 
-        api.MapPost("/dropbox/connect/{id:guid}/callback", async (Guid id, DropboxCallbackBody body, DropboxAuthService dropbox, CancellationToken ct) =>
+        api.MapPost("/{service}/connect/{id:guid}/callback", async (string service, Guid id, DropboxCallbackBody body, RcloneSignInService signIn, CancellationToken ct) =>
         {
+            if (!RcloneSignInService.Backends.ContainsKey(service))
+            {
+                return Results.NotFound();
+            }
+
             try
             {
-                return Results.Ok(await dropbox.CompleteAsync(id, body.Url ?? string.Empty, ct));
+                return Results.Ok(await signIn.CompleteAsync(id, body.Url ?? string.Empty, ct));
             }
             catch (KeyNotFoundException)
             {
@@ -129,7 +147,8 @@ public static class BackupEndpoints
         {
             try
             {
-                return Results.Ok(new RevealKeyResponse(await service.RevealRepositoryPasswordAsync(id, ct)));
+                var (key, kit, fileName) = await service.RevealAsync(id, ct);
+                return Results.Ok(new RevealKeyResponse(key, kit, fileName));
             }
             catch (KeyNotFoundException)
             {
@@ -137,6 +156,40 @@ public static class BackupEndpoints
             }
         })
             .RequireAuthorization(Stowaway.Service.Hosting.AccessPolicies.LocalOnly); // recovery keys never leave this computer
+
+        // "I've stored the key elsewhere": local only, like the key itself, so a remote session can't silence the warning.
+        destinations.MapPost("/{id:guid}/recovery-key/confirm", async (Guid id, DestinationService service, CancellationToken ct) =>
+        {
+            try
+            {
+                await service.ConfirmRecoveryKeyAsync(id, ct);
+                return Results.NoContent();
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        })
+            .RequireAuthorization(Stowaway.Service.Hosting.AccessPolicies.LocalOnly);
+
+        // Checks a key the owner kept. Local only: it answers questions about a secret.
+        destinations.MapPost("/{id:guid}/recovery-key/check", async (Guid id, CheckKeyBody body, DestinationService service, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(body.Key))
+            {
+                return Problem("Paste the recovery key you stored.");
+            }
+
+            try
+            {
+                return Results.Ok(new CheckKeyResponse(await service.CheckRecoveryKeyAsync(id, body.Key, ct)));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        })
+            .RequireAuthorization(Stowaway.Service.Hosting.AccessPolicies.LocalOnly);
 
         destinations.MapDelete("/{id:guid}", async (Guid id, DestinationService service, CancellationToken ct) =>
         {
@@ -176,7 +229,8 @@ public static class BackupEndpoints
     }
 
     private static DestinationResponse ToResponse(Destination d, DestinationStatus? status, DestinationService service) =>
-        new(d.Id, d.Name, d.Kind, d.Path, d.SmbUsername, d.SmbDomain, d.RepositoryId, d.CreatedAt, status, service.PublicValues(d)); // no secrets, nothing hidden
+        new(d.Id, d.Name, d.Kind, d.Path, d.SmbUsername, d.SmbDomain, d.RepositoryId, d.CreatedAt, status, service.PublicValues(d), // no secrets, nothing hidden
+            d.RecoveryKeyConfirmedAt, service.KeyFingerprint(d));
 
     private static IResult Problem(string detail) =>
         Results.Problem(detail: detail, statusCode: StatusCodes.Status400BadRequest, title: "Request could not be completed");

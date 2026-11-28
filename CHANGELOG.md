@@ -4,8 +4,22 @@ All notable changes to Stowaway are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- **Include** a host folder that's mapped into a container from outside the app (for example a configuration folder), so it's backed up with the app. Drives, system folders and network shares stay excluded.
+- Databases inside containers are sized by their last backup; until then the app shows *size unknown* instead of 0 B.
+- **Business Central** containers are recognized (version and localization on the card). Their own `my` folder (setup scripts, certificates) is backed up by default, the folders that need no backup (the artifact cache, BcContainerHelper's shared folder, the hosts file) are folded away, and every snapshot includes a script that recreates the container with `New-BcContainer` and loads the backed-up database. *Recreate app* warns that it would start with a new database. New, and not yet tested on a second machine: please report how it goes.
+- **Recovery keys are hard to miss now.** Adding a destination ends with saving its key: copy it, or download a *recovery kit* (the key, where the backups are, and how to restore them on another computer, also without Stowaway). Until you confirm the key is stored away from this computer, the destination shows *Recovery key not saved* and the dashboard lists it. **Check a key you stored** tells you whether a key you kept is the right one. Existing destinations ask once, too.
+- New destinations:
+  - **REST server** (restic's rest-server). With the server in append-only mode, ransomware on this computer can't delete the backups; Stowaway then leaves removing old snapshots to the server.
+  - **Google Cloud Storage**, with a service account key.
+  - **OneDrive** (personal, or work and school), signed in in the browser like Dropbox. Stowaway keeps the sign-in current, so backups don't stop after Microsoft's 90 days.
+- A guide for contributors who want to add a database or destination type, or an app profile like Business Central: `docs/PROVIDERS.md`.
+
 ### Fixed
 
+- Setup showed *Validating install* for minutes while it removed the previous version, copied files and restarted the service. Each step now says what it's doing.
+- Installing a new version could take several minutes: the bundled restic and rclone (112 MB) were packed inside the service and unpacked to a temporary folder on each new version's first start, for the service and for every user's tray icon, and old copies were never removed. They're now installed as files in `tools` next to the service.
 - Windows containers whose only data is a SQL Server database inside the container showed as *Stateless*, and a backup plan skipped them. They now count as data, also when stopped.
 - Stopped containers showed as *Unhealthy*: Docker keeps the last health check after a container stops. Health is now shown only for running containers.
 - The protection score stayed on *Measuring your data…* when no size could be measured (databases inside containers). It now counts items when sizes are unknown, and says so when there is nothing to back up.

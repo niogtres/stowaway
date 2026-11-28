@@ -31,31 +31,12 @@ cd web; npm run dev                          # UI with hot reload on http://loca
 
 Build the installer with `./build.ps1` (output in `artifacts/`). Without `-Version` it uses the latest release's version, and it installs over that release.
 
-## Adding support for a database
+## Adding a database or a destination type
 
-Database backups go through **database providers** (`src/Stowaway.Docker/Databases/IDatabaseProvider.cs`): each one backs up a family of databases consistently while they run, checks the login, and proves in restore drills that its dumps load. Providers are built in, not loaded as plugins (see decision 9 in [docs/DESIGN.md](../docs/DESIGN.md)).
+Databases and destinations are **providers**: one class per database family or destination type, built into Stowaway (not loaded as plugins; see decision 9 in [docs/DESIGN.md](../docs/DESIGN.md)). [docs/PROVIDERS.md](../docs/PROVIDERS.md) explains the interfaces, when Stowaway calls each method, and the rules and tests a new provider needs.
 
-For a database that can be dumped with its own command-line tools inside its Linux container:
-
-1. Add the kind to `DatabaseKind` and its image names to `DatabaseDetector` (`src/Stowaway.Core/Inventory/`), if it isn't detected yet.
-2. Add a definition next to `PostgreSqlDatabase.cs` in `src/Stowaway.Core/Databases/`: the login script (Stowaway's saved login first, then the image's own variables), the dump and login-check commands, the file extension, and the drill check (start a throwaway server, load the dump, print one number).
-3. Add it to `ShellDatabases.All`. The Linux provider, the inventory and the web client pick it up from there.
-4. Test it against a real container of the image, like `Dumps_a_real_postgres_database_and_drills_it`. `DatabaseProviderTests` checks that every definition is complete.
-
-A database that needs more than shell commands (like SQL Server in Windows containers) gets its own `IDatabaseProvider`, registered in `AddDatabaseProviders`.
-
-## Adding a destination type
-
-Each destination type is a **destination provider** (`src/Stowaway.Docker/Destinations/`, `IDestinationProvider`). It describes its fields, checks them, and tells restic how to reach the repository. The web client draws the add and edit forms from the provider's descriptor (`GET /api/destination-types`), so a new type needs no form code.
-
-1. Add the type to `DestinationKind` (`src/Stowaway.Core/Backups/BackupModels.cs`).
-2. Write the provider. Cloud types derive from `CloudProvider` (see `S3Provider`). Implement:
-   - its descriptor: fields, which are secret, and which belong to the location or the credentials;
-   - `Validate`: checks the values and returns the location shown to the user;
-   - `Connect`: restic's repository string, environment and files.
-   Override `Normalize`, `PrepareAsync` or `TakeSignIn` if the type needs them (see `DropboxProvider` and `SftpProvider`).
-3. Register it in `AddDestinationProviders` and in `DestinationProviders.BuiltIn`. If the descriptor names a new icon, add it to `web/src/lib/destinations.ts`.
-4. Test `Validate` and `Connect` like `CloudRepositoryTests` does. `DestinationProviderTests` checks the descriptor and that the service registers the type.
+- **A database** that runs in a Linux container and has a dump tool usually needs only a short definition file (like `RedisDatabase.cs`), no provider code.
+- **A destination type** that restic or rclone reaches over the network derives from `CloudProvider` and implements `Validate` and `Connect`. The web client draws its forms from the provider's descriptor.
 
 ## Before you open a pull request
 
