@@ -19,7 +19,7 @@ Signing in from another computer needs the user name, password and the current c
 - **Alerts:** a sign-in from a new address, a lockout, or a recovery code being used is sent to your notification channels (those set to report failures) and to the Windows Event Log.
 - **Audit log:** **Settings → Audit log** lists sign-ins and every change made through Stowaway, with who and from which address, for 180 days.
 
-For safety, these only work **on this computer**: managing remote access and its accounts, restarting the service, and showing recovery keys.
+For safety, these only work **on this computer**: managing remote access and its accounts, restarting the service, and showing, checking or confirming recovery keys.
 
 To turn remote access off, untick it, **Save** and **Restart service**. The firewall rule is removed.
 
