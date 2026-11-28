@@ -4,7 +4,7 @@ import { ArrowRight, Boxes, CheckCircle2, Circle, Cpu, Database, HeartPulse, Lay
 import engineOffline from '@/assets/illustrations/engine-offline.webp'
 import { ProtectionRing } from '@/components/ProtectionRing'
 import { Badge, Card, CardHeader, Skeleton, Stat, StatusDot } from '@/components/ui'
-import { useBackupRuns, useDestinations, useInventory, usePlans, useSystemInfo, type BackupRun, type InventorySnapshot, type SystemInfo } from '@/lib/api'
+import { useBackupRuns, useDestinations, useInventory, usePlans, useSystemInfo, type AppInfo, type BackupRun, type InventorySnapshot, type SystemInfo } from '@/lib/api'
 import { cn, formatBytes, formatNumber } from '@/lib/utils'
 
 const rise = {
@@ -67,7 +67,13 @@ export function Dashboard() {
 function scoreCaption(snapshot: InventorySnapshot | null) {
   if (!snapshot) return 'Shows the share of your Docker data covered by a healthy backup plan.'
   const t = snapshot.totals
-  if (t.protectionScore === null) return 'Measuring your data…'
+  if (t.protectionScore === null) return 'No data to back up found: no volumes, included folders or databases.'
+  if (t.dataBytes === 0) {
+    // Sizes unknown (e.g. databases inside containers): score by items instead.
+    const items = plural(t.dataItems, 'item')
+    if (t.protectedItems === 0) return `None of the ${items} with data is covered by a healthy plan yet.`
+    return `${t.protectedItems} of ${items} with data are covered by a healthy plan.`
+  }
   if (t.protectedBytes === 0) return `None of the ${formatBytes(t.dataBytes)} found is covered by a healthy plan yet.`
   return `${formatBytes(t.protectedBytes)} of ${formatBytes(t.dataBytes)} is covered by a healthy plan.`
 }
@@ -174,6 +180,13 @@ interface AttentionItem {
   detail: string
 }
 
+function unprotectedBytes(apps: AppInfo[]) {
+  const bytes = apps.reduce((sum, a) => sum + a.dataBytes, 0)
+  // Databases inside containers have data but no measured size.
+  if (bytes === 0) return `${apps.map((a) => a.name).join(', ')}: no plan covers their data.`
+  return `${formatBytes(bytes)} of data with no plan covering it.`
+}
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 function attentionItems(snapshot: InventorySnapshot): AttentionItem[] {
@@ -204,7 +217,7 @@ function attentionItems(snapshot: InventorySnapshot): AttentionItem[] {
       tone: 'warn',
       icon: ShieldAlert,
       title: `${plural(unprotectedApps.length, 'app')} not backed up`,
-      detail: `${formatBytes(unprotectedApps.reduce((sum, a) => sum + a.dataBytes, 0))} of data with no plan covering it.`,
+      detail: unprotectedBytes(unprotectedApps),
     })
 
   // Empty unowned volumes hold nothing worth keeping (they count as stateless).

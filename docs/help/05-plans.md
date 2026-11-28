@@ -21,7 +21,7 @@ The **Dashboard** shows how much of your data is protected. **Inventory** lists 
 | Stale | Covered, but the last successful backup is overdue |
 | Failing | The last backup failed |
 | Unprotected | Not in any plan |
-| Stateless | Nothing to back up (no volumes or mounts) |
+| Stateless | Nothing to back up (no volumes, folders or databases) |
 | Excluded | Left out on purpose (for example a whole drive mounted into a container) |
 
 You can also back up a single app at any time with **Back up now** in **Inventory**.

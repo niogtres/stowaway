@@ -158,9 +158,43 @@ public sealed class InventoryBuilderTests
     }
 
     [Fact]
-    public void Score_is_null_without_measured_data()
+    public void Score_counts_items_when_no_size_is_known_and_is_null_without_data()
     {
-        Assert.Null(Build(SizeIndex.Empty).Totals.ProtectionScore);
+        var totals = Build(SizeIndex.Empty).Totals;
+        Assert.Equal(0, totals.DataBytes);
+        Assert.Equal((3, 0, 0), (totals.DataItems, totals.ProtectedItems, totals.ProtectionScore)); // blog, Jellyfin, orphan volume
+
+        var empty = InventoryBuilder.Build(new RawInventory([Container("Notifier", "nginx", NoLabels)], [], []), SizeIndex.Empty, version: 1, capturedAt: DateTimeOffset.UnixEpoch);
+        Assert.Null(empty.Totals.ProtectionScore);
+    }
+
+    private static RawContainer SqlServer(string name, string state, string? health) =>
+        Container(name, "mcr.microsoft.com/businesscentral:ltsc2025", NoLabels) with { State = state, Health = health };
+
+    [Fact]
+    public void Sql_server_databases_inside_windows_containers_hold_data_even_when_stopped()
+    {
+        var raw = new RawInventory([SqlServer("bc1", "exited", "unhealthy"), SqlServer("bc2", "running", "healthy")], [], []);
+        var snapshot = InventoryBuilder.Build(raw, SizeIndex.Empty, version: 1, capturedAt: DateTimeOffset.UnixEpoch,
+            platform: Platforms.Windows, databases: new Stowaway.Core.Databases.DatabaseSupport([(DatabaseKind.SqlServer, Platforms.Windows)]));
+
+        Assert.All(snapshot.Apps, a => Assert.Equal(ProtectionStatus.Unprotected, a.Protection));
+        Assert.All(snapshot.Apps, a => Assert.True(Stowaway.Core.Backups.BackupItems.HasData(a), a.Name));
+        Assert.Equal((2, 0), (snapshot.Totals.DataItems, snapshot.Totals.ProtectionScore));
+
+        // A stopped container's last health check is history, not its health.
+        var health = snapshot.Apps.SelectMany(a => a.Containers).ToDictionary(c => c.Name, c => c.Health);
+        Assert.Null(health["bc1"]);
+        Assert.Equal("healthy", health["bc2"]);
+    }
+
+    [Fact]
+    public void A_stopped_linux_database_without_a_volume_holds_nothing_to_dump()
+    {
+        var raw = new RawInventory([Container("db", "postgres:17", NoLabels) with { State = "exited" }], [], []);
+        var snapshot = InventoryBuilder.Build(raw, SizeIndex.Empty, version: 1, capturedAt: DateTimeOffset.UnixEpoch,
+            databases: new Stowaway.Core.Databases.DatabaseSupport([(DatabaseKind.PostgreSql, Platforms.Linux)]));
+        Assert.Equal(ProtectionStatus.Stateless, snapshot.Apps.Single().Protection);
     }
 
     [Fact]

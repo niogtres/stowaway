@@ -114,6 +114,8 @@ export interface InventoryTotals {
   staleItems: number
   dataBytes: number
   protectedBytes: number
+  dataItems: number
+  protectedItems: number
   protectionScore: number | null
 }
 

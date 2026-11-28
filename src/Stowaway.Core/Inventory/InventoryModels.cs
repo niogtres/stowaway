@@ -194,8 +194,20 @@ public sealed record InventoryTotals
     public long DataBytes { get; init; }
     public long ProtectedBytes { get; init; }
 
-    /// <summary>0–100, or null when there is no measured data yet.</summary>
-    public int? ProtectionScore => DataBytes <= 0 ? null : (int)Math.Floor(ProtectedBytes * 100d / DataBytes);
+    /// <summary>Items (apps and orphaned volumes) that hold data, measured or not.</summary>
+    public int DataItems { get; init; }
+
+    /// <summary>Of <see cref="DataItems"/>, those covered by a healthy plan.</summary>
+    public int ProtectedItems { get; init; }
+
+    /// <summary>
+    /// 0–100: the share of measured bytes covered by a healthy plan, or of items when no size is known (databases
+    /// inside containers aren't measured). Null when nothing holds data.
+    /// </summary>
+    public int? ProtectionScore =>
+        DataBytes > 0 ? (int)Math.Floor(ProtectedBytes * 100d / DataBytes)
+        : DataItems > 0 ? (int)Math.Floor(ProtectedItems * 100d / DataItems)
+        : null;
 }
 
 /// <summary>Holds the latest inventory and announces changes.</summary>
