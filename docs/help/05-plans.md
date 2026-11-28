@@ -2,6 +2,8 @@
 
 A plan says **what** to back up, **how**, **where** and **when**, and how long to keep backups. Open **Plans** and choose **Create plan**.
 
+![Plans: what each one backs up, where, when, and its recent runs](images/plans.png)
+
 1. **What:** *All apps* (including ones you add later) or *Selected apps*. An "app" is a compose project or a standalone container, together with its volumes, its databases and the folders inside its project folder. Folders mapped in from elsewhere on the computer, drives and network shares aren't part of the app and aren't backed up (see [Before you start](01-before-you-start.md)).
 2. **How:**
    - **Automatic** (recommended): copies files while the app keeps running. Databases it recognises (PostgreSQL, MySQL/MariaDB, MongoDB, Redis; SQL Server in Windows containers) are dumped with their own tools, so the backup is consistent with no downtime. Apps with a database it can't dump are stopped briefly instead.
@@ -13,6 +15,8 @@ A plan says **what** to back up, **how**, **where** and **when**, and how long t
 If the computer was off when a backup was due, the plan catches up once when it's back.
 
 The **Dashboard** shows how much of your data is protected. **Inventory** lists every app, container, volume and bind mount with its protection status:
+
+![The dashboard: the protection score, the Docker engine, and what needs attention](images/dashboard.png)
 
 | Status | Meaning |
 |---|---|

@@ -1,6 +1,6 @@
 # Stowaway — Design
 
-Status: **v0.11: M0–M7 implemented** (Linux and Windows-container engines), plus built-in database and destination providers (decision 9). Decisions are in §10. Sections 3–8 describe the system as built; the per-milestone notes in §9 have the details. · Updated: 2026-11-28
+Status: **v0.12: M0–M7 implemented**, more in *Unreleased* (CHANGELOG) (Linux and Windows-container engines), plus built-in database and destination providers (decision 9). Decisions are in §10. Sections 3–8 describe the system as built; the per-milestone notes in §9 have the details. · Updated: 2026-11-28
 
 ## 1. Goal
 
@@ -77,7 +77,7 @@ A single self-contained process hosts the API, UI, scheduler and engine, so ther
 For each app (compose project or standalone container), one restic snapshot tagged `stowaway`, `app=<id>`, `run=<id>` (and `plan=<id>` for scheduled runs) holding:
 - `/data/<container>/<mount path>`: volume and bind contents (per policy)
 - `/data/_dumps/`: database dumps
-- `/data/_stowaway/`: `app.json`, `run.json`, `docker inspect` JSON per container, the compose file(s) and `.env` (found from the `com.docker.compose.project.config_files` / `working_dir` labels)
+- `/data/_stowaway/`: `app.json`, `run.json`, `docker inspect` JSON per container, the compose file(s) and `.env` (found from the `com.docker.compose.project.config_files` / `working_dir` labels), and files app profiles add (e.g. `business-central/<container>.ps1`, the Business Central restore script)
 - *Not built yet:* `docker save` of locally built images. Today the recreate tells you to rebuild them from the saved compose files.
 
 This makes **"restore the whole stack on a fresh machine"** possible, not just "put files back".
@@ -86,7 +86,8 @@ This makes **"restore the whole stack on a fresh machine"** possible, not just "
 - Full scan on start, then live updates from `GET /events`, pushed to the UI over SignalR.
 - Inventory model: **App** (compose project or standalone) → **Containers** → **Mounts** (volume / bind / tmpfs) → **Volumes**, plus **Orphan volumes**.
 - Each item has a **protection status**: Protected · Pending (new plan, not run yet) · Stale (last success older than 2× the plan's longest gap) · Failing · Unprotected · Stateless (no data).
-- Size estimates come from the engine's `/system/df` (volumes) and a budgeted walk of the Windows filesystem (bind mounts).
+- Size estimates come from the engine's `/system/df` (volumes) and a budgeted walk of the Windows filesystem (bind mounts). Databases inside containers are sized by their last backup.
+- Bind mounts outside the app are left out; the owner may **Include** a host folder (never a drive, system folder or share). **App profiles** (decision 9) recognize products from image labels, include the folders that belong to them and mark the ones that need no backup.
 - Engines: auto-detect pipes (`docker_engine`, `dockerDesktopLinuxEngine`) or an explicit endpoint. Managing several hosts is future work (§10 #6).
 
 ### 3.6 Scheduling, retention, verification
@@ -138,8 +139,8 @@ Dark-first with a light theme, glass surfaces over a subtle gradient, one accent
 ## 6. Security
 
 - Kestrel binds to **localhost only** over HTTPS. A per-install self-signed certificate is created by the service and added to LocalMachine\Root when it runs as a service. Host filtering blocks DNS rebinding; a request-origin guard blocks cross-site WebSocket and CSRF attempts. *M6b:* opt-in remote access (off by default), with a self-issued or an installed certificate; see the M6b notes.
-- **Auth** *(M6a)*: Windows Negotiate (members of local `Administrators` or a `Stowaway Operators` group). *M6b:* remote-access accounts (password + TOTP) for other computers. Managing remote access, restarting the service and revealing recovery keys stay local-only.
-- Repository passwords and cloud keys are encrypted with **DPAPI in the service account's (LocalSystem's) user scope** in SQLite. *LocalMachine* scope is deliberately not used: any local user could decrypt it. Each destination's recovery key can be revealed (and the reveal is logged): *lose it and backups are unrecoverable*.
+- **Auth** *(M6a)*: Windows Negotiate (members of local `Administrators` or a `Stowaway Operators` group). *M6b:* remote-access accounts (password + TOTP) for other computers. Managing remote access, restarting the service and revealing, checking or confirming recovery keys stay local-only.
+- Repository passwords and cloud keys are encrypted with **DPAPI in the service account's (LocalSystem's) user scope** in SQLite. *LocalMachine* scope is deliberately not used: any local user could decrypt it. Each destination's recovery key can be revealed (and the reveal is logged): *lose it and backups are unrecoverable*. So adding a destination ends with saving it (copy, or a recovery kit with restore steps), and until the owner confirms it's stored away from this computer (`RecoveryKeyConfirmedAt`, also set by a matching key check) the destination and the dashboard warn.
 - The service runs as **LocalSystem** (it needs access to the Docker pipe). *M6c:* every API change and every remote sign-in event is in the audit log.
 - Runner containers get read-only source mounts, `no-new-privileges`, and no network for local and SMB destinations. Secrets arrive as files inside the container, never in its configuration.
 

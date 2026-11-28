@@ -2,9 +2,13 @@
 
 Open **Snapshots**, pick the app and the point in time. Choose **Restore everything**, or **Restore** next to one volume or bind mount, then pick where to:
 
+![Snapshots: the timeline of an app's snapshots and what each one holds](images/snapshots.png)
+
 - **Where it was** (overwrite the current data): the containers using that data are stopped first and started again after. A **safety snapshot** of the current data is taken first, so you can undo the restore.
 - **New volume:** restores into a new Docker volume and leaves the original alone, so you can compare or attach it to a test container.
 - **Folder on this PC:** restores into a folder, for example to pick a few files out by hand.
+
+![Restore everything: choose where to, see what will happen, and confirm](images/restore.png)
 
 To restore only some files or folders, choose **Browse** next to a volume or bind mount and **Restore** on the file or folder you want.
 

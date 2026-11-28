@@ -31,7 +31,7 @@ While you're signed in remotely:
 
 - Restores, deleting anything, and changing plans, destinations or notifications ask for a **fresh code** from the app; after that, not again for 10 minutes.
 - The session ends after **30 minutes** without activity, and after **8 hours** in any case. **Sign out** is at the bottom of the sidebar.
-- Some things only work on this computer: managing remote access and its accounts, restarting the service, and showing recovery keys.
+- Some things only work on this computer: managing remote access and its accounts, restarting the service, and showing, checking or confirming recovery keys.
 
 Locked out after too many wrong attempts, or a new phone? An administrator fixes it on this computer: **Settings → Remote access**, then **Password** (sets a new one and lifts the lockout) or **New authenticator** (new QR code and recovery codes). Details: [Remote access](12-remote-access.md).
 

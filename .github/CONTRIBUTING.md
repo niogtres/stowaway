@@ -46,6 +46,7 @@ Databases and destinations are **providers**: one class per database family or d
 - **Dependencies:** .NET package versions live only in `Directory.Packages.props` and stay on the 10.x line. Add new dependencies only with a good reason, and check that their license is compatible with MIT.
 - **Security-sensitive areas** (sign-in, remote access, host filtering, the request-origin guard, secret storage) need a test for the behaviour you change. Anything that manages access or reveals secrets stays local-only.
 - **Docs:** update [docs/USER-GUIDE.md](../docs/USER-GUIDE.md) / the help pages in `docs/help/` when behaviour visible to users changes.
+- **Screenshots:** the help pages show screenshots (`docs/help/images/`), taken from the web client on made-up data. After a visible UI change, build `web/` and run `node tools/screenshots/capture.mjs` (needs Chrome or Edge). New screens get their data in `tools/screenshots/fixtures.mjs`; never use real names, paths or keys.
 
 - **Changelog:** add a line under *Unreleased* in [CHANGELOG.md](../CHANGELOG.md) for anything users would notice.
 

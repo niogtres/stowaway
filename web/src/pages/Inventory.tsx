@@ -366,9 +366,9 @@ function NotNeededMounts({ mounts }: { mounts: (MountInfo & { key: string; count
         className="flex w-full items-center gap-1.5 py-1 text-left text-xs text-muted hover:text-fg"
         title={mounts.map((m) => `${m.displaySource}: ${m.exclusionReason ?? ''}`).join('\n')}
       >
-        <ChevronRight className={cn('size-3.5 transition', open && 'rotate-90')} />
-        {mounts.length === 1 ? 'One folder needs no backup' : `${mounts.length} folders need no backup`}
-        <span className="truncate">({mounts.map((m) => m.exclusionReason?.split(/[:,]/)[0]).join('; ')})</span>
+        <ChevronRight className={cn('size-3.5 shrink-0 transition', open && 'rotate-90')} />
+        <span className="shrink-0 whitespace-nowrap">{mounts.length === 1 ? 'One folder needs no backup' : `${mounts.length} folders need no backup`}</span>
+        <span className="min-w-0 truncate">({mounts.map((m) => m.exclusionReason?.split(/[:,]/)[0]).join('; ')})</span>
       </button>
       {open && mounts.map((m) => <MountRow key={m.key} mount={m} sharedBy={m.count} />)}
     </>

@@ -4,6 +4,14 @@ import { marked, type Tokens } from 'marked'
 // They read the same on GitHub; links between them ("04-destinations.md") become in-app routes (/help/destinations).
 const files = import.meta.glob('../../../docs/help/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
+// Screenshots referenced as "images/name.png" (docs/help/images, made by tools/screenshots), bundled the same way.
+const images = Object.fromEntries(
+  Object.entries(import.meta.glob('../../../docs/help/images/*.png', { query: '?url', import: 'default', eager: true }) as Record<string, string>).map(([path, url]) => [
+    `images/${path.split('/').pop()}`,
+    url,
+  ]),
+)
+
 export interface HelpSection {
   id: string
   heading: string
@@ -41,6 +49,7 @@ export const slugify = (text: string) =>
 const plain = (markdown: string) =>
   markdown
     .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[*_>#|]/g, ' ')
@@ -60,6 +69,10 @@ function render(markdown: string): string {
     if (href.startsWith('#')) return `<a href="${href}" data-help-link>${text}</a>`
     const t = title ? ` title="${title}"` : ''
     return `<a href="${href}"${t} target="_blank" rel="noopener noreferrer">${text}</a>`
+  }
+  renderer.image = ({ href, text }: Tokens.Image) => {
+    const src = images[href]
+    return src ? `<img src="${src}" alt="${text.replace(/"/g, '&quot;')}" loading="lazy" class="help-shot">` : ''
   }
   return marked.parse(markdown, { renderer, async: false, gfm: true })
 }
